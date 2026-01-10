@@ -190,8 +190,8 @@ Theme: Inject CSS variables or swap stylesheets based on system appearance. Obse
 
 **Swift tests** in `Tests/MarkdownWebViewTests.swift`:
 
-- [ ] `testWebViewLoadsRendererHTML` - Create MarkdownWebView, verify it loads without error (check for JS errors via WKNavigationDelegate)
-- [ ] `testRenderCallReturnsWithoutError` - Call render() with simple Markdown, verify no JS exceptions thrown
+- [x] `testWebViewLoadsRendererHTML` - Create MarkdownWebView, verify it loads without error (check for JS errors via WKNavigationDelegate)
+- [x] `testRenderCallReturnsWithoutError` - Call render() with simple Markdown, verify no JS exceptions thrown
 
 **JavaScript tests** in `WebRenderer/tests/` (run with Node or browser test runner):
 
@@ -209,6 +209,7 @@ Theme: Inject CSS variables or swap stylesheets based on system appearance. Obse
 | Date | Result | Notes |
 |------|--------|-------|
 | 2026-01-10 | PASS | All 10 JS tests pass (sourcepos, tables, task lists) |
+| 2026-01-10 | PASS | 6 Swift tests pass (4 AppShell + 2 MarkdownWebView) |
 
 ### MCP UI Verification
 

@@ -1,21 +1,23 @@
 import SwiftUI
 
-// FocusedValue for per-document line numbers toggle
-struct LineNumbersToggleKey: FocusedValueKey {
-    typealias Value = Binding<Bool>
+extension Notification.Name {
+    static let toggleLineNumbers = Notification.Name("RedMargin.toggleLineNumbers")
 }
 
-extension FocusedValues {
-    var lineNumbersToggle: Binding<Bool>? {
-        get { self[LineNumbersToggleKey.self] }
-        set { self[LineNumbersToggleKey.self] = newValue }
+extension URL {
+    /// Returns path with ~ for home directory
+    var displayPath: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if path.hasPrefix(home) {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
     }
 }
 
 @main
 struct RedMarginApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @FocusedValue(\.lineNumbersToggle) var lineNumbersToggle
 
     var body: some Scene {
         Settings {
@@ -36,11 +38,10 @@ struct RedMarginApp: App {
             }
 
             CommandGroup(after: .toolbar) {
-                Button((lineNumbersToggle?.wrappedValue ?? true) ? "Hide Line Numbers" : "Show Line Numbers") {
-                    lineNumbersToggle?.wrappedValue.toggle()
+                Button("Toggle Line Numbers") {
+                    NotificationCenter.default.post(name: .toggleLineNumbers, object: nil)
                 }
                 .keyboardShortcut("l", modifiers: .command)
-                .disabled(lineNumbersToggle == nil)
             }
 
             // Remove default window tabbing menu items
@@ -55,7 +56,7 @@ struct RecentDocumentsMenu: View {
     var body: some View {
         Group {
             ForEach(appDelegate.recentDocuments, id: \.self) { url in
-                Button(url.lastPathComponent) {
+                Button(url.displayPath) {
                     appDelegate.openDocument(url)
                 }
             }
@@ -262,7 +263,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
         // Create window
         let window = NSWindow(contentViewController: hostingController)
-        window.title = url.lastPathComponent
+        window.title = url.displayPath
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.tabbingMode = .disallowed
         window.minSize = NSSize(width: 500, height: 400)
@@ -329,13 +330,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     func loadLineNumbersVisible(for url: URL) -> Bool {
         let settings = UserDefaults.standard.dictionary(forKey: lineNumbersKey) as? [String: Bool] ?? [:]
-        return settings[url.path] ?? true  // default: visible
+        return settings[url.path] ?? false  // default: hidden
+    }
+}
+
+class FileWatcher {
+    private var source: DispatchSourceFileSystemObject?
+    private let fileDescriptor: Int32
+    private let onChange: () -> Void
+
+    init?(url: URL, onChange: @escaping () -> Void) {
+        self.onChange = onChange
+        fileDescriptor = open(url.path, O_EVTONLY)
+        guard fileDescriptor >= 0 else { return nil }
+
+        source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fileDescriptor,
+            eventMask: [.write, .rename, .delete],
+            queue: .main
+        )
+
+        source?.setEventHandler { [weak self] in
+            self?.onChange()
+        }
+
+        source?.setCancelHandler { [weak self] in
+            if let desc = self?.fileDescriptor, desc >= 0 {
+                close(desc)
+            }
+        }
+
+        source?.resume()
+    }
+
+    deinit {
+        source?.cancel()
     }
 }
 
 struct DocumentWindowContent: View {
     @State private var content: String
     @State private var showLineNumbers: Bool
+    @State private var fileWatcher: FileWatcher?
     let fileURL: URL
     let initialScrollPosition: Double
     let onScrollPositionChange: (Double) -> Void
@@ -345,7 +381,7 @@ struct DocumentWindowContent: View {
         content: String,
         fileURL: URL,
         initialScrollPosition: Double = 0,
-        showLineNumbers: Bool = true,
+        showLineNumbers: Bool = false,
         appDelegate: AppDelegate? = nil,
         onScrollPositionChange: @escaping (Double) -> Void = { _ in }
     ) {
@@ -367,10 +403,32 @@ struct DocumentWindowContent: View {
             showLineNumbers: showLineNumbers
         )
         .frame(minWidth: 500, idealWidth: 750, minHeight: 400, idealHeight: 1000)
-        .focusedValue(\.lineNumbersToggle, $showLineNumbers)
+        .onAppear {
+            setupFileWatcher()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleLineNumbers)) { _ in
+            // Only toggle if this document's window is key
+            if let window = NSApp.keyWindow,
+               let hostingController = window.contentViewController as? NSHostingController<DocumentWindowContent>,
+               hostingController.rootView.fileURL == fileURL {
+                showLineNumbers.toggle()
+            }
+        }
         .onChange(of: showLineNumbers) { _, newValue in
             appDelegate?.saveLineNumbersVisible(newValue, for: fileURL)
         }
+    }
+
+    private func setupFileWatcher() {
+        fileWatcher = FileWatcher(url: fileURL) { [self] in
+            reloadContent()
+        }
+    }
+
+    private func reloadContent() {
+        guard let newContent = try? String(contentsOf: fileURL, encoding: .utf8),
+              newContent != content else { return }
+        content = newContent
     }
 
     private func handleCheckboxToggle(line: Int, checked: Bool) {
