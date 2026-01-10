@@ -1,5 +1,15 @@
 # Changelog
 
+## 260110 App Shell Implementation
+- Added: SwiftUI document-based app structure (Package.swift, RedMarginApp.swift)
+- Added: MarkdownDocument conforming to FileDocument for .md/.markdown files
+- Added: DocumentView displaying raw markdown content with monospace font
+- Added: App bundle with stable bundle ID (com.redmargin.app) for consistent permissions
+- Added: Build script with codesigning support (resources/scripts/build.sh)
+- Added: Info.plist with UTI declarations for Markdown document types
+- Added: Automated tests for document loading (UTF-8, empty, large files)
+- Added: SwiftLint configuration
+
 ## 260110 Implementation Specs
 - Added: 10 implementation specs breaking down PRD into stages
   - Stage 1: App Shell (file open, recent files, window management)
