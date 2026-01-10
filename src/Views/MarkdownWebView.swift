@@ -38,7 +38,9 @@ struct MarkdownWebView: NSViewRepresentable {
 
         let theme = colorScheme == .dark ? "dark" : "light"
         let basePath = fileURL?.deletingLastPathComponent().path ?? ""
-        let params = RenderParams(markdown: markdown, theme: theme, basePath: basePath, scrollPosition: initialScrollPosition)
+        let params = RenderParams(
+            markdown: markdown, theme: theme, basePath: basePath, scrollPosition: initialScrollPosition
+        )
 
         if context.coordinator.isLoaded {
             Self.render(webView: webView, params: params)

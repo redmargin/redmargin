@@ -1,5 +1,13 @@
 # Changelog
 
+## 260110 Per-Document Settings & Build Improvements
+- Added: Per-file line numbers toggle (each document remembers its setting)
+- Added: Local image support in markdown files
+- Added: Inline code color preference to Stage 9 spec
+- Changed: App renamed from RedMargin to Redmargin
+- Changed: Build now uses release configuration (smaller/faster binary)
+- Changed: Build installs directly to /Applications (no duplicate in build/)
+
 ## 260110 Interactive Features & Polish
 - Added: Interactive checkboxes - click to toggle task items, saves immediately
 - Added: Line numbers in gutter showing source line mapping
