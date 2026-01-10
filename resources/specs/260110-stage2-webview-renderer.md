@@ -224,4 +224,6 @@ Use `macos-ui-automation` MCP to verify rendering. Open a test .md file in RedMa
 
 - [x] **Rendering quality:** Visual check that headings, tables, code blocks, task lists render correctly
 - [ ] **Sourcepos attributes:** Use Safari Web Inspector (Develop menu) to inspect WebView DOM, verify `data-sourcepos` on block elements
-- [ ] **Local images:** Reference `![](image.png)` next to .md file, verify it displays
+- [ ] **Local images:** Reference `![](test-image.jpg)` in a .md file, verify it displays
+
+![Test image for local image rendering](test-image.jpg)
