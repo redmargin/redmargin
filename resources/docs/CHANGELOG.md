@@ -3,7 +3,8 @@
 ## 260110 App Shell Implementation
 - Added: SwiftUI document-based app structure (Package.swift, RedMarginApp.swift)
 - Added: MarkdownDocument conforming to FileDocument for .md/.markdown files
-- Added: DocumentView displaying raw markdown content with monospace font
+- Added: DocumentView with signature red margin line and paper-like background
+- Added: Light/dark theme support with refined typography
 - Added: App bundle with stable bundle ID (com.redmargin.app) for consistent permissions
 - Added: Build script with codesigning support (resources/scripts/build.sh)
 - Added: Info.plist with UTI declarations for Markdown document types
