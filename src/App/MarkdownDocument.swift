@@ -1,29 +1,29 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-extension UTType {
+public extension UTType {
     static let markdown = UTType("net.daringfireball.markdown") ?? .plainText
 }
 
-struct MarkdownDocument: FileDocument {
-    var content: String
+public struct MarkdownDocument: FileDocument {
+    public var content: String
 
-    static var readableContentTypes: [UTType] {
+    public static var readableContentTypes: [UTType] {
         [.markdown]
     }
 
-    init(content: String = "") {
+    public init(content: String = "") {
         self.content = content
     }
 
-    init(configuration: ReadConfiguration) throws {
+    public init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents else {
             throw CocoaError(.fileReadCorruptFile)
         }
         content = String(data: data, encoding: .utf8) ?? ""
     }
 
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+    public func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         let data = content.data(using: .utf8) ?? Data()
         return FileWrapper(regularFileWithContents: data)
     }
