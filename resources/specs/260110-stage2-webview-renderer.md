@@ -166,6 +166,7 @@ Theme: Inject CSS variables or swap stylesheets based on system appearance. Obse
 - [x] Create `WebRenderer/src/lineNumbers.js` to generate gutter line numbers
 - [x] Add CSS for line number styling in both themes
 - [x] Call line number generation after render
+- [x] Add View menu toggle for line numbers (Cmd+L)
 - [ ] Test line numbers align with rendered content
 
 **Phase 9: App Icon**

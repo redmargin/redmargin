@@ -7,6 +7,7 @@ struct MarkdownWebView: NSViewRepresentable {
     var onCheckboxToggle: ((Int, Bool) -> Void)?
     var onScrollPositionChange: ((Double) -> Void)?
     var initialScrollPosition: Double
+    var showLineNumbers: Bool
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -41,8 +42,15 @@ struct MarkdownWebView: NSViewRepresentable {
 
         if context.coordinator.isLoaded {
             Self.render(webView: webView, params: params)
+
+            // Update line numbers visibility if changed
+            if context.coordinator.lastLineNumbersVisible != showLineNumbers {
+                context.coordinator.lastLineNumbersVisible = showLineNumbers
+                Self.setLineNumbersVisible(webView: webView, visible: showLineNumbers)
+            }
         } else {
             context.coordinator.pendingRender = params
+            context.coordinator.pendingLineNumbersVisible = showLineNumbers
         }
     }
 
@@ -97,6 +105,11 @@ struct MarkdownWebView: NSViewRepresentable {
         }
     }
 
+    static func setLineNumbersVisible(webView: WKWebView, visible: Bool) {
+        let script = "window.LineNumbers.setVisible(\(visible))"
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
     struct RenderParams {
         let markdown: String
         let theme: String
@@ -107,6 +120,8 @@ struct MarkdownWebView: NSViewRepresentable {
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var isLoaded = false
         var pendingRender: RenderParams?
+        var pendingLineNumbersVisible: Bool = true
+        var lastLineNumbersVisible: Bool = true
         var onCheckboxToggle: ((Int, Bool) -> Void)?
         var onScrollPositionChange: ((Double) -> Void)?
         var initialScrollPosition: Double = 0
@@ -117,6 +132,10 @@ struct MarkdownWebView: NSViewRepresentable {
             if let pending = pendingRender {
                 MarkdownWebView.render(webView: webView, params: pending)
                 pendingRender = nil
+
+                // Apply pending line numbers visibility
+                lastLineNumbersVisible = pendingLineNumbersVisible
+                MarkdownWebView.setLineNumbersVisible(webView: webView, visible: pendingLineNumbersVisible)
             }
         }
 
