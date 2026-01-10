@@ -167,13 +167,13 @@ Theme: Inject CSS variables or swap stylesheets based on system appearance. Obse
 - [x] Add CSS for line number styling in both themes
 - [x] Call line number generation after render
 - [x] Add View menu toggle for line numbers (Cmd+L)
-- [ ] Test line numbers align with rendered content
+- [x] Test line numbers align with rendered content
 
 **Phase 9: App Icon**
 - [x] Extract icon pack to `resources/`
 - [x] Convert iconset to .icns
 - [x] Update build script to include icon in app bundle
-- [ ] Verify icon appears in Finder and Dock
+- [x] Verify icon appears in Finder and Dock
 
 **Phase 10: Scroll Position Persistence**
 - [x] Create `WebRenderer/src/scrollPosition.js` for scroll tracking
@@ -222,6 +222,6 @@ Use `macos-ui-automation` MCP to verify rendering. Open a test .md file in RedMa
 
 ### Manual Verification (WebView internals)
 
-- [ ] **Rendering quality:** Visual check that headings, tables, code blocks, task lists render correctly
+- [x] **Rendering quality:** Visual check that headings, tables, code blocks, task lists render correctly
 - [ ] **Sourcepos attributes:** Use Safari Web Inspector (Develop menu) to inspect WebView DOM, verify `data-sourcepos` on block elements
 - [ ] **Local images:** Reference `![](image.png)` next to .md file, verify it displays

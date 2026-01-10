@@ -1,12 +1,21 @@
 import SwiftUI
 
-extension Notification.Name {
-    static let lineNumbersVisibilityChanged = Notification.Name("lineNumbersVisibilityChanged")
+// FocusedValue for per-document line numbers toggle
+struct LineNumbersToggleKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
+extension FocusedValues {
+    var lineNumbersToggle: Binding<Bool>? {
+        get { self[LineNumbersToggleKey.self] }
+        set { self[LineNumbersToggleKey.self] = newValue }
+    }
 }
 
 @main
 struct RedMarginApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @FocusedValue(\.lineNumbersToggle) var lineNumbersToggle
 
     var body: some Scene {
         Settings {
@@ -27,10 +36,11 @@ struct RedMarginApp: App {
             }
 
             CommandGroup(after: .toolbar) {
-                Button(appDelegate.showLineNumbers ? "Hide Line Numbers" : "Show Line Numbers") {
-                    appDelegate.toggleLineNumbers()
+                Button((lineNumbersToggle?.wrappedValue ?? true) ? "Hide Line Numbers" : "Show Line Numbers") {
+                    lineNumbersToggle?.wrappedValue.toggle()
                 }
                 .keyboardShortcut("l", modifiers: .command)
+                .disabled(lineNumbersToggle == nil)
             }
 
             // Remove default window tabbing menu items
@@ -69,36 +79,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private let recentURLsKey = "RedMargin.RecentDocumentURLs"
     private let windowOrderKey = "RedMargin.WindowOrder"
     private let scrollPositionsKey = "RedMargin.ScrollPositions"
-    private let showLineNumbersKey = "RedMargin.ShowLineNumbers"
+    private let lineNumbersKey = "RedMargin.DocumentLineNumbers"
     private let maxRecentDocuments = 10
 
     @Published var recentDocuments: [URL] = []
-    @Published var showLineNumbers: Bool = true {
-        didSet {
-            UserDefaults.standard.set(showLineNumbers, forKey: showLineNumbersKey)
-            notifyLineNumbersChanged()
-        }
-    }
 
     override init() {
         super.init()
         recentDocuments = loadRecentDocuments()
-        // Load showLineNumbers (default true if not set)
-        if UserDefaults.standard.object(forKey: showLineNumbersKey) != nil {
-            showLineNumbers = UserDefaults.standard.bool(forKey: showLineNumbersKey)
-        }
-    }
-
-    private func notifyLineNumbersChanged() {
-        NotificationCenter.default.post(
-            name: .lineNumbersVisibilityChanged,
-            object: nil,
-            userInfo: ["visible": showLineNumbers]
-        )
-    }
-
-    @objc func toggleLineNumbers() {
-        showLineNumbers.toggle()
     }
 
     // MARK: - App Lifecycle
@@ -255,15 +243,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             content = "Error loading file: \(error.localizedDescription)"
         }
 
-        // Load saved scroll position
+        // Load saved scroll position and line numbers setting
         let scrollPosition = loadScrollPosition(for: url)
+        let lineNumbersVisible = loadLineNumbersVisible(for: url)
 
         // Create SwiftUI view wrapped in hosting controller
         let documentView = DocumentWindowContent(
             content: content,
             fileURL: url,
             initialScrollPosition: scrollPosition,
-            showLineNumbers: showLineNumbers,
+            showLineNumbers: lineNumbersVisible,
+            appDelegate: self,
             onScrollPositionChange: { [weak self] position in
                 self?.saveScrollPosition(position, for: url)
             }
@@ -328,6 +318,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let positions = UserDefaults.standard.dictionary(forKey: scrollPositionsKey) as? [String: Double] ?? [:]
         return positions[url.path] ?? 0
     }
+
+    // MARK: - Per-Document Line Numbers Persistence
+
+    func saveLineNumbersVisible(_ visible: Bool, for url: URL) {
+        var settings = UserDefaults.standard.dictionary(forKey: lineNumbersKey) as? [String: Bool] ?? [:]
+        settings[url.path] = visible
+        UserDefaults.standard.set(settings, forKey: lineNumbersKey)
+    }
+
+    func loadLineNumbersVisible(for url: URL) -> Bool {
+        let settings = UserDefaults.standard.dictionary(forKey: lineNumbersKey) as? [String: Bool] ?? [:]
+        return settings[url.path] ?? true  // default: visible
+    }
 }
 
 struct DocumentWindowContent: View {
@@ -336,12 +339,14 @@ struct DocumentWindowContent: View {
     let fileURL: URL
     let initialScrollPosition: Double
     let onScrollPositionChange: (Double) -> Void
+    weak var appDelegate: AppDelegate?
 
-    init(content: String, fileURL: URL, initialScrollPosition: Double = 0, showLineNumbers: Bool = true, onScrollPositionChange: @escaping (Double) -> Void = { _ in }) {
+    init(content: String, fileURL: URL, initialScrollPosition: Double = 0, showLineNumbers: Bool = true, appDelegate: AppDelegate? = nil, onScrollPositionChange: @escaping (Double) -> Void = { _ in }) {
         _content = State(initialValue: content)
         _showLineNumbers = State(initialValue: showLineNumbers)
         self.fileURL = fileURL
         self.initialScrollPosition = initialScrollPosition
+        self.appDelegate = appDelegate
         self.onScrollPositionChange = onScrollPositionChange
     }
 
@@ -355,10 +360,9 @@ struct DocumentWindowContent: View {
             showLineNumbers: showLineNumbers
         )
         .frame(minWidth: 500, idealWidth: 750, minHeight: 400, idealHeight: 1000)
-        .onReceive(NotificationCenter.default.publisher(for: .lineNumbersVisibilityChanged)) { notification in
-            if let visible = notification.userInfo?["visible"] as? Bool {
-                showLineNumbers = visible
-            }
+        .focusedValue(\.lineNumbersToggle, $showLineNumbers)
+        .onChange(of: showLineNumbers) { _, newValue in
+            appDelegate?.saveLineNumbersVisible(newValue, for: fileURL)
         }
     }
 

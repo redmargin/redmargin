@@ -3,19 +3,20 @@
 import PackageDescription
 
 let package = Package(
-    name: "RedMargin",
+    name: "Redmargin",
     platforms: [
         .macOS(.v14)
     ],
     targets: [
         .executableTarget(
-            name: "RedMargin",
+            name: "Redmargin",
             path: "src"
         ),
         .testTarget(
-            name: "RedMarginTests",
-            dependencies: ["RedMargin"],
-            path: "Tests"
+            name: "RedmarginTests",
+            dependencies: ["Redmargin"],
+            path: "Tests",
+            exclude: ["Fixtures"]
         )
     ]
 )
