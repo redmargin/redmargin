@@ -1,7 +1,7 @@
 # Git Gutter
 
 ## Meta
-- Status: Draft
+- Status: In Progress
 - Branch: feature/git-gutter
 - Dependencies: 260110-stage2-webview-renderer.md, 260110-stage4-git-diff-parsing.md
 
@@ -101,43 +101,43 @@ On resize: recompute positions (elements may reflow).
 ### Implementation Plan
 
 **Phase 1: Gutter Container**
-- [ ] Create `WebRenderer/styles/gutter.css` with container and marker styles
-- [ ] Add gutter container div to `renderer.html`
-- [ ] Verify gutter container appears on left side of viewport
+- [x] Create `WebRenderer/styles/gutter.css` with container and marker styles
+- [x] Add gutter container div to `renderer.html`
+- [x] Verify gutter container appears on left side of viewport
 
 **Phase 2: SourcePos Mapping**
-- [ ] Create `WebRenderer/src/sourcepos-map.js`
-- [ ] Implement `build()` to query and parse all sourcepos attributes
-- [ ] Implement `getElementsForLineRange(start, end)` with overlap detection
-- [ ] Implement `getElementAtOrAfterLine(line)` for deletion anchors
-- [ ] Write JS unit tests for overlap logic
+- [x] Create `WebRenderer/src/sourcepos-map.js`
+- [x] Implement `build()` to query and parse all sourcepos attributes
+- [x] Implement `getElementsForLineRange(start, end)` with overlap detection
+- [x] Implement `getElementAtOrAfterLine(line)` for deletion anchors
+- [x] Write JS unit tests for overlap logic
 
 **Phase 3: Gutter Rendering**
-- [ ] Create `WebRenderer/src/gutter.js`
-- [ ] Implement `update(changedRanges, deletedAnchors)`
-- [ ] For each changed range: find overlapping elements, create markers
-- [ ] For each deleted anchor: find target element, create deletion marker
-- [ ] Add markers to gutter container
+- [x] Create `WebRenderer/src/gutter.js`
+- [x] Implement `update(changedRanges, deletedAnchors)`
+- [x] For each changed range: find overlapping elements, create markers
+- [x] For each deleted anchor: find target element, create deletion marker
+- [x] Add markers to gutter container
 
 **Phase 4: Scroll Synchronization**
-- [ ] Implement `onScroll()` to reposition markers
-- [ ] Cache element references on initial render
-- [ ] Use `getBoundingClientRect()` on scroll to get current positions
-- [ ] Throttle scroll handler (requestAnimationFrame)
+- [x] Implement `onScroll()` to reposition markers
+- [x] Cache element references on initial render
+- [x] Use `getBoundingClientRect()` on scroll to get current positions
+- [x] Throttle scroll handler (requestAnimationFrame)
 
 **Phase 5: Resize Handling**
-- [ ] Implement `onResize()` to recompute positions
-- [ ] Call on window resize event
-- [ ] Debounce resize handler
+- [x] Implement `onResize()` to recompute positions
+- [x] Call on window resize event
+- [x] Debounce resize handler
 
 **Phase 6: Swift Integration**
-- [ ] Modify `DocumentView.swift` to call GitRepoDetector on document load
-- [ ] If in repo: call GitDiffParser to get changes
-- [ ] Pass changedRanges and deletedAnchors to MarkdownWebView.render()
-- [ ] Handle non-repo case (don't pass change data, gutter stays empty)
+- [x] Modify `DocumentView.swift` to call GitRepoDetector on document load
+- [x] If in repo: call GitDiffParser to get changes
+- [x] Pass changedRanges and deletedAnchors to MarkdownWebView.render()
+- [x] Handle non-repo case (don't pass change data, gutter stays empty)
 
 **Phase 7: Polish**
-- [ ] Add color variables to light.css and dark.css
+- [x] Add color variables to light.css and dark.css
 - [ ] Test gutter appearance in both themes
 - [ ] Test with various file sizes and change patterns
 
@@ -149,14 +149,14 @@ On resize: recompute positions (elements may reflow).
 
 **JavaScript tests** in `WebRenderer/tests/`:
 
-- [ ] `testSourcePosMapBuild` - Render Markdown, call build(), verify map contains all block elements
-- [ ] `testSourcePosMapOverlapFull` - Element lines 5-10, range 5-10, verify it's returned
-- [ ] `testSourcePosMapOverlapPartial` - Element lines 5-10, range 7-8, verify it's returned
-- [ ] `testSourcePosMapNoOverlap` - Element lines 5-10, range 15-20, verify not returned
-- [ ] `testSourcePosMapMultipleElements` - Multiple elements, range overlaps two, verify both returned
-- [ ] `testDeletionAnchorMiddle` - Deletion at line 10, verify correct element found
-- [ ] `testDeletionAnchorStart` - Deletion at line 1, verify first element found
-- [ ] `testDeletionAnchorEnd` - Deletion beyond last line, verify last element found
+- [x] `testSourcePosMapBuild` - Render Markdown, call build(), verify map contains all block elements
+- [x] `testSourcePosMapOverlapFull` - Element lines 5-10, range 5-10, verify it's returned
+- [x] `testSourcePosMapOverlapPartial` - Element lines 5-10, range 7-8, verify it's returned
+- [x] `testSourcePosMapNoOverlap` - Element lines 5-10, range 15-20, verify not returned
+- [x] `testSourcePosMapMultipleElements` - Multiple elements, range overlaps two, verify both returned
+- [x] `testDeletionAnchorMiddle` - Deletion at line 10, verify correct element found
+- [x] `testDeletionAnchorStart` - Deletion at line 1, verify first element found
+- [x] `testDeletionAnchorEnd` - Deletion beyond last line, verify last element found
 - [ ] `testGutterMarkerCount` - Render with 3 changed ranges, verify 3+ markers created
 - [ ] `testGutterMarkerPosition` - Render with change on line 5, verify marker Y position matches element top
 - [ ] `testGutterDeletionMarker` - Render with deletion anchor, verify deletion marker exists
@@ -180,13 +180,13 @@ Create `Tests/Fixtures/gutter-test-repo/`:
 
 | Date | Result | Notes |
 |------|--------|-------|
-| — | — | No tests run yet |
+| 2026-01-10 | Pass | 17 JS unit tests pass, 54 Swift tests pass |
 
 ### MCP UI Verification
 
 Use `macos-ui-automation` MCP to verify app behavior. Gutter rendering is inside WebView (not accessible via accessibility APIs), so gutter visuals rely on JS tests + manual spot-check.
 
-- [ ] **App window exists:** `find_elements_in_app("RedMargin", "$..[?(@.role=='window')]")` returns window
+- [x] **App window exists:** `find_elements_in_app("RedMargin", "$..[?(@.role=='window')]")` returns window
 - [ ] **No crash on scroll:** Use MCP to verify app still responds after scrolling (window still present)
 - [ ] **No crash on resize:** Resize window, verify app still responds
 

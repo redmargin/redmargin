@@ -26,13 +26,13 @@ final class GitDiffParserIntegrationTests: XCTestCase {
         )
         try helper.commit(message: "Initial commit", in: repoURL)
 
-        // Add lines at end
+        // Add lines at end (pure addition)
         try "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\n".write(to: fileURL, atomically: true, encoding: .utf8)
 
         let result = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: repoURL)
 
-        XCTAssertFalse(result.isUntracked)
-        XCTAssertTrue(result.changedRanges.contains(4...5))
+        XCTAssertTrue(result.addedRanges.contains(4...5))
+        XCTAssertTrue(result.modifiedRanges.isEmpty)
         XCTAssertTrue(result.deletedAnchors.isEmpty)
     }
 
@@ -45,13 +45,13 @@ final class GitDiffParserIntegrationTests: XCTestCase {
         )
         try helper.commit(message: "Initial commit", in: repoURL)
 
-        // Modify line 2
+        // Modify line 2 (replacement)
         try "Line 1\nModified Line 2\nLine 3\n".write(to: fileURL, atomically: true, encoding: .utf8)
 
         let result = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: repoURL)
 
-        XCTAssertFalse(result.isUntracked)
-        XCTAssertTrue(result.changedRanges.contains(2...2))
+        XCTAssertTrue(result.addedRanges.isEmpty)
+        XCTAssertTrue(result.modifiedRanges.contains(2...2))
     }
 
     func testDeletedLines() async throws {
@@ -68,8 +68,8 @@ final class GitDiffParserIntegrationTests: XCTestCase {
 
         let result = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: repoURL)
 
-        XCTAssertFalse(result.isUntracked)
-        XCTAssertTrue(result.changedRanges.isEmpty)
+        XCTAssertTrue(result.addedRanges.isEmpty)
+        XCTAssertTrue(result.modifiedRanges.isEmpty)
         XCTAssertFalse(result.deletedAnchors.isEmpty)
     }
 
@@ -88,9 +88,9 @@ final class GitDiffParserIntegrationTests: XCTestCase {
 
         let result = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: repoURL)
 
-        XCTAssertEqual(result.changedRanges.count, 2)
-        XCTAssertTrue(result.changedRanges.contains(2...2))
-        XCTAssertTrue(result.changedRanges.contains(8...8))
+        XCTAssertEqual(result.modifiedRanges.count, 2)
+        XCTAssertTrue(result.modifiedRanges.contains(2...2))
+        XCTAssertTrue(result.modifiedRanges.contains(8...8))
     }
 
     func testCleanFile() async throws {
@@ -124,9 +124,10 @@ final class GitDiffParserIntegrationTests: XCTestCase {
 
         let result = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: repoURL)
 
-        XCTAssertTrue(result.isUntracked)
-        XCTAssertEqual(result.changedRanges.count, 1)
-        XCTAssertEqual(result.changedRanges.first, 1...3)
+        // Untracked files have all lines in addedRanges
+        XCTAssertEqual(result.addedRanges.count, 1)
+        XCTAssertEqual(result.addedRanges.first, 1...3)
+        XCTAssertTrue(result.modifiedRanges.isEmpty)
     }
 
     func testMixedAddAndDelete() async throws {
@@ -143,9 +144,8 @@ final class GitDiffParserIntegrationTests: XCTestCase {
 
         let result = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: repoURL)
 
-        XCTAssertFalse(result.isUntracked)
         // Should have added lines and deleted anchors
-        XCTAssertFalse(result.changedRanges.isEmpty)
+        XCTAssertFalse(result.addedRanges.isEmpty)
         XCTAssertFalse(result.deletedAnchors.isEmpty)
     }
 
@@ -164,8 +164,7 @@ final class GitDiffParserIntegrationTests: XCTestCase {
 
         let result = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: repoURL)
 
-        XCTAssertFalse(result.isUntracked)
-        XCTAssertTrue(result.changedRanges.contains(1...1))
+        XCTAssertTrue(result.modifiedRanges.contains(1...1))
     }
 
     func testNewRepoNoCommits() async throws {
@@ -181,8 +180,7 @@ final class GitDiffParserIntegrationTests: XCTestCase {
         let result = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: repoURL)
 
         // Should treat as untracked since there's no HEAD
-        XCTAssertTrue(result.isUntracked)
-        XCTAssertEqual(result.changedRanges.first, 1...2)
+        XCTAssertEqual(result.addedRanges.first, 1...2)
     }
 
     func testStagedButNotCommitted() async throws {
@@ -207,10 +205,10 @@ final class GitDiffParserIntegrationTests: XCTestCase {
         try process.run()
         process.waitUntilExit()
 
-        // File is staged but not committed - should be considered untracked vs HEAD
+        // File is staged but not committed - should be considered added vs HEAD
         let result = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: repoURL)
 
         // git diff HEAD shows the file as added
-        XCTAssertEqual(result.changedRanges.first, 1...2)
+        XCTAssertEqual(result.addedRanges.first, 1...2)
     }
 }

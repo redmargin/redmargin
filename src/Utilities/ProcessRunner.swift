@@ -48,28 +48,27 @@ enum ProcessRunner {
         process.standardError = stderrPipe
 
         return try await withCheckedThrowingContinuation { continuation in
+            process.terminationHandler = { terminatedProcess in
+                let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+
+                let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+                let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+
+                let result = ProcessResult(
+                    stdout: stdout,
+                    stderr: stderr,
+                    exitCode: terminatedProcess.terminationStatus
+                )
+
+                continuation.resume(returning: result)
+            }
+
             do {
                 try process.run()
             } catch {
                 continuation.resume(throwing: ProcessRunnerError.launchFailed(error))
-                return
             }
-
-            process.waitUntilExit()
-
-            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-
-            let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
-            let stderr = String(data: stderrData, encoding: .utf8) ?? ""
-
-            let result = ProcessResult(
-                stdout: stdout,
-                stderr: stderr,
-                exitCode: process.terminationStatus
-            )
-
-            continuation.resume(returning: result)
         }
     }
 }

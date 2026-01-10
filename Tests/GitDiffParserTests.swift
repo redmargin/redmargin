@@ -126,27 +126,30 @@ final class GitDiffParserTests: XCTestCase {
         let content = try FixtureLoader.load("diff-samples/addition.diff")
         let result = GitDiffParser.parseDiffOutput(content)
 
-        XCTAssertEqual(result.changedRanges.count, 1)
-        XCTAssertEqual(result.changedRanges.first, 1...3)
+        // Pure addition: oldCount=0, newCount>0 -> addedRanges
+        XCTAssertEqual(result.addedRanges.count, 1)
+        XCTAssertEqual(result.addedRanges.first, 1...3)
+        XCTAssertTrue(result.modifiedRanges.isEmpty)
         XCTAssertTrue(result.deletedAnchors.isEmpty)
-        XCTAssertFalse(result.isUntracked)
     }
 
     func testParseDiffOutputDeletion() throws {
         let content = try FixtureLoader.load("diff-samples/deletion.diff")
         let result = GitDiffParser.parseDiffOutput(content)
 
-        XCTAssertTrue(result.changedRanges.isEmpty)
+        XCTAssertTrue(result.addedRanges.isEmpty)
+        XCTAssertTrue(result.modifiedRanges.isEmpty)
         XCTAssertEqual(result.deletedAnchors, [4])
-        XCTAssertFalse(result.isUntracked)
     }
 
     func testParseDiffOutputModification() throws {
         let content = try FixtureLoader.load("diff-samples/modification.diff")
         let result = GitDiffParser.parseDiffOutput(content)
 
-        XCTAssertEqual(result.changedRanges.count, 1)
-        XCTAssertEqual(result.changedRanges.first, 10...11)
+        // Modification: oldCount>0, newCount>0 -> modifiedRanges
+        XCTAssertTrue(result.addedRanges.isEmpty)
+        XCTAssertEqual(result.modifiedRanges.count, 1)
+        XCTAssertEqual(result.modifiedRanges.first, 10...11)
         XCTAssertTrue(result.deletedAnchors.isEmpty)
     }
 
@@ -155,11 +158,10 @@ final class GitDiffParserTests: XCTestCase {
         let result = GitDiffParser.parseDiffOutput(content)
 
         // 4 hunks: modification at line 3, addition at 10-11, deletion at 22, modification at 29-32
-        XCTAssertEqual(result.changedRanges.count, 3)
-        XCTAssertTrue(result.changedRanges.contains(3...3))
-        XCTAssertTrue(result.changedRanges.contains(10...11))
-        XCTAssertTrue(result.changedRanges.contains(29...32))
-
+        // Modifications go to modifiedRanges, additions go to addedRanges
+        XCTAssertTrue(result.modifiedRanges.contains(3...3))
+        XCTAssertTrue(result.addedRanges.contains(10...11))
+        XCTAssertTrue(result.modifiedRanges.contains(29...32))
         XCTAssertEqual(result.deletedAnchors, [22])
     }
 
@@ -167,7 +169,8 @@ final class GitDiffParserTests: XCTestCase {
         let content = try FixtureLoader.load("diff-samples/empty.diff")
         let result = GitDiffParser.parseDiffOutput(content)
 
-        XCTAssertTrue(result.changedRanges.isEmpty)
+        XCTAssertTrue(result.addedRanges.isEmpty)
+        XCTAssertTrue(result.modifiedRanges.isEmpty)
         XCTAssertTrue(result.deletedAnchors.isEmpty)
     }
 
@@ -177,7 +180,8 @@ final class GitDiffParserTests: XCTestCase {
         // parseDiffOutput just won't find any @@ markers in binary diff
         let result = GitDiffParser.parseDiffOutput(content)
 
-        XCTAssertTrue(result.changedRanges.isEmpty)
+        XCTAssertTrue(result.addedRanges.isEmpty)
+        XCTAssertTrue(result.modifiedRanges.isEmpty)
         XCTAssertTrue(result.deletedAnchors.isEmpty)
     }
 
@@ -186,32 +190,31 @@ final class GitDiffParserTests: XCTestCase {
     func testGitChangeResultEmpty() {
         let result = GitChangeResult.empty
 
-        XCTAssertTrue(result.changedRanges.isEmpty)
+        XCTAssertTrue(result.addedRanges.isEmpty)
+        XCTAssertTrue(result.modifiedRanges.isEmpty)
         XCTAssertTrue(result.deletedAnchors.isEmpty)
-        XCTAssertFalse(result.isUntracked)
     }
 
     func testGitChangeResultUntracked() {
         let result = GitChangeResult.untracked(lineCount: 10)
 
-        XCTAssertEqual(result.changedRanges.count, 1)
-        XCTAssertEqual(result.changedRanges.first, 1...10)
+        XCTAssertEqual(result.addedRanges.count, 1)
+        XCTAssertEqual(result.addedRanges.first, 1...10)
+        XCTAssertTrue(result.modifiedRanges.isEmpty)
         XCTAssertTrue(result.deletedAnchors.isEmpty)
-        XCTAssertTrue(result.isUntracked)
     }
 
     func testGitChangeResultUntrackedEmptyFile() {
         let result = GitChangeResult.untracked(lineCount: 0)
 
-        XCTAssertTrue(result.changedRanges.isEmpty)
-        XCTAssertTrue(result.isUntracked)
+        XCTAssertTrue(result.addedRanges.isEmpty)
     }
 
     func testGitChangeResultEncodesToJSON() throws {
         let result = GitChangeResult(
-            changedRanges: [1...3, 10...15],
-            deletedAnchors: [5, 20],
-            isUntracked: false
+            addedRanges: [1...3],
+            modifiedRanges: [10...15],
+            deletedAnchors: [5, 20]
         )
 
         let encoder = JSONEncoder()
@@ -219,8 +222,8 @@ final class GitDiffParserTests: XCTestCase {
         let json = String(data: data, encoding: .utf8)!
 
         // Ranges should be encoded as arrays
-        XCTAssertTrue(json.contains("[[1,3],[10,15]]"))
+        XCTAssertTrue(json.contains("\"addedRanges\":[[1,3]]"))
+        XCTAssertTrue(json.contains("\"modifiedRanges\":[[10,15]]"))
         XCTAssertTrue(json.contains("[5,20]"))
-        XCTAssertTrue(json.contains("\"isUntracked\":false"))
     }
 }

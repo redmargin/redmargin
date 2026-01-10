@@ -8,6 +8,7 @@ public struct MarkdownWebView: NSViewRepresentable {
     public var onScrollPositionChange: ((Double) -> Void)?
     public var initialScrollPosition: Double
     public var showLineNumbers: Bool
+    public var gitChanges: GitChangeResult?
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -17,7 +18,8 @@ public struct MarkdownWebView: NSViewRepresentable {
         onCheckboxToggle: ((Int, Bool) -> Void)? = nil,
         onScrollPositionChange: ((Double) -> Void)? = nil,
         initialScrollPosition: Double = 0,
-        showLineNumbers: Bool = true
+        showLineNumbers: Bool = true,
+        gitChanges: GitChangeResult? = nil
     ) {
         self.markdown = markdown
         self.fileURL = fileURL
@@ -25,6 +27,7 @@ public struct MarkdownWebView: NSViewRepresentable {
         self.onScrollPositionChange = onScrollPositionChange
         self.initialScrollPosition = initialScrollPosition
         self.showLineNumbers = showLineNumbers
+        self.gitChanges = gitChanges
     }
 
     public func makeNSView(context: Context) -> WKWebView {
@@ -55,7 +58,11 @@ public struct MarkdownWebView: NSViewRepresentable {
         let theme = colorScheme == .dark ? "dark" : "light"
         let basePath = fileURL?.deletingLastPathComponent().path ?? ""
         let params = RenderParams(
-            markdown: markdown, theme: theme, basePath: basePath, scrollPosition: initialScrollPosition
+            markdown: markdown,
+            theme: theme,
+            basePath: basePath,
+            scrollPosition: initialScrollPosition,
+            gitChanges: gitChanges
         )
 
         if context.coordinator.isLoaded {
@@ -93,13 +100,23 @@ public struct MarkdownWebView: NSViewRepresentable {
     }
 
     static func render(webView: WKWebView, params: RenderParams) {
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "markdown": params.markdown,
             "options": [
                 "theme": params.theme,
                 "basePath": params.basePath
             ]
         ]
+
+        // Add git changes if available
+        if let changes = params.gitChanges,
+           let changesData = try? JSONEncoder().encode(changes),
+           let changesDict = try? JSONSerialization.jsonObject(with: changesData) as? [String: Any] {
+            payload["changes"] = changesDict
+            print("[Gutter] Passing changes to JS: \(changesDict)")
+        } else {
+            print("[Gutter] No changes to pass (gitChanges: \(params.gitChanges != nil ? "present" : "nil"))")
+        }
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
@@ -134,6 +151,7 @@ public struct MarkdownWebView: NSViewRepresentable {
         let theme: String
         let basePath: String
         var scrollPosition: Double = 0
+        var gitChanges: GitChangeResult?
     }
 
     public class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {

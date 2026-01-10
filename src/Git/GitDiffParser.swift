@@ -1,7 +1,7 @@
 import Foundation
 
 /// Parses git diff output to extract changed line ranges
-enum GitDiffParser {
+public enum GitDiffParser {
 
     /// Parses changes for a file compared to HEAD
     /// - Parameters:
@@ -9,7 +9,7 @@ enum GitDiffParser {
     ///   - repoRoot: URL of the git repository root
     /// - Returns: GitChangeResult with changed ranges and deleted anchors
     /// - Throws: GitError for git-related errors
-    static func parseChanges(forFile fileURL: URL, repoRoot: URL) async throws -> GitChangeResult {
+    public static func parseChanges(forFile fileURL: URL, repoRoot: URL) async throws -> GitChangeResult {
         // Compute relative path from repo root
         let relativePath = computeRelativePath(from: repoRoot, to: fileURL)
 
@@ -81,7 +81,8 @@ enum GitDiffParser {
 
     /// Parses diff output into GitChangeResult
     static func parseDiffOutput(_ output: String) -> GitChangeResult {
-        var changedRanges: [ClosedRange<Int>] = []
+        var addedRanges: [ClosedRange<Int>] = []
+        var modifiedRanges: [ClosedRange<Int>] = []
         var deletedAnchors: [Int] = []
 
         let lines = output.components(separatedBy: .newlines)
@@ -91,22 +92,26 @@ enum GitDiffParser {
 
             guard let hunk = DiffHunk.parse(hunkHeader: line) else { continue }
 
-            if hunk.newCount > 0 {
-                // Lines were added or modified
+            if hunk.oldCount == 0 && hunk.newCount > 0 {
+                // Pure addition: new lines inserted (green)
                 let start = hunk.newStart
                 let end = hunk.newStart + hunk.newCount - 1
-                changedRanges.append(start...end)
-            } else if hunk.oldCount > 0 {
-                // Pure deletion: anchor at the line after deletion
-                // newStart points to the line after where content was deleted
+                addedRanges.append(start...end)
+            } else if hunk.oldCount > 0 && hunk.newCount > 0 {
+                // Modification: lines replaced (amber)
+                let start = hunk.newStart
+                let end = hunk.newStart + hunk.newCount - 1
+                modifiedRanges.append(start...end)
+            } else if hunk.oldCount > 0 && hunk.newCount == 0 {
+                // Pure deletion: anchor at the line after deletion (red)
                 deletedAnchors.append(hunk.newStart)
             }
         }
 
         return GitChangeResult(
-            changedRanges: changedRanges,
-            deletedAnchors: deletedAnchors,
-            isUntracked: false
+            addedRanges: addedRanges,
+            modifiedRanges: modifiedRanges,
+            deletedAnchors: deletedAnchors
         )
     }
 
