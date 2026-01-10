@@ -1,0 +1,9 @@
+diff --git a/test.md b/test.md
+index abc1234..def5678 100644
+--- a/test.md
++++ b/test.md
+@@ -10,2 +10,2 @@
+-Old content here
+-More old content
++New content here
++More new content

@@ -1,0 +1,21 @@
+diff --git a/test.md b/test.md
+index abc1234..def5678 100644
+--- a/test.md
++++ b/test.md
+@@ -3 +3 @@
+-Old title
++New title
+@@ -10,0 +10,2 @@
++Added line 1
++Added line 2
+@@ -20,3 +22,0 @@
+-Deleted line 1
+-Deleted line 2
+-Deleted line 3
+@@ -30,2 +29,4 @@
+-Two lines
+-replaced
++Four lines
++now replace
++the original
++two
