@@ -341,7 +341,14 @@ struct DocumentWindowContent: View {
     let onScrollPositionChange: (Double) -> Void
     weak var appDelegate: AppDelegate?
 
-    init(content: String, fileURL: URL, initialScrollPosition: Double = 0, showLineNumbers: Bool = true, appDelegate: AppDelegate? = nil, onScrollPositionChange: @escaping (Double) -> Void = { _ in }) {
+    init(
+        content: String,
+        fileURL: URL,
+        initialScrollPosition: Double = 0,
+        showLineNumbers: Bool = true,
+        appDelegate: AppDelegate? = nil,
+        onScrollPositionChange: @escaping (Double) -> Void = { _ in }
+    ) {
         _content = State(initialValue: content)
         _showLineNumbers = State(initialValue: showLineNumbers)
         self.fileURL = fileURL
@@ -367,7 +374,10 @@ struct DocumentWindowContent: View {
     }
 
     private func handleCheckboxToggle(line: Int, checked: Bool) {
-        var lines = content.components(separatedBy: "\n")
+        // Read current file content (don't use @State content to avoid triggering re-render)
+        guard let fileContent = try? String(contentsOf: fileURL, encoding: .utf8) else { return }
+
+        var lines = fileContent.components(separatedBy: "\n")
         let index = line - 1
 
         guard index >= 0 && index < lines.count else { return }
@@ -376,13 +386,11 @@ struct DocumentWindowContent: View {
         let newLine: String
 
         if checked {
-            // Toggle from unchecked to checked
             newLine = currentLine
                 .replacingOccurrences(of: "- [ ]", with: "- [x]")
                 .replacingOccurrences(of: "* [ ]", with: "* [x]")
                 .replacingOccurrences(of: "+ [ ]", with: "+ [x]")
         } else {
-            // Toggle from checked to unchecked
             newLine = currentLine
                 .replacingOccurrences(of: "- [x]", with: "- [ ]")
                 .replacingOccurrences(of: "- [X]", with: "- [ ]")
@@ -395,11 +403,11 @@ struct DocumentWindowContent: View {
         guard newLine != currentLine else { return }
 
         lines[index] = newLine
-        content = lines.joined(separator: "\n")
+        let newContent = lines.joined(separator: "\n")
 
-        // Save immediately
+        // Save to file only - DOM already updated by JS, no re-render needed
         do {
-            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            try newContent.write(to: fileURL, atomically: true, encoding: .utf8)
         } catch {
             print("Failed to save file: \(error)")
         }

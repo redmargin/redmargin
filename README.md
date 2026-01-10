@@ -1,10 +1,10 @@
-# RedMargin
+# Redmargin
 
 A native macOS Markdown viewer with Git gutter indicators in the rendered view.
 
 ## What It Does
 
-RedMargin renders Markdown beautifully while showing Git change markers (added/modified/deleted lines) in a left gutter - like VS Code or Zed, but for rendered Markdown instead of source code.
+Redmargin renders Markdown beautifully while showing Git change markers (added/modified/deleted lines) in a left gutter - like VS Code or Zed, but for rendered Markdown instead of source code.
 
 ## Features (MVP)
 
