@@ -1,5 +1,9 @@
 import SwiftUI
 
+extension Notification.Name {
+    static let lineNumbersVisibilityChanged = Notification.Name("lineNumbersVisibilityChanged")
+}
+
 @main
 struct RedMarginApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -21,6 +25,16 @@ struct RedMarginApp: App {
                 }
                 Divider()
             }
+
+            CommandGroup(after: .toolbar) {
+                Button(appDelegate.showLineNumbers ? "Hide Line Numbers" : "Show Line Numbers") {
+                    appDelegate.toggleLineNumbers()
+                }
+                .keyboardShortcut("l", modifiers: .command)
+            }
+
+            // Remove default window tabbing menu items
+            CommandGroup(replacing: .windowArrangement) { }
         }
     }
 }
@@ -55,13 +69,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private let recentURLsKey = "RedMargin.RecentDocumentURLs"
     private let windowOrderKey = "RedMargin.WindowOrder"
     private let scrollPositionsKey = "RedMargin.ScrollPositions"
+    private let showLineNumbersKey = "RedMargin.ShowLineNumbers"
     private let maxRecentDocuments = 10
 
     @Published var recentDocuments: [URL] = []
+    @Published var showLineNumbers: Bool = true {
+        didSet {
+            UserDefaults.standard.set(showLineNumbers, forKey: showLineNumbersKey)
+            notifyLineNumbersChanged()
+        }
+    }
 
     override init() {
         super.init()
         recentDocuments = loadRecentDocuments()
+        // Load showLineNumbers (default true if not set)
+        if UserDefaults.standard.object(forKey: showLineNumbersKey) != nil {
+            showLineNumbers = UserDefaults.standard.bool(forKey: showLineNumbersKey)
+        }
+    }
+
+    private func notifyLineNumbersChanged() {
+        NotificationCenter.default.post(
+            name: .lineNumbersVisibilityChanged,
+            object: nil,
+            userInfo: ["visible": showLineNumbers]
+        )
+    }
+
+    @objc func toggleLineNumbers() {
+        showLineNumbers.toggle()
     }
 
     // MARK: - App Lifecycle
@@ -226,6 +263,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             content: content,
             fileURL: url,
             initialScrollPosition: scrollPosition,
+            showLineNumbers: showLineNumbers,
             onScrollPositionChange: { [weak self] position in
                 self?.saveScrollPosition(position, for: url)
             }
@@ -236,6 +274,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let window = NSWindow(contentViewController: hostingController)
         window.title = url.lastPathComponent
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.tabbingMode = .disallowed
         window.minSize = NSSize(width: 500, height: 400)
 
         // Set frame autosave name for persistence
@@ -293,12 +332,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
 struct DocumentWindowContent: View {
     @State private var content: String
+    @State private var showLineNumbers: Bool
     let fileURL: URL
     let initialScrollPosition: Double
     let onScrollPositionChange: (Double) -> Void
 
-    init(content: String, fileURL: URL, initialScrollPosition: Double = 0, onScrollPositionChange: @escaping (Double) -> Void = { _ in }) {
+    init(content: String, fileURL: URL, initialScrollPosition: Double = 0, showLineNumbers: Bool = true, onScrollPositionChange: @escaping (Double) -> Void = { _ in }) {
         _content = State(initialValue: content)
+        _showLineNumbers = State(initialValue: showLineNumbers)
         self.fileURL = fileURL
         self.initialScrollPosition = initialScrollPosition
         self.onScrollPositionChange = onScrollPositionChange
@@ -310,9 +351,15 @@ struct DocumentWindowContent: View {
             fileURL: fileURL,
             onCheckboxToggle: handleCheckboxToggle,
             onScrollPositionChange: onScrollPositionChange,
-            initialScrollPosition: initialScrollPosition
+            initialScrollPosition: initialScrollPosition,
+            showLineNumbers: showLineNumbers
         )
         .frame(minWidth: 500, idealWidth: 750, minHeight: 400, idealHeight: 1000)
+        .onReceive(NotificationCenter.default.publisher(for: .lineNumbersVisibilityChanged)) { notification in
+            if let visible = notification.userInfo?["visible"] as? Bool {
+                showLineNumbers = visible
+            }
+        }
     }
 
     private func handleCheckboxToggle(line: Int, checked: Bool) {
