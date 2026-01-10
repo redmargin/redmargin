@@ -5,3 +5,6 @@ WebRenderer/
 # App bundle - keep structure, exclude binary and signature
 build/RedMargin.app/Contents/MacOS/
 build/RedMargin.app/Contents/_CodeSignature/
+
+# Claude Code local config
+.claude/CLAUDE.local.md
