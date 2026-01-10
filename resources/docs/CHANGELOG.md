@@ -1,5 +1,17 @@
 # Changelog
 
+## 260110 Stage 5: Git Gutter
+- Added: Git gutter markers showing changed/added/deleted lines in WebView
+- Added: SourcePosMap - maps source lines to DOM elements via data-sourcepos
+- Added: Gutter.js - renders colored markers, handles scroll/resize
+- Added: gutter.css with marker styles and theme color variables
+- Added: 17 JS unit tests for sourcepos mapping and overlap logic
+- Changed: GitChangeResult now separates addedRanges, modifiedRanges, deletedAnchors
+- Changed: Cmd-L now hides only line numbers, not the entire gutter
+- Fixed: Scroll position preserved when file changes externally
+- Fixed: ProcessRunner now uses async termination handler (was blocking main thread)
+- Fixed: FileWatcher now handles atomic writes by restarting after rename/delete events
+
 ## 260110 Stage 4: Git Diff Parsing
 - Added: DiffHunk - parses unified diff hunk headers (@@ -old,count +new,count @@)
 - Added: GitChangeResult - struct with changedRanges, deletedAnchors, isUntracked

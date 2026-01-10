@@ -40,6 +40,8 @@ mkdir -p "$RESOURCES_DIR/WebRenderer/src/vendor" "$RESOURCES_DIR/WebRenderer/sty
 cp WebRenderer/src/renderer.html "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/index.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/sourcepos.js "$RESOURCES_DIR/WebRenderer/src/"
+cp WebRenderer/src/sourcepos-map.js "$RESOURCES_DIR/WebRenderer/src/"
+cp WebRenderer/src/gutter.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/checkboxHandler.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/lineNumbers.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/scrollPosition.js "$RESOURCES_DIR/WebRenderer/src/"

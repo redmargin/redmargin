@@ -1,13 +1,13 @@
 import Foundation
 
 /// Detects whether a file is inside a Git repository and finds the repo root
-enum GitRepoDetector {
+public enum GitRepoDetector {
 
     /// Detects the Git repository root for a given file
     /// - Parameter fileURL: URL of the file to check
     /// - Returns: URL of the repository root, or nil if the file is not in a Git repository
     /// - Throws: GitError for unexpected errors (git not found, permission denied, etc.)
-    static func detectRepoRoot(forFile fileURL: URL) async throws -> URL? {
+    public static func detectRepoRoot(forFile fileURL: URL) async throws -> URL? {
         // Get the directory containing the file
         let directory = fileURL.deletingLastPathComponent()
 
