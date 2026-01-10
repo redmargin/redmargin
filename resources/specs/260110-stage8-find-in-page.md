@@ -52,7 +52,7 @@ Note: The WKWebView find API was introduced in iOS 16 / macOS 13. Since we targe
 - Wire up Cmd+F to show find bar
 - Pass search actions to MarkdownWebView
 
-**src/App/RedMarginApp.swift** (modify)
+**AppMain/RedMarginApp.swift** (modify)
 - Add Edit menu with Find submenu (Find, Find Next, Find Previous)
 - Wire menu items to focused document's find functionality
 

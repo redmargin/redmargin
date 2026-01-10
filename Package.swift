@@ -8,13 +8,18 @@ let package = Package(
         .macOS(.v14)
     ],
     targets: [
+        .target(
+            name: "RedmarginLib",
+            path: "src"
+        ),
         .executableTarget(
             name: "Redmargin",
-            path: "src"
+            dependencies: ["RedmarginLib"],
+            path: "AppMain"
         ),
         .testTarget(
             name: "RedmarginTests",
-            dependencies: ["Redmargin"],
+            dependencies: ["RedmarginLib"],
             path: "Tests",
             exclude: ["Fixtures"]
         )

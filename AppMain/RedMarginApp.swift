@@ -1,4 +1,5 @@
 import SwiftUI
+import RedmarginLib
 
 extension Notification.Name {
     static let toggleLineNumbers = Notification.Name("RedMargin.toggleLineNumbers")

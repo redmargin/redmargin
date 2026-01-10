@@ -1,5 +1,14 @@
 # Changelog
 
+## 260110 Stage 3: Git Repo Detection
+- Added: GitRepoDetector - detects if file is in a Git repo and finds repo root
+- Added: ProcessRunner - async wrapper around Process for shell commands
+- Added: GitError enum for Git-related error handling
+- Added: GitTestHelper for creating temp Git repos in tests
+- Added: 8 GitRepoDetector tests (repo root, subdirectory, submodule, worktree, spaces, unicode)
+- Added: 6 ProcessRunner tests (stdout, stderr, exit code, working directory)
+- Changed: Package structure split into RedmarginLib + Redmargin executable for testability
+
 ## 260110 Per-Document Settings & Build Improvements
 - Added: Per-file line numbers toggle (each document remembers its setting)
 - Added: Local image support in markdown files

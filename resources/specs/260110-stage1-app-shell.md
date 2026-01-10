@@ -34,7 +34,7 @@ Use `NSDocumentController` for recent files management - it handles this automat
 
 ### File Changes
 
-**src/App/RedMarginApp.swift** (create)
+**AppMain/RedMarginApp.swift** (create)
 - Main `@main` App struct using SwiftUI
 - Use `DocumentGroup` with a custom `MarkdownDocument` type
 - Configure scene to open `.md` and `.markdown` files
@@ -81,7 +81,7 @@ Use `NSDocumentController` for recent files management - it handles this automat
 
 **Phase 1: Project Setup**
 - [x] Create `Package.swift` with SwiftUI/AppKit dependencies, macOS 14.0+ target
-- [x] Create `src/App/RedMarginApp.swift` with basic `@main` App struct
+- [x] Create `AppMain/RedMarginApp.swift` with basic `@main` App struct
 - [x] Create placeholder `src/Views/DocumentView.swift` showing "RedMargin" text
 - [x] Create `build/RedMargin.app/` bundle with Info.plist and stable bundle ID
 - [x] Create `RedMargin.entitlements` for codesigning
@@ -180,6 +180,6 @@ The original spec used SwiftUI's `DocumentGroup`, but this has a fundamental lim
 
 ### Key Files Changed
 
-- `src/App/RedMarginApp.swift`: Complete rewrite using Settings scene, AppDelegate with state management
+- `AppMain/RedMarginApp.swift`: Complete rewrite using Settings scene, AppDelegate with state management
 - `src/Views/DocumentView.swift`: Now contains `DocumentWindowContent` view used by NSHostingController
 - `src/App/MarkdownDocument.swift`: Retained but less central (used for type definitions)
