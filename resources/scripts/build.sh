@@ -25,8 +25,13 @@ fi
 echo "Building Redmargin..."
 swift build -c release
 
-echo "Updating app bundle..."
+echo "Creating app bundle..."
+rm -rf build/Redmargin.app
+mkdir -p build/Redmargin.app/Contents/MacOS
+mkdir -p build/Redmargin.app/Contents/Resources
 cp .build/arm64-apple-macosx/release/Redmargin build/Redmargin.app/Contents/MacOS/Redmargin
+cp build/Info.plist build/Redmargin.app/Contents/
+cp build/PkgInfo build/Redmargin.app/Contents/
 
 echo "Bundling WebRenderer assets..."
 RESOURCES_DIR="build/Redmargin.app/Contents/Resources"
@@ -64,6 +69,6 @@ touch build/Redmargin.app
 
 echo "Installing to /Applications..."
 rm -rf /Applications/Redmargin.app 2>/dev/null || true
-cp -R build/Redmargin.app /Applications/
+mv build/Redmargin.app /Applications/
 
 echo "Done!"
