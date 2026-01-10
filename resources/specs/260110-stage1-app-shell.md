@@ -137,5 +137,5 @@ Use `macos-ui-automation` MCP to verify UI behavior. Run RedMargin first, then e
 
 ### Manual Verification (cannot automate)
 
-- [ ] **Drag to dock:** Drag a .md file to the dock icon, verify it opens
-- [ ] **Finder Open With:** Right-click a .md file in Finder, Open With > RedMargin works
+- [x] **Drag to dock:** Drag a .md file to the dock icon, verify it opens
+- [x] **Finder Open With:** Right-click a .md file in Finder, Open With > RedMargin works
