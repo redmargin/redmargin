@@ -19,9 +19,11 @@ Embed a WKWebView in the document window. Use markdown-it (JavaScript) to parse 
 - **Rendered view:** Markdown displays as formatted HTML (headings, lists, tables, code blocks, etc.)
 - **Theme switching:** Automatically follows macOS light/dark mode
 - **Tables:** GFM tables render correctly
-- **Task lists:** Checkboxes render (read-only, not interactive)
+- **Task lists:** Checkboxes are interactive - clicking toggles `[ ]` ↔ `[x]` in source, saves file immediately, updates DOM in place (no full re-render)
 - **Code blocks:** Fenced code blocks render with monospace font (syntax highlighting optional for MVP)
 - **Images:** Local relative images display; remote images blocked by default
+- **Line numbers:** Optional gutter showing source line numbers, aligned with rendered content using `data-sourcepos` attributes
+- **App icon:** Uses RedMargin icon pack for app icon
 
 ---
 
@@ -75,8 +77,35 @@ Theme: Inject CSS variables or swap stylesheets based on system appearance. Obse
 - Dark theme styles matching macOS dark mode aesthetics
 - Same structure as light.css with different color values
 
+**WebRenderer/src/checkboxHandler.js** (create)
+- Click handler for task list checkboxes
+- Extracts source line from `data-sourcepos` on parent `<li>` element
+- Calls `webkit.messageHandlers.checkboxToggle.postMessage({ line, checked })`
+- Updates checkbox DOM state immediately (no re-render needed)
+
+**WebRenderer/src/lineNumbers.js** (create)
+- Generates line number elements in gutter based on `data-sourcepos` attributes
+- Aligns line numbers with rendered block elements by matching DOM positions
+- Called after render to populate `#gutter-container`
+
+**src/Views/MarkdownWebView.swift** (modify)
+- Add `WKScriptMessageHandler` for `checkboxToggle` messages
+- Add callback closure `onCheckboxToggle: ((Int, Bool) -> Void)?` to notify parent
+- Register message handler in WKWebView configuration
+
+**src/App/RedMarginApp.swift** (modify)
+- Change `DocumentWindowContent` to use `@State var content` instead of `let content`
+- Pass `onCheckboxToggle` callback to MarkdownWebView
+- Callback toggles checkbox in markdown source string and saves file immediately
+- Store `fileURL` for saving
+
 **resources/scripts/build.sh** (modify)
 - Add step to bundle WebRenderer assets into app bundle Resources/
+
+**Icon Integration**
+- Extract `RedMargin_IconPack.zip` to `resources/`
+- Convert `RedMargin.iconset` to `RedMargin.icns` using `iconutil`
+- Add icon to app bundle via build script or Xcode asset catalog
 
 ### Risks
 
@@ -124,6 +153,33 @@ Theme: Inject CSS variables or swap stylesheets based on system appearance. Obse
 **Phase 6: Build Integration**
 - [x] Update `resources/scripts/build.sh` to copy WebRenderer to bundle
 - [x] Verify built app loads and renders correctly
+
+**Phase 7: Interactive Checkboxes**
+- [x] Create `WebRenderer/src/checkboxHandler.js` with click handler
+- [x] Add `WKScriptMessageHandler` to MarkdownWebView.swift for `checkboxToggle`
+- [x] Update RedMarginApp.swift to use `@State` for content and handle checkbox toggles
+- [x] Implement markdown source modification (toggle `[ ]` ↔ `[x]` on target line)
+- [x] Save file immediately after toggle
+- [x] Test checkbox toggle updates DOM and saves file
+
+**Phase 8: Line Numbers**
+- [x] Create `WebRenderer/src/lineNumbers.js` to generate gutter line numbers
+- [x] Add CSS for line number styling in both themes
+- [x] Call line number generation after render
+- [ ] Test line numbers align with rendered content
+
+**Phase 9: App Icon**
+- [x] Extract icon pack to `resources/`
+- [x] Convert iconset to .icns
+- [x] Update build script to include icon in app bundle
+- [ ] Verify icon appears in Finder and Dock
+
+**Phase 10: Scroll Position Persistence**
+- [x] Create `WebRenderer/src/scrollPosition.js` for scroll tracking
+- [x] Add `WKScriptMessageHandler` for `scrollPosition` messages
+- [x] Save scroll positions to UserDefaults keyed by file path
+- [x] Restore scroll position on document reopen
+- [x] Preserve window z-order on app relaunch
 
 ---
 

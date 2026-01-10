@@ -1,5 +1,12 @@
 # Changelog
 
+## 260110 Interactive Features & Polish
+- Added: Interactive checkboxes - click to toggle task items, saves immediately
+- Added: Line numbers in gutter showing source line mapping
+- Added: App icon from RedMargin icon pack
+- Added: Window z-order preservation on app relaunch
+- Added: Scroll position persistence per document
+
 ## 260110 WebView Renderer & App Shell Refinements
 - Added: WKWebView-based Markdown rendering with markdown-it
 - Added: Sourcepos plugin for line mapping (data-sourcepos attributes)
