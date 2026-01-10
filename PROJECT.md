@@ -110,6 +110,30 @@ xcodebuild test -scheme RedMargin -destination 'platform=macOS' -only-testing:Re
 
 ---
 
+## MCP UI Verification
+
+Use `macos-ui-automation` MCP for UI verification. **Critical rules:**
+
+1. **App does not need to be frontmost.** MCP uses accessibility APIs and can interact with background apps. Marco needs to work while you test.
+2. **Never use osascript that requires the app to be active.** If you must use osascript, ensure it works with background apps.
+3. **Prefer MCP tools over osascript.** Use `find_elements_in_app`, `click_element_by_selector`, `type_text_to_element_by_selector`.
+4. **Open files via command line:** `open -a RedMargin file.md` (doesn't steal focus)
+5. **Quit app via command line:** `osascript -e 'quit app "RedMargin"'` (works in background)
+
+Example workflow:
+```bash
+# Open a file (doesn't steal focus)
+open -a RedMargin /path/to/test.md
+
+# Verify via MCP (works while Marco works)
+# find_elements_in_app("RedMargin", "$..[?(@.role=='window')]")
+
+# Quit when done
+osascript -e 'quit app "RedMargin"'
+```
+
+---
+
 ## Git
 
 - Branch naming: `feature/git-gutter`, `fix/sourcepos-parsing`
