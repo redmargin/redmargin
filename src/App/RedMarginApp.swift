@@ -220,6 +220,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
 
+        // Start in the directory of the active document, if any
+        if let keyWindow = NSApp.keyWindow,
+           let activeURL = documentWindows.first(where: { $0.value === keyWindow })?.key {
+            panel.directoryURL = activeURL.deletingLastPathComponent()
+        }
+
         NSApp.activate(ignoringOtherApps: true)
         if panel.runModal() == .OK, let url = panel.url {
             openDocument(url)
