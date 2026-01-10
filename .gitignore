@@ -1,4 +1,6 @@
 .build/
+.DS_Store
+WebRenderer/
 
 # App bundle - keep structure, exclude binary and signature
 build/RedMargin.app/Contents/MacOS/
