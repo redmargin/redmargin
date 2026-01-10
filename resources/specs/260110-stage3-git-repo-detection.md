@@ -1,7 +1,7 @@
 # Git Repo Detection
 
 ## Meta
-- Status: Draft
+- Status: Complete
 - Branch: feature/git-repo-detection
 - Dependencies: None (can be built in parallel with app-shell)
 
@@ -62,25 +62,25 @@ For worktrees: `--show-toplevel` returns the worktree directory, not the main re
 ### Implementation Plan
 
 **Phase 1: Process Runner Utility**
-- [ ] Create `src/Utilities/ProcessRunner.swift`
-- [ ] Implement async `run()` method using `Process` with pipes for stdout/stderr
-- [ ] Handle process termination and collect output
-- [ ] Write tests for ProcessRunner
+- [x] Create `src/Utilities/ProcessRunner.swift`
+- [x] Implement async `run()` method using `Process` with pipes for stdout/stderr
+- [x] Handle process termination and collect output
+- [x] Write tests for ProcessRunner
 
 **Phase 2: Repo Detection**
-- [ ] Create `src/Git/GitError.swift` with error cases
-- [ ] Create `src/Git/GitRepoDetector.swift`
-- [ ] Implement `detectRepoRoot(forFile:)` using ProcessRunner
-- [ ] Return `nil` for non-repo files (exit code != 0)
-- [ ] Return the parsed path as URL for repo files
+- [x] Create `src/Git/GitError.swift` with error cases
+- [x] Create `src/Git/GitRepoDetector.swift`
+- [x] Implement `detectRepoRoot(forFile:)` using ProcessRunner
+- [x] Return `nil` for non-repo files (exit code != 0)
+- [x] Return the parsed path as URL for repo files
 
 **Phase 3: Edge Case Handling**
-- [ ] Test with file in repo root
-- [ ] Test with file in nested subdirectory
-- [ ] Test with file outside any repo
-- [ ] Test with file in submodule
-- [ ] Test with file in worktree
-- [ ] Handle symlinks (resolve or pass through)
+- [x] Test with file in repo root
+- [x] Test with file in nested subdirectory
+- [x] Test with file outside any repo
+- [x] Test with file in submodule
+- [x] Test with file in worktree
+- [x] Handle symlinks (resolve or pass through)
 
 ---
 
@@ -99,26 +99,26 @@ Tests go in `Tests/GitRepoDetectorTests.swift`. These tests require creating tem
 
 **Tests:**
 
-- [ ] `testDetectsRepoRoot` - Create temp git repo, add a file, call detectRepoRoot, verify it returns the repo root
-- [ ] `testDetectsRepoRootFromSubdirectory` - Create repo with `docs/` subdirectory, detect from `docs/file.md`, verify returns repo root (not docs/)
-- [ ] `testReturnsNilForNonRepoFile` - Create file in temp dir (no git init), verify detectRepoRoot returns nil
-- [ ] `testHandlesSubmodule` - Create repo A with submodule B, detect from file in B, verify returns B's root (not A's)
-- [ ] `testHandlesMissingFile` - Call with path to non-existent file, verify graceful handling (nil or specific error)
-- [ ] `testPathContainsSpaces` - Create repo at path with spaces, verify detection works
-- [ ] `testPathContainsUnicode` - Create repo at path with Unicode chars, verify detection works
+- [x] `testDetectsRepoRoot` - Create temp git repo, add a file, call detectRepoRoot, verify it returns the repo root
+- [x] `testDetectsRepoRootFromSubdirectory` - Create repo with `docs/` subdirectory, detect from `docs/file.md`, verify returns repo root (not docs/)
+- [x] `testReturnsNilForNonRepoFile` - Create file in temp dir (no git init), verify detectRepoRoot returns nil
+- [x] `testHandlesSubmodule` - Create repo A with submodule B, detect from file in B, verify returns B's root (not A's)
+- [x] `testHandlesMissingFile` - Call with path to non-existent file, verify graceful handling (nil or specific error)
+- [x] `testPathContainsSpaces` - Create repo at path with spaces, verify detection works
+- [x] `testPathContainsUnicode` - Create repo at path with Unicode chars, verify detection works
 
 **ProcessRunner tests** in `Tests/ProcessRunnerTests.swift`:
 
-- [ ] `testRunsSimpleCommand` - Run `echo hello`, verify stdout is "hello\n"
-- [ ] `testCapturesStderr` - Run command that writes to stderr, verify it's captured
-- [ ] `testReturnsExitCode` - Run `false` (or command that fails), verify exitCode is non-zero
-- [ ] `testHandlesWorkingDirectory` - Run `pwd` in a specific directory, verify output matches
+- [x] `testRunsSimpleCommand` - Run `echo hello`, verify stdout is "hello\n"
+- [x] `testCapturesStderr` - Run command that writes to stderr, verify it's captured
+- [x] `testReturnsExitCode` - Run `false` (or command that fails), verify exitCode is non-zero
+- [x] `testHandlesWorkingDirectory` - Run `pwd` in a specific directory, verify output matches
 
 ### Test Log
 
 | Date | Result | Notes |
 |------|--------|-------|
-| — | — | No tests run yet |
+| 2026-01-10 | Pass | All 20 tests pass (8 GitRepoDetector, 6 ProcessRunner, 4 AppShell, 2 WebView) |
 
 ### Verification
 

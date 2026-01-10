@@ -54,7 +54,7 @@ When preferences change:
 - Form with sections for Appearance, Git Gutter, Security
 - Pickers and toggles for each setting
 
-**src/App/RedMarginApp.swift** (modify)
+**AppMain/RedMarginApp.swift** (modify)
 - Add `Settings { PreferencesView() }` scene
 - Ensure Cmd+, opens preferences
 

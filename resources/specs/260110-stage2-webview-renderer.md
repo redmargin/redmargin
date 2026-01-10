@@ -93,7 +93,7 @@ Theme: Inject CSS variables or swap stylesheets based on system appearance. Obse
 - Add callback closure `onCheckboxToggle: ((Int, Bool) -> Void)?` to notify parent
 - Register message handler in WKWebView configuration
 
-**src/App/RedMarginApp.swift** (modify)
+**AppMain/RedMarginApp.swift** (modify)
 - Change `DocumentWindowContent` to use `@State var content` instead of `let content`
 - Pass `onCheckboxToggle` callback to MarkdownWebView
 - Callback toggles checkbox in markdown source string and saves file immediately

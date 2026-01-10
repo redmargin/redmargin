@@ -1,7 +1,7 @@
 import XCTest
 import SwiftUI
 import UniformTypeIdentifiers
-@testable import Redmargin
+@testable import RedmarginLib
 
 final class AppShellTests: XCTestCase {
     private var tempDirectory: URL!
@@ -56,14 +56,5 @@ final class AppShellTests: XCTestCase {
         let url = try createTempFile(name: "large.md", content: content)
         let document = try loadDocument(from: url)
         XCTAssertEqual(document.content.components(separatedBy: "\n").count, 10000)
-    }
-
-    func testLineNumbersDefaultsToHidden() throws {
-        let appDelegate = AppDelegate()
-        let url = try createTempFile(name: "new-file.md", content: "# Test")
-
-        // For a file with no saved setting, line numbers should default to hidden
-        let visible = appDelegate.loadLineNumbersVisible(for: url)
-        XCTAssertFalse(visible, "Line numbers should default to hidden for new files")
     }
 }

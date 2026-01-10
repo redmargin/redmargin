@@ -1,17 +1,33 @@
 import SwiftUI
 import WebKit
 
-struct MarkdownWebView: NSViewRepresentable {
-    let markdown: String
-    let fileURL: URL?
-    var onCheckboxToggle: ((Int, Bool) -> Void)?
-    var onScrollPositionChange: ((Double) -> Void)?
-    var initialScrollPosition: Double
-    var showLineNumbers: Bool
+public struct MarkdownWebView: NSViewRepresentable {
+    public let markdown: String
+    public let fileURL: URL?
+    public var onCheckboxToggle: ((Int, Bool) -> Void)?
+    public var onScrollPositionChange: ((Double) -> Void)?
+    public var initialScrollPosition: Double
+    public var showLineNumbers: Bool
 
     @Environment(\.colorScheme) private var colorScheme
 
-    func makeNSView(context: Context) -> WKWebView {
+    public init(
+        markdown: String,
+        fileURL: URL?,
+        onCheckboxToggle: ((Int, Bool) -> Void)? = nil,
+        onScrollPositionChange: ((Double) -> Void)? = nil,
+        initialScrollPosition: Double = 0,
+        showLineNumbers: Bool = true
+    ) {
+        self.markdown = markdown
+        self.fileURL = fileURL
+        self.onCheckboxToggle = onCheckboxToggle
+        self.onScrollPositionChange = onScrollPositionChange
+        self.initialScrollPosition = initialScrollPosition
+        self.showLineNumbers = showLineNumbers
+    }
+
+    public func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.preferences.setValue(false, forKey: "allowFileAccessFromFileURLs")
 
@@ -32,7 +48,7 @@ struct MarkdownWebView: NSViewRepresentable {
         return webView
     }
 
-    func updateNSView(_ webView: WKWebView, context: Context) {
+    public func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onCheckboxToggle = onCheckboxToggle
         context.coordinator.onScrollPositionChange = onScrollPositionChange
 
@@ -56,7 +72,7 @@ struct MarkdownWebView: NSViewRepresentable {
         }
     }
 
-    func makeCoordinator() -> Coordinator {
+    public func makeCoordinator() -> Coordinator {
         Coordinator()
     }
 
@@ -120,7 +136,7 @@ struct MarkdownWebView: NSViewRepresentable {
         var scrollPosition: Double = 0
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+    public class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var isLoaded = false
         var pendingRender: RenderParams?
         var pendingLineNumbersVisible: Bool = true
@@ -129,7 +145,7 @@ struct MarkdownWebView: NSViewRepresentable {
         var onScrollPositionChange: ((Double) -> Void)?
         var initialScrollPosition: Double = 0
 
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             isLoaded = true
 
             if let pending = pendingRender {
@@ -142,7 +158,7 @@ struct MarkdownWebView: NSViewRepresentable {
             }
         }
 
-        func userContentController(
+        public func userContentController(
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
