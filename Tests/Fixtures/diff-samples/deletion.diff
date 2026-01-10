@@ -1,0 +1,8 @@
+diff --git a/test.md b/test.md
+index abc1234..def5678 100644
+--- a/test.md
++++ b/test.md
+@@ -5,3 +4,0 @@
+-Old line 1
+-Old line 2
+-Old line 3

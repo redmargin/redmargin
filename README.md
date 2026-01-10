@@ -66,7 +66,7 @@ redmargin/
 
 ## Status
 
-Stage 2 complete - WebView renderer with markdown-it, themes, checkboxes, and line numbers. See `resources/specs/` for design documents.
+Stage 4 complete - Git diff parsing for detecting changed/added/deleted lines. See `resources/specs/` for design documents.
 
 ## License
 
