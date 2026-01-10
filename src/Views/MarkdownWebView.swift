@@ -69,8 +69,9 @@ struct MarkdownWebView: NSViewRepresentable {
             .appendingPathComponent("src")
             .appendingPathComponent("renderer.html")
 
-        let webRendererURL = resourceURL.appendingPathComponent("WebRenderer")
-        webView.loadFileURL(rendererURL, allowingReadAccessTo: webRendererURL)
+        // Allow read access to root so WebView can load both renderer assets and document images
+        let accessURL = URL(fileURLWithPath: "/")
+        webView.loadFileURL(rendererURL, allowingReadAccessTo: accessURL)
     }
 
     static func render(webView: WKWebView, params: RenderParams) {
