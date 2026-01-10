@@ -20,6 +20,7 @@ Create a Preferences window (Cmd+,) with settings stored in UserDefaults. Provid
 - **Theme:** Light / Dark / System (follows macOS appearance)
 - **Gutter for non-repo:** Show empty gutter / Hide gutter entirely
 - **Remote images:** Block (default) / Allow
+- **Inline code color:** Preset palette (warm/cool/rose/purple/neutral)
 - **Changes apply immediately:** No need to restart or re-open files
 
 ---
@@ -38,6 +39,7 @@ When preferences change:
 - `theme`: String enum ("light", "dark", "system")
 - `gutterVisibilityForNonRepo`: String enum ("showEmpty", "hide")
 - `allowRemoteImages`: Bool
+- `inlineCodeColor`: String enum ("warm", "cool", "rose", "purple", "neutral") - default "warm"
 
 ### File Changes
 
@@ -88,7 +90,7 @@ When preferences change:
 
 **Phase 2: Preferences UI**
 - [ ] Create `src/Preferences/PreferencesView.swift`
-- [ ] Add Form with Appearance section (theme picker)
+- [ ] Add Form with Appearance section (theme picker, inline code color picker)
 - [ ] Add Git Gutter section (non-repo behavior)
 - [ ] Add Security section (remote images toggle)
 
@@ -102,10 +104,12 @@ When preferences change:
 - [ ] On theme change: call WebView setTheme method
 - [ ] On gutter preference change: update gutter visibility
 - [ ] On remote images change: re-render with new option
+- [ ] On inline code color change: call WebView setInlineCodeColor method
 
 **Phase 5: WebView JS Support**
 - [ ] Add `window.App.setTheme(theme)` to swap stylesheets
 - [ ] Add logic to block/allow remote images based on option
+- [ ] Add `window.App.setInlineCodeColor(colorName)` to update --code-text CSS variable
 - [ ] Test runtime switching
 
 ---
@@ -116,10 +120,11 @@ When preferences change:
 
 **PreferencesManager tests** in `Tests/PreferencesManagerTests.swift`:
 
-- [ ] `testDefaultValues` - Fresh install has expected defaults (system theme, gutter shown, remote images blocked)
+- [ ] `testDefaultValues` - Fresh install has expected defaults (system theme, gutter shown, remote images blocked, warm code color)
 - [ ] `testThemePersists` - Set theme to dark, create new manager instance, verify still dark
 - [ ] `testRemoteImagesPersists` - Enable remote images, recreate manager, verify still enabled
 - [ ] `testGutterPreferencePersists` - Change gutter setting, recreate manager, verify persisted
+- [ ] `testInlineCodeColorPersists` - Change inline code color, recreate manager, verify persisted
 
 ### Test Log
 
@@ -136,9 +141,12 @@ Use `macos-ui-automation` MCP to verify preferences window. App does not need to
 - [ ] **Theme picker exists:** `find_elements_in_app("RedMargin", "$..[?(@.role=='popUpButton' || @.role=='radioGroup')]")` finds theme selector
 - [ ] **Remote images toggle exists:** `find_elements_in_app("RedMargin", "$..[?(@.role=='checkBox')]")` finds toggle
 - [ ] **Can change theme:** Click theme picker, select "Dark", verify selection changes
+- [ ] **Inline code color picker exists:** Find picker in Appearance section
+- [ ] **Can change inline code color:** Select different preset, verify selection changes
 - [ ] **Window closes:** Close preferences window, verify it's gone from element list
 
 ### Manual Verification (WebView rendering effects)
 
 - [ ] **Theme applies to content:** After changing theme, visually confirm WebView updates
 - [ ] **Remote images blocked/allowed:** Test with remote image URL, visually confirm behavior
+- [ ] **Inline code color applies:** After changing color preset, confirm inline `code` color changes in WebView

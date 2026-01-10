@@ -139,3 +139,47 @@ Use `macos-ui-automation` MCP to verify UI behavior. Run RedMargin first, then e
 
 - [x] **Drag to dock:** Drag a .md file to the dock icon, verify it opens
 - [x] **Finder Open With:** Right-click a .md file in Finder, Open With > RedMargin works
+
+---
+
+## Post-Implementation Changes (2026-01-10)
+
+### Architecture Change: Settings Scene + Manual Window Management
+
+The original spec used SwiftUI's `DocumentGroup`, but this has a fundamental limitation: it always shows an Open panel on launch, which cannot be prevented. To support proper macOS document-app UX (restore previous session, show Open panel only when appropriate), the implementation was refactored:
+
+**Old approach:**
+- `DocumentGroup` with `MarkdownDocument`
+- Automatic window management by SwiftUI
+- NSDocumentController for recents
+
+**New approach:**
+- `Settings` scene only (no WindowGroup/DocumentGroup)
+- Manual `NSWindow` + `NSHostingController` for document windows
+- Custom state persistence in UserDefaults
+- Custom recent documents tracking (NSDocumentController doesn't work without proper document architecture)
+
+### Added Features
+
+**State Restoration:**
+- Open document URLs saved to UserDefaults on quit (`applicationWillTerminate`)
+- Restored on launch (`applicationDidFinishLaunching`)
+- Files that no longer exist are skipped
+
+**Launch Behavior (Preview.app pattern):**
+- First launch (no saved state): Show Open panel
+- Launch via file double-click: Open that file, no dialog
+- Relaunch with saved state: Restore previous documents
+- Dock click with no windows: Show Open panel
+
+**Custom Recents:**
+- `AppDelegate.recentDocuments` as `@Published` array
+- Persisted to UserDefaults
+- File > Open Recent menu observes changes
+- Max 10 recent documents
+
+### Key Files Changed
+
+- `src/App/RedMarginApp.swift`: Complete rewrite using Settings scene, AppDelegate with state management
+- `src/Views/DocumentView.swift`: Now contains `DocumentWindowContent` view used by NSHostingController
+- `src/App/MarkdownDocument.swift`: Retained but less central (used for type definitions)
