@@ -1,7 +1,7 @@
 # WebView Renderer
 
 ## Meta
-- Status: Draft
+- Status: In Progress
 - Branch: feature/webview-renderer
 - Dependencies: 260110-stage1-app-shell.md
 
@@ -90,40 +90,40 @@ Theme: Inject CSS variables or swap stylesheets based on system appearance. Obse
 ### Implementation Plan
 
 **Phase 1: Basic WebView**
-- [ ] Create `WebRenderer/src/renderer.html` with minimal HTML structure
-- [ ] Create `src/Views/MarkdownWebView.swift` as NSViewRepresentable
-- [ ] Load renderer.html from bundle in WKWebView
-- [ ] Verify WebView displays in document window (shows blank page or "Hello")
+- [x] Create `WebRenderer/src/renderer.html` with minimal HTML structure
+- [x] Create `src/Views/MarkdownWebView.swift` as NSViewRepresentable
+- [x] Load renderer.html from bundle in WKWebView
+- [x] Verify WebView displays in document window (shows blank page or "Hello")
 
 **Phase 2: markdown-it Integration**
-- [ ] Download markdown-it library, place in `WebRenderer/src/vendor/`
-- [ ] Create `WebRenderer/src/index.js` with basic markdown-it setup
-- [ ] Configure GFM tables plugin (`markdown-it-gfm-tables` or built-in)
-- [ ] Configure task list plugin
-- [ ] Test rendering simple Markdown in browser (standalone test)
+- [x] Download markdown-it library, place in `WebRenderer/src/vendor/`
+- [x] Create `WebRenderer/src/index.js` with basic markdown-it setup
+- [x] Configure GFM tables plugin (`markdown-it-gfm-tables` or built-in)
+- [x] Configure task list plugin
+- [x] Test rendering simple Markdown in browser (standalone test)
 
 **Phase 3: Sourcepos Plugin**
-- [ ] Create `WebRenderer/src/sourcepos.js` plugin
-- [ ] Hook into markdown-it renderer to add `data-sourcepos` to block elements
-- [ ] Test: render Markdown, inspect DOM, verify sourcepos attributes present and accurate
-- [ ] Create fixture file with known line numbers, verify mapping
+- [x] Create `WebRenderer/src/sourcepos.js` plugin
+- [x] Hook into markdown-it renderer to add `data-sourcepos` to block elements
+- [x] Test: render Markdown, inspect DOM, verify sourcepos attributes present and accurate
+- [x] Create fixture file with known line numbers, verify mapping
 
 **Phase 4: Swift-JS Bridge**
-- [ ] Implement `render(markdown:options:)` in MarkdownWebView
-- [ ] Call `evaluateJavaScript("window.App.render(...)")` with JSON payload
-- [ ] Update DocumentView to call render when document loads
-- [ ] Verify Markdown renders in the app window
+- [x] Implement `render(markdown:options:)` in MarkdownWebView
+- [x] Call `evaluateJavaScript("window.App.render(...)")` with JSON payload
+- [x] Update DocumentView to call render when document loads
+- [x] Verify Markdown renders in the app window
 
 **Phase 5: Theming**
-- [ ] Create `WebRenderer/styles/light.css` with full styling
-- [ ] Create `WebRenderer/styles/dark.css` with dark mode styling
-- [ ] Add appearance observation in MarkdownWebView
-- [ ] Call JS to switch theme on system appearance change
+- [x] Create `WebRenderer/styles/light.css` with full styling
+- [x] Create `WebRenderer/styles/dark.css` with dark mode styling
+- [x] Add appearance observation in MarkdownWebView
+- [x] Call JS to switch theme on system appearance change
 - [ ] Test light/dark mode switching in System Preferences
 
 **Phase 6: Build Integration**
-- [ ] Update `resources/scripts/build.sh` to copy WebRenderer to bundle
-- [ ] Verify built app loads and renders correctly
+- [x] Update `resources/scripts/build.sh` to copy WebRenderer to bundle
+- [x] Verify built app loads and renders correctly
 
 ---
 
@@ -138,20 +138,20 @@ Theme: Inject CSS variables or swap stylesheets based on system appearance. Obse
 
 **JavaScript tests** in `WebRenderer/tests/` (run with Node or browser test runner):
 
-- [ ] `testMarkdownItRendersBasicMarkdown` - Input: `# Hello`, Output contains `<h1>`
-- [ ] `testSourceposOnHeading` - Input: `# Hello`, Output `<h1>` has `data-sourcepos="1:0-1:0"`
-- [ ] `testSourceposOnParagraph` - Input: `Line 1\n\nLine 3`, verify paragraph sourcepos is `3:0-3:0`
-- [ ] `testSourceposOnMultilineBlock` - Input: multiline code block on lines 2-5, verify sourcepos is `2:0-5:0`
-- [ ] `testSourceposOnTable` - Input: GFM table, verify table element has correct sourcepos
-- [ ] `testSourceposOnListItems` - Input: bullet list, verify each `<li>` has sourcepos
-- [ ] `testGFMTableRenders` - Input: GFM table, Output contains `<table>` with correct cells
-- [ ] `testTaskListRenders` - Input: `- [ ] unchecked\n- [x] checked`, Output has checkbox inputs
+- [x] `testMarkdownItRendersBasicMarkdown` - Input: `# Hello`, Output contains `<h1>`
+- [x] `testSourceposOnHeading` - Input: `# Hello`, Output `<h1>` has `data-sourcepos="1:0-1:0"`
+- [x] `testSourceposOnParagraph` - Input: `Line 1\n\nLine 3`, verify paragraph sourcepos is `3:0-3:0`
+- [x] `testSourceposOnMultilineBlock` - Input: multiline code block on lines 2-5, verify sourcepos is `2:0-5:0`
+- [x] `testSourceposOnTable` - Input: GFM table, verify table element has correct sourcepos
+- [x] `testSourceposOnListItems` - Input: bullet list, verify each `<li>` has sourcepos
+- [x] `testGFMTableRenders` - Input: GFM table, Output contains `<table>` with correct cells
+- [x] `testTaskListRenders` - Input: `- [ ] unchecked\n- [x] checked`, Output has checkbox inputs
 
 ### Test Log
 
 | Date | Result | Notes |
 |------|--------|-------|
-| — | — | No tests run yet |
+| 2026-01-10 | PASS | All 10 JS tests pass (sourcepos, tables, task lists) |
 
 ### MCP UI Verification
 
@@ -159,8 +159,8 @@ Use `macos-ui-automation` MCP to verify rendering. Open a test .md file in RedMa
 
 **Note:** WKWebView content is not directly accessible via accessibility APIs. These checks verify the app structure; rendering correctness relies on JS unit tests and visual spot-checks.
 
-- [ ] **WebView present:** `find_elements_in_app("RedMargin", "$..[?(@.role=='webArea' || @.role=='group')]")` finds the WebView container
-- [ ] **Window has content:** `find_elements_in_app("RedMargin", "$..[?(@.role=='window')]")` returns window with non-empty structure
+- [x] **WebView present:** `find_elements_in_app("RedMargin", "$..[?(@.role=='webArea' || @.role=='group')]")` finds the WebView container
+- [x] **Window has content:** `find_elements_in_app("RedMargin", "$..[?(@.role=='window')]")` returns window with non-empty structure
 - [ ] **Theme follows system:** Toggle system appearance via System Preferences, re-query app - no crash, window still present
 
 ### Manual Verification (WebView internals)
