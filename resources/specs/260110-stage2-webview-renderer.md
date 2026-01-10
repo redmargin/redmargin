@@ -1,7 +1,7 @@
 # WebView Renderer
 
 ## Meta
-- Status: In Progress
+- Status: Complete
 - Branch: feature/webview-renderer
 - Dependencies: 260110-stage1-app-shell.md
 
@@ -148,7 +148,7 @@ Theme: Inject CSS variables or swap stylesheets based on system appearance. Obse
 - [x] Create `WebRenderer/styles/dark.css` with dark mode styling
 - [x] Add appearance observation in MarkdownWebView
 - [x] Call JS to switch theme on system appearance change
-- [ ] Test light/dark mode switching in System Preferences
+- [x] Test light/dark mode switching in System Preferences
 
 **Phase 6: Build Integration**
 - [x] Update `resources/scripts/build.sh` to copy WebRenderer to bundle
@@ -219,7 +219,7 @@ Use `macos-ui-automation` MCP to verify rendering. Open a test .md file in RedMa
 
 - [x] **WebView present:** `find_elements_in_app("RedMargin", "$..[?(@.role=='webArea' || @.role=='group')]")` finds the WebView container
 - [x] **Window has content:** `find_elements_in_app("RedMargin", "$..[?(@.role=='window')]")` returns window with non-empty structure
-- [ ] **Theme follows system:** Toggle system appearance via System Preferences, re-query app - no crash, window still present
+- [x] **Theme follows system:** Toggle system appearance via System Preferences, re-query app - no crash, window still present
 
 ### Manual Verification (WebView internals)
 
