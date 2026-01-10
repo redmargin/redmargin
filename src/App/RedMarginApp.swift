@@ -53,6 +53,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     private let savedURLsKey = "RedMargin.OpenDocumentURLs"
     private let recentURLsKey = "RedMargin.RecentDocumentURLs"
+    private let windowOrderKey = "RedMargin.WindowOrder"
+    private let scrollPositionsKey = "RedMargin.ScrollPositions"
     private let maxRecentDocuments = 10
 
     @Published var recentDocuments: [URL] = []
@@ -73,7 +75,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         // Restore previously open documents
         let savedURLs = restoreSavedURLs()
         if !savedURLs.isEmpty {
-            for url in savedURLs {
+            // Get saved z-order (front to back)
+            let orderedPaths = UserDefaults.standard.stringArray(forKey: windowOrderKey) ?? []
+            let orderedURLs = orderedPaths.compactMap { path -> URL? in
+                let url = URL(fileURLWithPath: path)
+                return savedURLs.contains(url) ? url : nil
+            }
+
+            // Add any URLs not in the order list
+            let remainingURLs = savedURLs.filter { !orderedURLs.contains($0) }
+            let allURLsOrdered = orderedURLs + remainingURLs
+
+            // Open in reverse order so the front window is opened last (ends up on top)
+            for url in allURLsOrdered.reversed() {
                 openDocument(url)
             }
         } else {
@@ -86,6 +100,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         // Save currently open document URLs
         let urls = Array(documentWindows.keys)
         saveOpenURLs(urls)
+
+        // Save window z-order (front to back)
+        let orderedURLs = NSApp.orderedWindows
+            .compactMap { window -> URL? in
+                documentWindows.first { $0.value === window }?.key
+            }
+        let paths = orderedURLs.map { $0.path }
+        UserDefaults.standard.set(paths, forKey: windowOrderKey)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -196,8 +218,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             content = "Error loading file: \(error.localizedDescription)"
         }
 
+        // Load saved scroll position
+        let scrollPosition = loadScrollPosition(for: url)
+
         // Create SwiftUI view wrapped in hosting controller
-        let documentView = DocumentWindowContent(content: content, fileURL: url)
+        let documentView = DocumentWindowContent(
+            content: content,
+            fileURL: url,
+            initialScrollPosition: scrollPosition,
+            onScrollPositionChange: { [weak self] position in
+                self?.saveScrollPosition(position, for: url)
+            }
+        )
         let hostingController = NSHostingController(rootView: documentView)
 
         // Create window
@@ -244,14 +276,81 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         guard let window = notification.object as? NSWindow else { return }
         documentWindows = documentWindows.filter { $0.value !== window }
     }
+
+    // MARK: - Scroll Position Persistence
+
+    private func saveScrollPosition(_ position: Double, for url: URL) {
+        var positions = UserDefaults.standard.dictionary(forKey: scrollPositionsKey) as? [String: Double] ?? [:]
+        positions[url.path] = position
+        UserDefaults.standard.set(positions, forKey: scrollPositionsKey)
+    }
+
+    private func loadScrollPosition(for url: URL) -> Double {
+        let positions = UserDefaults.standard.dictionary(forKey: scrollPositionsKey) as? [String: Double] ?? [:]
+        return positions[url.path] ?? 0
+    }
 }
 
 struct DocumentWindowContent: View {
-    let content: String
+    @State private var content: String
     let fileURL: URL
+    let initialScrollPosition: Double
+    let onScrollPositionChange: (Double) -> Void
+
+    init(content: String, fileURL: URL, initialScrollPosition: Double = 0, onScrollPositionChange: @escaping (Double) -> Void = { _ in }) {
+        _content = State(initialValue: content)
+        self.fileURL = fileURL
+        self.initialScrollPosition = initialScrollPosition
+        self.onScrollPositionChange = onScrollPositionChange
+    }
 
     var body: some View {
-        MarkdownWebView(markdown: content, fileURL: fileURL)
-            .frame(minWidth: 500, idealWidth: 750, minHeight: 400, idealHeight: 1000)
+        MarkdownWebView(
+            markdown: content,
+            fileURL: fileURL,
+            onCheckboxToggle: handleCheckboxToggle,
+            onScrollPositionChange: onScrollPositionChange,
+            initialScrollPosition: initialScrollPosition
+        )
+        .frame(minWidth: 500, idealWidth: 750, minHeight: 400, idealHeight: 1000)
+    }
+
+    private func handleCheckboxToggle(line: Int, checked: Bool) {
+        var lines = content.components(separatedBy: "\n")
+        let index = line - 1
+
+        guard index >= 0 && index < lines.count else { return }
+
+        let currentLine = lines[index]
+        let newLine: String
+
+        if checked {
+            // Toggle from unchecked to checked
+            newLine = currentLine
+                .replacingOccurrences(of: "- [ ]", with: "- [x]")
+                .replacingOccurrences(of: "* [ ]", with: "* [x]")
+                .replacingOccurrences(of: "+ [ ]", with: "+ [x]")
+        } else {
+            // Toggle from checked to unchecked
+            newLine = currentLine
+                .replacingOccurrences(of: "- [x]", with: "- [ ]")
+                .replacingOccurrences(of: "- [X]", with: "- [ ]")
+                .replacingOccurrences(of: "* [x]", with: "* [ ]")
+                .replacingOccurrences(of: "* [X]", with: "* [ ]")
+                .replacingOccurrences(of: "+ [x]", with: "+ [ ]")
+                .replacingOccurrences(of: "+ [X]", with: "+ [ ]")
+        }
+
+        guard newLine != currentLine else { return }
+
+        lines[index] = newLine
+        content = lines.joined(separator: "\n")
+
+        // Save immediately
+        do {
+            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        } catch {
+            print("Failed to save file: \(error)")
+        }
     }
 }

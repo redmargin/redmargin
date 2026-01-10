@@ -35,8 +35,16 @@ mkdir -p "$RESOURCES_DIR/WebRenderer/src/vendor" "$RESOURCES_DIR/WebRenderer/sty
 cp WebRenderer/src/renderer.html "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/index.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/sourcepos.js "$RESOURCES_DIR/WebRenderer/src/"
+cp WebRenderer/src/checkboxHandler.js "$RESOURCES_DIR/WebRenderer/src/"
+cp WebRenderer/src/lineNumbers.js "$RESOURCES_DIR/WebRenderer/src/"
+cp WebRenderer/src/scrollPosition.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/vendor/*.js "$RESOURCES_DIR/WebRenderer/src/vendor/"
 cp WebRenderer/styles/*.css "$RESOURCES_DIR/WebRenderer/styles/"
+
+echo "Bundling app icon..."
+cp resources/RedMargin.icns "$RESOURCES_DIR/"
+/usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" "build/RedMargin.app/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string RedMargin" "build/RedMargin.app/Contents/Info.plist"
 
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-RedMargin Dev}"
 CODESIGN_KEYCHAIN="${CODESIGN_KEYCHAIN:-$HOME/Library/Keychains/redmargin-codesign.keychain-db}"
