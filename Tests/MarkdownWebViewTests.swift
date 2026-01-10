@@ -1,6 +1,6 @@
 import XCTest
 import WebKit
-@testable import Redmargin
+@testable import RedmarginLib
 
 final class MarkdownWebViewTests: XCTestCase {
     private var webView: WKWebView!
