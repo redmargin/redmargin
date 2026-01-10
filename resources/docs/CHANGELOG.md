@@ -1,5 +1,18 @@
 # Changelog
 
+## 260110 WebView Renderer & App Shell Refinements
+- Added: WKWebView-based Markdown rendering with markdown-it
+- Added: Sourcepos plugin for line mapping (data-sourcepos attributes)
+- Added: Light/dark CSS themes following system appearance
+- Added: State restoration - open documents saved on quit, restored on relaunch
+- Added: Custom recent documents tracking (File > Open Recent)
+- Changed: Architecture from DocumentGroup to Settings scene + manual NSWindow
+- Changed: Launch behavior now follows Preview.app pattern:
+  - First launch: Show Open panel
+  - Relaunch with saved state: Restore previous documents
+  - Dock click with no windows: Show Open panel
+- Fixed: Window size/position persistence per document
+
 ## 260110 App Shell Implementation
 - Added: SwiftUI document-based app structure (Package.swift, RedMarginApp.swift)
 - Added: MarkdownDocument conforming to FileDocument for .md/.markdown files

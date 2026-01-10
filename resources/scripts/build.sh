@@ -28,6 +28,16 @@ swift build
 echo "Updating app bundle..."
 cp .build/arm64-apple-macosx/debug/RedMargin build/RedMargin.app/Contents/MacOS/RedMargin
 
+echo "Bundling WebRenderer assets..."
+RESOURCES_DIR="build/RedMargin.app/Contents/Resources"
+rm -rf "$RESOURCES_DIR/WebRenderer"
+mkdir -p "$RESOURCES_DIR/WebRenderer/src/vendor" "$RESOURCES_DIR/WebRenderer/styles"
+cp WebRenderer/src/renderer.html "$RESOURCES_DIR/WebRenderer/src/"
+cp WebRenderer/src/index.js "$RESOURCES_DIR/WebRenderer/src/"
+cp WebRenderer/src/sourcepos.js "$RESOURCES_DIR/WebRenderer/src/"
+cp WebRenderer/src/vendor/*.js "$RESOURCES_DIR/WebRenderer/src/vendor/"
+cp WebRenderer/styles/*.css "$RESOURCES_DIR/WebRenderer/styles/"
+
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-RedMargin Dev}"
 CODESIGN_KEYCHAIN="${CODESIGN_KEYCHAIN:-$HOME/Library/Keychains/redmargin-codesign.keychain-db}"
 
@@ -44,12 +54,7 @@ fi
 echo "Touching app bundle to refresh Spotlight..."
 touch build/RedMargin.app
 
-if [ "$1" = "--no-install" ]; then
-    echo "Done! App bundle updated at build/RedMargin.app"
-else
-    echo "Installing to ~/Applications..."
-    mkdir -p ~/Applications
-    rm -rf ~/Applications/RedMargin.app
-    cp -R build/RedMargin.app ~/Applications/RedMargin.app
-    echo "Done! App installed to ~/Applications/RedMargin.app"
-fi
+# Remove stale copy from ~/Applications if it exists
+rm -rf ~/Applications/RedMargin.app 2>/dev/null || true
+
+echo "Done! App at build/RedMargin.app"
