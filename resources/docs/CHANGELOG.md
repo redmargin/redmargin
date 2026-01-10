@@ -1,5 +1,16 @@
 # Changelog
 
+## 260110 Stage 4: Git Diff Parsing
+- Added: DiffHunk - parses unified diff hunk headers (@@ -old,count +new,count @@)
+- Added: GitChangeResult - struct with changedRanges, deletedAnchors, isUntracked
+- Added: GitDiffParser - runs git diff and parses output to line ranges
+- Added: Untracked file detection via git ls-files
+- Added: FixtureLoader helper for loading test fixtures from files
+- Added: 6 diff fixture files (addition, deletion, modification, multiple-hunks, empty, binary)
+- Added: 24 unit tests for DiffHunk parsing and fixture loading
+- Added: 10 integration tests with real git repos
+- Fixed: File watcher now properly updates view when source file changes externally
+
 ## 260110 Stage 3: Git Repo Detection
 - Added: GitRepoDetector - detects if file is in a Git repo and finds repo root
 - Added: ProcessRunner - async wrapper around Process for shell commands

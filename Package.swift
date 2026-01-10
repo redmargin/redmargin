@@ -21,7 +21,7 @@ let package = Package(
             name: "RedmarginTests",
             dependencies: ["RedmarginLib"],
             path: "Tests",
-            exclude: ["Fixtures"]
+            exclude: ["Fixtures", "TEST_LOG.md"]
         )
     ]
 )

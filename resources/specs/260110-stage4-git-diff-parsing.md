@@ -1,7 +1,7 @@
 # Git Diff Parsing
 
 ## Meta
-- Status: Draft
+- Status: Complete
 - Branch: feature/git-diff-parsing
 - Dependencies: 260110-stage3-git-repo-detection.md (uses ProcessRunner and GitError)
 
@@ -78,32 +78,32 @@ struct GitChangeResult {
 ### Implementation Plan
 
 **Phase 1: Hunk Parsing**
-- [ ] Create `src/Git/DiffHunk.swift`
-- [ ] Implement regex or string parsing for `@@ -oldStart,oldCount +newStart,newCount @@`
-- [ ] Handle edge case: count omitted means count=1 (e.g., `@@ -5 +7,3 @@` means oldCount=1)
-- [ ] Write unit tests for hunk parsing
+- [x] Create `src/Git/DiffHunk.swift`
+- [x] Implement regex or string parsing for `@@ -oldStart,oldCount +newStart,newCount @@`
+- [x] Handle edge case: count omitted means count=1 (e.g., `@@ -5 +7,3 @@` means oldCount=1)
+- [x] Write unit tests for hunk parsing
 
 **Phase 2: Diff Execution**
-- [ ] Create `src/Git/GitChangeResult.swift`
-- [ ] Create `src/Git/GitDiffParser.swift`
-- [ ] Implement running `git diff --unified=0 HEAD -- <path>`
-- [ ] Extract relative path from file URL and repo root
+- [x] Create `src/Git/GitChangeResult.swift`
+- [x] Create `src/Git/GitDiffParser.swift`
+- [x] Implement running `git diff --unified=0 HEAD -- <path>`
+- [x] Extract relative path from file URL and repo root
 
 **Phase 3: Output Parsing**
-- [ ] Parse diff output line by line
-- [ ] Find lines starting with `@@` and parse as hunks
-- [ ] Convert hunks to changedRanges and deletedAnchors
-- [ ] Handle empty diff (clean file) -> empty result
+- [x] Parse diff output line by line
+- [x] Find lines starting with `@@` and parse as hunks
+- [x] Convert hunks to changedRanges and deletedAnchors
+- [x] Handle empty diff (clean file) -> empty result
 
 **Phase 4: Untracked File Detection**
-- [ ] Before diffing, run `git ls-files --error-unmatch -- <path>`
-- [ ] If exit code != 0, file is untracked
-- [ ] For untracked: count lines in file, return `changedRanges: [1...lineCount]`
+- [x] Before diffing, run `git ls-files --error-unmatch -- <path>`
+- [x] If exit code != 0, file is untracked
+- [x] For untracked: count lines in file, return `changedRanges: [1...lineCount]`
 
 **Phase 5: Edge Cases**
-- [ ] Test with binary files (should return empty or skip)
-- [ ] Test with file that has no commits yet (new repo)
-- [ ] Test with file added to index but not committed
+- [x] Test with binary files (should return empty or skip)
+- [x] Test with file that has no commits yet (new repo)
+- [x] Test with file added to index but not committed
 
 ---
 
@@ -115,23 +115,23 @@ Tests go in `Tests/GitDiffParserTests.swift`. Use `GitTestHelper` from repo-dete
 
 **DiffHunk parsing tests:**
 
-- [ ] `testParseSimpleHunk` - Input: `@@ -10,5 +12,3 @@`, verify oldStart=10, oldCount=5, newStart=12, newCount=3
-- [ ] `testParseHunkOmittedOldCount` - Input: `@@ -10 +12,3 @@`, verify oldCount=1
-- [ ] `testParseHunkOmittedNewCount` - Input: `@@ -10,5 +12 @@`, verify newCount=1
-- [ ] `testParseHunkBothOmitted` - Input: `@@ -10 +12 @@`, verify both counts=1
-- [ ] `testParseHunkAtStart` - Input: `@@ -0,0 +1,5 @@` (addition at start), verify correctly parsed
-- [ ] `testParseInvalidHunk` - Input: `not a hunk`, verify returns nil
+- [x] `testParseSimpleHunk` - Input: `@@ -10,5 +12,3 @@`, verify oldStart=10, oldCount=5, newStart=12, newCount=3
+- [x] `testParseHunkOmittedOldCount` - Input: `@@ -10 +12,3 @@`, verify oldCount=1
+- [x] `testParseHunkOmittedNewCount` - Input: `@@ -10,5 +12 @@`, verify newCount=1
+- [x] `testParseHunkBothOmitted` - Input: `@@ -10 +12 @@`, verify both counts=1
+- [x] `testParseHunkAtStart` - Input: `@@ -0,0 +1,5 @@` (addition at start), verify correctly parsed
+- [x] `testParseInvalidHunk` - Input: `not a hunk`, verify returns nil
 
 **Integration tests (require temp git repos):**
 
-- [ ] `testAddedLines` - Create repo, commit file, add new lines at end, verify changedRanges includes those lines
-- [ ] `testModifiedLines` - Create repo, commit file, change a line, verify changedRanges includes that line
-- [ ] `testDeletedLines` - Create repo, commit file with 10 lines, delete lines 5-7, verify deletedAnchors contains anchor point
-- [ ] `testMultipleHunks` - Make changes in multiple places, verify all hunks captured
-- [ ] `testCleanFile` - File with no changes, verify empty changedRanges and deletedAnchors
-- [ ] `testUntrackedFile` - File not in git, verify isUntracked=true and all lines in changedRanges
-- [ ] `testMixedAddAndDelete` - Add some lines, delete others, verify both changedRanges and deletedAnchors populated
-- [ ] `testFileInSubdirectory` - File in `docs/`, verify relative path computed correctly
+- [x] `testAddedLines` - Create repo, commit file, add new lines at end, verify changedRanges includes those lines
+- [x] `testModifiedLines` - Create repo, commit file, change a line, verify changedRanges includes that line
+- [x] `testDeletedLines` - Create repo, commit file with 10 lines, delete lines 5-7, verify deletedAnchors contains anchor point
+- [x] `testMultipleHunks` - Make changes in multiple places, verify all hunks captured
+- [x] `testCleanFile` - File with no changes, verify empty changedRanges and deletedAnchors
+- [x] `testUntrackedFile` - File not in git, verify isUntracked=true and all lines in changedRanges
+- [x] `testMixedAddAndDelete` - Add some lines, delete others, verify both changedRanges and deletedAnchors populated
+- [x] `testFileInSubdirectory` - File in `docs/`, verify relative path computed correctly
 
 ### Test Fixtures
 
@@ -147,7 +147,7 @@ Create `Tests/Fixtures/diff-samples/` with sample diff outputs for unit testing 
 
 | Date | Result | Notes |
 |------|--------|-------|
-| — | — | No tests run yet |
+| 2026-01-10 | PASS | All 54 tests pass (24 unit + 10 integration for GitDiffParser) |
 
 ### Verification
 
