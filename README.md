@@ -10,6 +10,7 @@ A native macOS Markdown viewer with live rendering.
 - **Live Markdown rendering** - View Markdown files as beautifully formatted HTML
 - **Find in page** - Search text with match count and navigation (Cmd+F)
 - **Interactive checkboxes** - Click to toggle task list items, saves immediately
+- **Preferences** - Theme (light/dark/system), inline code colors, gutter visibility, remote images
 - **Light/dark themes** - Follows system appearance automatically
 - **Line numbers** - Optional source line numbers aligned with rendered content
 - **Local images** - Relative image paths work correctly
@@ -45,6 +46,7 @@ The build script will:
 | Action | Shortcut |
 |--------|----------|
 | Open File | Cmd-O |
+| Preferences | Cmd-, |
 | Refresh | Cmd-R |
 | Toggle Line Numbers | Cmd-L |
 | Find | Cmd-F |
@@ -72,7 +74,7 @@ redmargin/
 
 ## Status
 
-Stage 8 complete - Find in page with search bar, match count, and navigation. See `resources/specs/` for design documents.
+Stage 9 complete - Preferences window with theme, inline code color, gutter visibility, and remote images settings. See `resources/specs/` for design documents.
 
 ## License
 

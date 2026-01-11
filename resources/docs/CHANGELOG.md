@@ -1,5 +1,17 @@
 # Changelog
 
+## 260111 Stage 9: Preferences
+- Added: Preferences window (Cmd+,) with theme, inline code color, gutter, and remote images settings
+- Added: PreferencesManager singleton with UserDefaults persistence
+- Added: PreferencesView SwiftUI form with pickers and toggles
+- Added: Theme selection: System (follows macOS), Light, Dark
+- Added: Inline code color presets: Warm, Cool, Rose, Purple, Neutral
+- Added: Gutter visibility option for non-repository files: Show empty / Hide
+- Added: Remote images toggle (blocked by default for security)
+- Added: 5 unit tests for PreferencesManager persistence
+- Changed: WebView now receives theme and preferences from DocumentWindowContent
+- Changed: JS renderer supports runtime theme and inline code color switching
+
 ## 260111 Stage 10: Print Support (Spec)
 - Added: Print support spec with configurable gutter, line numbers, header/footer
 - Changed: Security & Sandbox moved from Stage 10 to Stage 11
