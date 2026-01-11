@@ -1,5 +1,35 @@
 # Changelog
 
+## 260111 Git Gutter Stability Fixes
+- Fixed: Git change detection race condition - cancels stale async tasks
+- Fixed: Scroll position preserved when toggling line numbers
+- Fixed: File watcher race condition on atomic saves (close fd before reopening)
+- Fixed: Git index watcher no longer loops on .attrib events (writeOnly mode)
+- Fixed: RAF stale closure issue in JS gutter updates
+- Added: 4 JS unit tests for gutter markers
+- Added: 3 Swift unit tests for gutter integration
+- Changed: DocumentWindowContent uses @StateObject for stable state
+
+## 260111 Line Numbers & WebRenderer
+- Added: WebRenderer source files now version controlled (was in .gitignore)
+- Added: Line numbers show ALL source lines including blank lines via gap interpolation
+- Added: 6 JS tests for line number gap-filling and offset alignment
+- Added: /run-tests command for project-specific test workflow
+- Changed: WKWebView uses non-persistent storage (fixes JS caching between sessions)
+- Fixed: Line number vertical alignment - 3px offset for text, 8px extra for table rows
+
+## 260110 Stage 5: Git Gutter
+- Added: Git gutter markers showing changed/added/deleted lines in WebView
+- Added: SourcePosMap - maps source lines to DOM elements via data-sourcepos
+- Added: Gutter.js - renders colored markers, handles scroll/resize
+- Added: gutter.css with marker styles and theme color variables
+- Added: 17 JS unit tests for sourcepos mapping and overlap logic
+- Changed: GitChangeResult now separates addedRanges, modifiedRanges, deletedAnchors
+- Changed: Cmd-L now hides only line numbers, not the entire gutter
+- Fixed: Scroll position preserved when file changes externally
+- Fixed: ProcessRunner now uses async termination handler (was blocking main thread)
+- Fixed: FileWatcher now handles atomic writes by restarting after rename/delete events
+
 ## 260110 Stage 4: Git Diff Parsing
 - Added: DiffHunk - parses unified diff hunk headers (@@ -old,count +new,count @@)
 - Added: GitChangeResult - struct with changedRanges, deletedAnchors, isUntracked

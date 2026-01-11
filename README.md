@@ -6,6 +6,7 @@ A native macOS Markdown viewer with live rendering.
 
 ## Features
 
+- **Git gutter** - Shows changed/added/deleted lines compared to HEAD
 - **Live Markdown rendering** - View Markdown files as beautifully formatted HTML
 - **Interactive checkboxes** - Click to toggle task list items, saves immediately
 - **Light/dark themes** - Follows system appearance automatically
@@ -43,6 +44,7 @@ The build script will:
 | Action | Shortcut |
 |--------|----------|
 | Open File | Cmd-O |
+| Refresh | Cmd-R |
 | Toggle Line Numbers | Cmd-L |
 
 ## Project Structure
@@ -66,7 +68,7 @@ redmargin/
 
 ## Status
 
-Stage 4 complete - Git diff parsing for detecting changed/added/deleted lines. See `resources/specs/` for design documents.
+Stage 5 complete - Git gutter showing change markers alongside rendered content. See `resources/specs/` for design documents.
 
 ## License
 

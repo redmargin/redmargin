@@ -1,49 +1,104 @@
 import SwiftUI
 import RedmarginLib
+import os.log
+
+private let logger = Logger(subsystem: "com.redmargin.app", category: "DocumentView")
 
 class FileWatcher {
     private var source: DispatchSourceFileSystemObject?
-    private let fileDescriptor: Int32
+    private var fileDescriptor: Int32 = -1
+    private let url: URL
     private let onChange: () -> Void
+    private let eventMask: DispatchSource.FileSystemEvent
 
-    init?(url: URL, onChange: @escaping () -> Void) {
+    init?(url: URL, writeOnly: Bool = false, onChange: @escaping () -> Void) {
+        self.url = url
         self.onChange = onChange
+        // writeOnly excludes .attrib to avoid loops when file is read (atime updates)
+        self.eventMask = writeOnly ? [.write, .rename, .delete] : [.write, .rename, .delete, .attrib]
+        guard startWatching() else {
+            print("[FileWatcher] Failed to start watching: \(url.path)")
+            return nil
+        }
+        print("[FileWatcher] Started watching: \(url.path)")
+    }
+
+    private func startWatching() -> Bool {
         fileDescriptor = open(url.path, O_EVTONLY)
-        guard fileDescriptor >= 0 else { return nil }
+        guard fileDescriptor >= 0 else {
+            print("[FileWatcher] Failed to open: \(url.path)")
+            return false
+        }
 
         source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fileDescriptor,
-            eventMask: [.write, .rename, .delete],
+            eventMask: eventMask,
             queue: .main
         )
 
         source?.setEventHandler { [weak self] in
-            self?.onChange()
-        }
+            guard let self = self else { return }
+            let events = self.source?.data ?? []
+            print("[FileWatcher] Event on \(self.url.lastPathComponent): \(events)")
 
-        source?.setCancelHandler { [weak self] in
-            if let desc = self?.fileDescriptor, desc >= 0 {
-                close(desc)
+            // For rename/delete (atomic writes), restart the watcher
+            if events.contains(.rename) || events.contains(.delete) {
+                self.restartWatching()
+            } else {
+                self.onChange()
             }
         }
 
+        // Don't close fd in cancel handler - we manage it explicitly
+        source?.setCancelHandler { }
+
         source?.resume()
+        return true
+    }
+
+    private func restartWatching() {
+        // Cancel old source and close old fd BEFORE opening new one
+        source?.cancel()
+        if fileDescriptor >= 0 {
+            close(fileDescriptor)
+            fileDescriptor = -1
+        }
+
+        // Delay to let file system settle after atomic write
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self = self else { return }
+            if self.startWatching() {
+                print("[FileWatcher] Restarted watching: \(self.url.path)")
+                self.onChange()
+            } else {
+                print("[FileWatcher] Failed to restart watching: \(self.url.path)")
+            }
+        }
     }
 
     deinit {
         source?.cancel()
+        if fileDescriptor >= 0 {
+            close(fileDescriptor)
+        }
     }
 }
 
 class DocumentState: ObservableObject {
     @Published var content: String
+    @Published var gitChanges: GitChangeResult?
+    @Published var isRefreshing: Bool = false
     let fileURL: URL
     private var fileWatcher: FileWatcher?
+    private var gitIndexWatcher: FileWatcher?
+    private var repoRoot: URL?
+    private var gitChangeTask: Task<Void, Never>?
 
     init(content: String, fileURL: URL) {
         self.content = content
         self.fileURL = fileURL
         setupFileWatcher()
+        detectGitChanges()
     }
 
     private func setupFileWatcher() {
@@ -52,10 +107,104 @@ class DocumentState: ObservableObject {
         }
     }
 
+    private func setupGitIndexWatcher() {
+        guard let root = repoRoot else { return }
+        let indexURL = root.appendingPathComponent(".git/index")
+        // writeOnly: true prevents loop where git diff reads index, triggers atime change
+        gitIndexWatcher = FileWatcher(url: indexURL, writeOnly: true) { [weak self] in
+            self?.detectGitChanges()
+        }
+    }
+
     private func reloadContent() {
-        guard let newContent = try? String(contentsOf: fileURL, encoding: .utf8),
-              newContent != content else { return }
+        print("[DocumentState] reloadContent called for \(fileURL.lastPathComponent)")
+        guard let newContent = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            print("[DocumentState] Failed to read file")
+            return
+        }
+        guard newContent != content else {
+            print("[DocumentState] Content unchanged, skipping update")
+            return
+        }
+        print("[DocumentState] Content changed, updating (\(newContent.count) chars)")
         content = newContent
+        detectGitChanges()
+    }
+
+    func refresh() {
+        isRefreshing = true
+        // Force reload even if content unchanged
+        if let newContent = try? String(contentsOf: fileURL, encoding: .utf8) {
+            content = newContent
+        }
+        detectGitChanges()
+        // Hide spinner after a brief moment
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.isRefreshing = false
+        }
+    }
+
+    private func detectGitChanges() {
+        print("[Gutter] detectGitChanges called for \(fileURL.lastPathComponent)")
+
+        // Cancel any in-flight task to avoid race conditions
+        gitChangeTask?.cancel()
+
+        gitChangeTask = Task { @MainActor in
+            do {
+                // Check for cancellation early
+                guard !Task.isCancelled else {
+                    print("[Gutter] Task cancelled (early)")
+                    return
+                }
+
+                // Detect repo root (cached after first call)
+                if repoRoot == nil {
+                    repoRoot = try await GitRepoDetector.detectRepoRoot(forFile: fileURL)
+                    print("[Gutter] Detected repo root: \(repoRoot?.path ?? "nil")")
+                    setupGitIndexWatcher()
+                }
+
+                guard let root = repoRoot else {
+                    print("[Gutter] No repo root, skipping git changes")
+                    gitChanges = nil
+                    return
+                }
+
+                // Check for cancellation before expensive git operation
+                guard !Task.isCancelled else {
+                    print("[Gutter] Task cancelled (before git)")
+                    return
+                }
+
+                let changes = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: root)
+
+                // Check for cancellation before applying result
+                guard !Task.isCancelled else {
+                    print("[Gutter] Task cancelled (after git)")
+                    return
+                }
+
+                print("[Gutter] Got changes for \(fileURL.lastPathComponent): " +
+                      "\(changes.addedRanges.count) added, \(changes.modifiedRanges.count) modified, " +
+                      "\(changes.deletedAnchors.count) deleted")
+
+                // Only update if changed to avoid redundant SwiftUI updates
+                if gitChanges != changes {
+                    gitChanges = changes
+                } else {
+                    print("[Gutter] Changes unchanged, skipping update")
+                }
+            } catch {
+                // Only set nil if not cancelled
+                guard !Task.isCancelled else {
+                    print("[Gutter] Task cancelled (in catch)")
+                    return
+                }
+                print("[Gutter] Error detecting changes: \(error)")
+                gitChanges = nil
+            }
+        }
     }
 
     func handleCheckboxToggle(line: Int, checked: Bool) {
@@ -98,7 +247,7 @@ class DocumentState: ObservableObject {
 }
 
 struct DocumentWindowContent: View {
-    @ObservedObject var state: DocumentState
+    @StateObject private var state: DocumentState
     @State private var showLineNumbers: Bool
     let initialScrollPosition: Double
     let onScrollPositionChange: (Double) -> Void
@@ -114,7 +263,7 @@ struct DocumentWindowContent: View {
         appDelegate: AppDelegate? = nil,
         onScrollPositionChange: @escaping (Double) -> Void = { _ in }
     ) {
-        self.state = DocumentState(content: content, fileURL: fileURL)
+        _state = StateObject(wrappedValue: DocumentState(content: content, fileURL: fileURL))
         _showLineNumbers = State(initialValue: showLineNumbers)
         self.initialScrollPosition = initialScrollPosition
         self.appDelegate = appDelegate
@@ -122,20 +271,45 @@ struct DocumentWindowContent: View {
     }
 
     var body: some View {
-        MarkdownWebView(
-            markdown: state.content,
-            fileURL: fileURL,
-            onCheckboxToggle: state.handleCheckboxToggle,
-            onScrollPositionChange: onScrollPositionChange,
-            initialScrollPosition: initialScrollPosition,
-            showLineNumbers: showLineNumbers
-        )
+        ZStack {
+            MarkdownWebView(
+                markdown: state.content,
+                fileURL: fileURL,
+                onCheckboxToggle: state.handleCheckboxToggle,
+                onScrollPositionChange: onScrollPositionChange,
+                initialScrollPosition: initialScrollPosition,
+                showLineNumbers: showLineNumbers,
+                gitChanges: state.gitChanges
+            )
+
+            if state.isRefreshing {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .scaleEffect(0.8)
+                            .padding(8)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        Spacer()
+                    }
+                    Spacer()
+                }
+            }
+        }
         .frame(minWidth: 500, idealWidth: 750, minHeight: 400, idealHeight: 1000)
         .onReceive(NotificationCenter.default.publisher(for: .toggleLineNumbers)) { _ in
             if let window = NSApp.keyWindow,
                let hostingController = window.contentViewController as? NSHostingController<DocumentWindowContent>,
                hostingController.rootView.fileURL == fileURL {
                 showLineNumbers.toggle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
+            if let window = NSApp.keyWindow,
+               let hostingController = window.contentViewController as? NSHostingController<DocumentWindowContent>,
+               hostingController.rootView.fileURL == fileURL {
+                state.refresh()
             }
         }
         .onChange(of: showLineNumbers) { _, newValue in

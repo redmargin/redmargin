@@ -8,6 +8,7 @@ public struct MarkdownWebView: NSViewRepresentable {
     public var onScrollPositionChange: ((Double) -> Void)?
     public var initialScrollPosition: Double
     public var showLineNumbers: Bool
+    public var gitChanges: GitChangeResult?
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -17,7 +18,8 @@ public struct MarkdownWebView: NSViewRepresentable {
         onCheckboxToggle: ((Int, Bool) -> Void)? = nil,
         onScrollPositionChange: ((Double) -> Void)? = nil,
         initialScrollPosition: Double = 0,
-        showLineNumbers: Bool = true
+        showLineNumbers: Bool = true,
+        gitChanges: GitChangeResult? = nil
     ) {
         self.markdown = markdown
         self.fileURL = fileURL
@@ -25,11 +27,13 @@ public struct MarkdownWebView: NSViewRepresentable {
         self.onScrollPositionChange = onScrollPositionChange
         self.initialScrollPosition = initialScrollPosition
         self.showLineNumbers = showLineNumbers
+        self.gitChanges = gitChanges
     }
 
     public func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.preferences.setValue(false, forKey: "allowFileAccessFromFileURLs")
+        configuration.websiteDataStore = WKWebsiteDataStore.nonPersistent()
 
         let contentController = configuration.userContentController
         contentController.add(context.coordinator, name: "checkboxToggle")
@@ -55,11 +59,18 @@ public struct MarkdownWebView: NSViewRepresentable {
         let theme = colorScheme == .dark ? "dark" : "light"
         let basePath = fileURL?.deletingLastPathComponent().path ?? ""
         let params = RenderParams(
-            markdown: markdown, theme: theme, basePath: basePath, scrollPosition: initialScrollPosition
+            markdown: markdown,
+            theme: theme,
+            basePath: basePath,
+            scrollPosition: initialScrollPosition,
+            gitChanges: gitChanges
         )
 
         if context.coordinator.isLoaded {
-            Self.render(webView: webView, params: params)
+            // Only restore scroll on first render after load
+            let shouldRestoreScroll = !context.coordinator.hasRestoredInitialScroll
+            Self.render(webView: webView, params: params, restoreScroll: shouldRestoreScroll)
+            context.coordinator.hasRestoredInitialScroll = true
 
             // Update line numbers visibility if changed
             if context.coordinator.lastLineNumbersVisible != showLineNumbers {
@@ -92,14 +103,21 @@ public struct MarkdownWebView: NSViewRepresentable {
         webView.loadFileURL(rendererURL, allowingReadAccessTo: accessURL)
     }
 
-    static func render(webView: WKWebView, params: RenderParams) {
-        let payload: [String: Any] = [
+    static func render(webView: WKWebView, params: RenderParams, restoreScroll: Bool = false) {
+        var payload: [String: Any] = [
             "markdown": params.markdown,
             "options": [
                 "theme": params.theme,
                 "basePath": params.basePath
             ]
         ]
+
+        // Add git changes if available
+        if let changes = params.gitChanges,
+           let changesData = try? JSONEncoder().encode(changes),
+           let changesDict = try? JSONSerialization.jsonObject(with: changesData) as? [String: Any] {
+            payload["changes"] = changesDict
+        }
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
@@ -117,8 +135,9 @@ public struct MarkdownWebView: NSViewRepresentable {
             }
         }
 
-        // Restore scroll position after render
-        if params.scrollPosition > 0 {
+        // Only restore scroll on initial load, not on content updates
+        // (JS handles scroll preservation on content changes)
+        if restoreScroll && params.scrollPosition > 0 {
             let scrollScript = "window.ScrollPosition.restore(\(params.scrollPosition))"
             webView.evaluateJavaScript(scrollScript, completionHandler: nil)
         }
@@ -134,10 +153,12 @@ public struct MarkdownWebView: NSViewRepresentable {
         let theme: String
         let basePath: String
         var scrollPosition: Double = 0
+        var gitChanges: GitChangeResult?
     }
 
     public class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var isLoaded = false
+        var hasRestoredInitialScroll = false
         var pendingRender: RenderParams?
         var pendingLineNumbersVisible: Bool = true
         var lastLineNumbersVisible: Bool = true
@@ -149,7 +170,9 @@ public struct MarkdownWebView: NSViewRepresentable {
             isLoaded = true
 
             if let pending = pendingRender {
-                MarkdownWebView.render(webView: webView, params: pending)
+                // Initial render - restore scroll position
+                MarkdownWebView.render(webView: webView, params: pending, restoreScroll: true)
+                hasRestoredInitialScroll = true
                 pendingRender = nil
 
                 // Apply pending line numbers visibility

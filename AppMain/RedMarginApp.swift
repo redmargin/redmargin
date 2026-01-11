@@ -2,6 +2,7 @@ import SwiftUI
 
 extension Notification.Name {
     static let toggleLineNumbers = Notification.Name("RedMargin.toggleLineNumbers")
+    static let refreshDocument = Notification.Name("RedMargin.refreshDocument")
 }
 
 extension URL {
@@ -37,6 +38,11 @@ struct RedMarginApp: App {
             }
 
             CommandGroup(after: .toolbar) {
+                Button("Refresh") {
+                    NotificationCenter.default.post(name: .refreshDocument, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: .command)
+
                 Button("Toggle Line Numbers") {
                     NotificationCenter.default.post(name: .toggleLineNumbers, object: nil)
                 }
