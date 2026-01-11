@@ -91,6 +91,8 @@ class DocumentState: ObservableObject {
     let fileURL: URL
     private var fileWatcher: FileWatcher?
     private var gitIndexWatcher: FileWatcher?
+    private var gitHeadWatcher: FileWatcher?
+    private var gitBranchRefWatcher: FileWatcher?
     private var repoRoot: URL?
     private var gitChangeTask: Task<Void, Never>?
 
@@ -112,6 +114,44 @@ class DocumentState: ObservableObject {
         let indexURL = root.appendingPathComponent(".git/index")
         // writeOnly: true prevents loop where git diff reads index, triggers atime change
         gitIndexWatcher = FileWatcher(url: indexURL, writeOnly: true) { [weak self] in
+            self?.detectGitChanges()
+        }
+    }
+
+    private func setupGitHeadWatcher() {
+        guard let root = repoRoot else { return }
+        let headURL = root.appendingPathComponent(".git/HEAD")
+        gitHeadWatcher = FileWatcher(url: headURL, writeOnly: true) { [weak self] in
+            print("[GitWatcher] HEAD changed (branch switch)")
+            self?.setupGitBranchRefWatcher() // Re-setup branch watcher for new branch
+            self?.detectGitChanges()
+        }
+    }
+
+    private func setupGitBranchRefWatcher() {
+        guard let root = repoRoot else { return }
+        let headURL = root.appendingPathComponent(".git/HEAD")
+
+        // Parse HEAD to find current branch
+        guard let headContent = try? String(contentsOf: headURL, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines) else {
+            print("[GitWatcher] Could not read HEAD")
+            return
+        }
+
+        // HEAD contains "ref: refs/heads/branchname" or a commit hash (detached)
+        guard headContent.hasPrefix("ref: ") else {
+            print("[GitWatcher] Detached HEAD, not watching branch ref")
+            gitBranchRefWatcher = nil
+            return
+        }
+
+        let refPath = String(headContent.dropFirst(5)) // Remove "ref: "
+        let branchRefURL = root.appendingPathComponent(".git").appendingPathComponent(refPath)
+
+        print("[GitWatcher] Watching branch ref: \(refPath)")
+        gitBranchRefWatcher = FileWatcher(url: branchRefURL, writeOnly: true) { [weak self] in
+            print("[GitWatcher] Branch ref changed (commit)")
             self?.detectGitChanges()
         }
     }
@@ -163,6 +203,8 @@ class DocumentState: ObservableObject {
                     repoRoot = try await GitRepoDetector.detectRepoRoot(forFile: fileURL)
                     print("[Gutter] Detected repo root: \(repoRoot?.path ?? "nil")")
                     setupGitIndexWatcher()
+                    setupGitHeadWatcher()
+                    setupGitBranchRefWatcher()
                 }
 
                 guard let root = repoRoot else {
