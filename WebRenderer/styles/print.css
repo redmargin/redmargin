@@ -1,0 +1,75 @@
+/* Print Styles */
+
+/* Hide gutter when print-hide-gutter class is on body */
+.print-hide-gutter #gutter-container {
+    display: none !important;
+}
+
+/* Hide line numbers when print-hide-line-numbers class is on body */
+.print-hide-line-numbers #line-numbers-container {
+    display: none !important;
+}
+
+/* .print-light-theme class forces light theme variables (defined in light.css) */
+
+/* Print-specific media rules */
+@media print {
+    /* Always hide find bar in print */
+    #find-bar {
+        display: none !important;
+    }
+
+    /* Reset body for print */
+    html, body {
+        background: white !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* Avoid page breaks inside code blocks */
+    pre {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    /* Avoid page breaks inside tables where possible */
+    table {
+        page-break-inside: auto;
+        break-inside: auto;
+    }
+
+    /* Avoid breaking table rows */
+    tr {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    /* Avoid breaking blockquotes */
+    blockquote {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    /* Avoid orphan headings */
+    h1, h2, h3, h4, h5, h6 {
+        page-break-after: avoid;
+        break-after: avoid;
+    }
+
+    /* Keep images with their captions/context */
+    img {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    /* Adjust content container for print */
+    #content-container {
+        max-width: none;
+        padding: 0;
+    }
+
+    /* When gutter is hidden, let content use full width */
+    .print-hide-gutter #content-container {
+        margin-left: 0;
+    }
+}

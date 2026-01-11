@@ -47,7 +47,8 @@ public class PreferencesManager: ObservableObject {
         let themeString = UserDefaults.standard.string(forKey: themeKey) ?? Theme.system.rawValue
         self.theme = Theme(rawValue: themeString) ?? .system
 
-        let gutterString = UserDefaults.standard.string(forKey: gutterVisibilityKey) ?? GutterVisibility.showEmpty.rawValue
+        let defaultGutter = GutterVisibility.showEmpty.rawValue
+        let gutterString = UserDefaults.standard.string(forKey: gutterVisibilityKey) ?? defaultGutter
         self.gutterVisibilityForNonRepo = GutterVisibility(rawValue: gutterString) ?? .showEmpty
 
         self.allowRemoteImages = UserDefaults.standard.object(forKey: allowRemoteImagesKey) as? Bool ?? false
