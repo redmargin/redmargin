@@ -1,9 +1,23 @@
 # Git State Watching
 
 ## Meta
-- Status: Draft
-- Branch: feature/git-watching
+- Status: Partially Complete
+- Branch: main (core functionality implemented during Stage 5)
 - Dependencies: 260110-stage6-file-watching.md, 260110-stage4-git-diff-parsing.md
+
+### Implementation Notes
+
+**Already implemented** in `AppMain/DocumentView.swift`:
+- Git index watching via `setupGitIndexWatcher()` (lines 110-117)
+- Watches `.git/index` for staging/unstaging changes
+- Uses `writeOnly: true` to avoid atime loops when git reads index
+- Triggers `detectGitChanges()` on index change → gutter updates
+
+**Not yet implemented:**
+- HEAD watching (branch switches)
+- Current branch ref watching (commits to current branch)
+- Worktree git directory resolution
+- These may not be needed if index watching covers the main use cases
 
 ---
 
@@ -88,9 +102,9 @@ When any of these change, recompute the diff and update the gutter. Use the same
 - [ ] Start MultiFileWatcher with those paths
 
 **Phase 4: Integration**
-- [ ] Modify DocumentView to create GitStateWatcher after repo detection
-- [ ] On change callback: call GitDiffParser again, update gutter
-- [ ] Combine with file watching (both may trigger re-render)
+- [x] Modify DocumentView to create GitStateWatcher after repo detection *(done: setupGitIndexWatcher)*
+- [x] On change callback: call GitDiffParser again, update gutter *(done: detectGitChanges)*
+- [x] Combine with file watching (both may trigger re-render) *(done: both use same detectGitChanges)*
 
 **Phase 5: Testing Edge Cases**
 - [ ] Test with worktree
@@ -120,14 +134,14 @@ When any of these change, recompute the diff and update the gutter. Use the same
 
 | Date | Result | Notes |
 |------|--------|-------|
-| — | — | No tests run yet |
+| 2026-01-11 | Partial | Index watching works (stage/unstage updates gutter); HEAD/branch watching not yet tested |
 
 ### MCP UI Verification
 
 Use `macos-ui-automation` MCP to verify app survives git operations. Open a modified .md file in RedMargin first.
 
-- [ ] **App survives git add:** Run `git add <file>`, then `find_elements_in_app("RedMargin", "$..[?(@.role=='window')]")` - app responds
-- [ ] **App survives git reset:** Run `git reset <file>`, verify app responds
+- [x] **App survives git add:** Run `git add <file>`, app responds and gutter updates
+- [x] **App survives git reset:** Run `git reset <file>`, app responds and gutter updates
 - [ ] **App survives commit:** Run `git commit`, verify app responds
 - [ ] **App survives branch switch:** Run `git checkout other-branch`, verify app responds
 
@@ -144,5 +158,5 @@ Create `Tests/Scripts/test-git-watching.sh` to automate:
 
 ### Manual Verification (gutter visuals)
 
-- [ ] **Gutter updates on stage:** Visually confirm gutter changes after `git add`
+- [x] **Gutter updates on stage:** Visually confirmed gutter changes after `git add`
 - [ ] **Gutter clears on commit:** Visually confirm gutter clears after commit
