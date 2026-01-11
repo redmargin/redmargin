@@ -1,0 +1,13 @@
+{
+  "name": "redmargin-webrenderer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WebRenderer for RedMargin markdown viewer",
+  "scripts": {
+    "test": "node tests/sourcepos.test.js"
+  },
+  "devDependencies": {
+    "markdown-it": "^14.1.0",
+    "markdown-it-task-lists": "^2.1.1"
+  }
+}

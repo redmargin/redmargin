@@ -1,5 +1,13 @@
 # Changelog
 
+## 260111 Line Numbers & WebRenderer
+- Added: WebRenderer source files now version controlled (was in .gitignore)
+- Added: Line numbers show ALL source lines including blank lines via gap interpolation
+- Added: 6 JS tests for line number gap-filling and offset alignment
+- Added: /run-tests command for project-specific test workflow
+- Changed: WKWebView uses non-persistent storage (fixes JS caching between sessions)
+- Fixed: Line number vertical alignment - 3px offset for text, 8px extra for table rows
+
 ## 260110 Stage 5: Git Gutter
 - Added: Git gutter markers showing changed/added/deleted lines in WebView
 - Added: SourcePosMap - maps source lines to DOM elements via data-sourcepos
