@@ -1,5 +1,11 @@
 # Changelog
 
+## 260111 Stage 7: Git State Watching
+- Added: HEAD watcher detects branch switches and updates gutter
+- Added: Branch ref watcher detects commits and clears gutter for committed lines
+- Added: 5 unit tests for git state watching (GitStateWatcherTests.swift)
+- Changed: Stage 7 spec marked complete with simplified implementation notes
+
 ## 260111 Git Gutter Stability Fixes
 - Fixed: Git change detection race condition - cancels stale async tasks
 - Fixed: Scroll position preserved when toggling line numbers
