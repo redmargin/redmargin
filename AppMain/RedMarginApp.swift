@@ -28,6 +28,7 @@ struct RedMarginApp: App {
         Settings {
             PreferencesView()
         }
+        .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open...") {

@@ -22,8 +22,22 @@
     /* Reset body for print */
     html, body {
         background: white !important;
+        color: #262627 !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
+    }
+
+    /* Force all text to be dark */
+    * {
+        color: #262627 !important;
+    }
+
+    a {
+        color: #2563eb !important;
+    }
+
+    code {
+        color: #b45309 !important;
     }
 
     /* Avoid page breaks inside code blocks */
@@ -65,7 +79,7 @@
     /* Adjust content container for print */
     #content-container {
         max-width: none;
-        padding: 0;
+        padding: 0 0 0 32px;
     }
 
     /* When gutter is hidden, let content use full width */

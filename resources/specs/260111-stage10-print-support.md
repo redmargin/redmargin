@@ -1,8 +1,8 @@
 # Print Support
 
 ## Meta
-- Status: In Progress
-- Branch: feature/print-support
+- Status: Complete
+- Branch: main
 - Dependencies: 260110-stage2-webview-renderer.md, 260110-stage5-git-gutter.md
 
 ---
@@ -13,16 +13,21 @@
 Users want to print rendered Markdown documents for documentation, review meetings, or offline reference. Currently there is no print functionality.
 
 ### Solution
-Add print support (Cmd+P) using `NSPrintOperation` with WKWebView. Provide a configuration sheet with toggles for gutter markers, line numbers, and header/footer. Always use light theme for printing.
+Add print support (Cmd+P) using `NSPrintOperation` with WKWebView. Print settings (gutter, line numbers, margin) are configured in Preferences > Print. Always use light theme for printing.
 
 ### Behaviors
-- **Cmd+P:** Opens print configuration sheet
-- **Print button:** Triggers macOS print dialog with configured options
-- **Cancel button:** Dismisses sheet without printing
-- **Gutter toggle:** Include/exclude Git change markers in print
-- **Line numbers toggle:** Include/exclude line numbers in print
-- **Header/footer toggle:** Include/exclude file path, date, page numbers
+- **Cmd+P:** Opens macOS print dialog directly
+- **Gutter setting:** Include/exclude Git change markers in print (Preferences)
+- **Line numbers setting:** Include/exclude line numbers in print (Preferences)
+- **Margin setting:** Configurable left/right margin in points (Preferences)
 - **Theme:** Always light mode for print (dark wastes ink)
+
+### Descoped Features
+- **Header/footer:** WKWebView's `NSPrintOperation` does not support custom headers/footers. Attempts to inject HTML elements fail because:
+  1. `position: fixed` elements don't repeat on each printed page in WebKit
+  2. `NSPrintInfo` header/footer properties are ignored by WKWebView print operations
+  3. CSS `@page` margin boxes have limited WebKit support
+  This is a fundamental WKWebView limitation with no viable workaround.
 
 ---
 
@@ -34,14 +39,11 @@ WKWebView supports printing via `NSPrintOperation`. Before printing, inject CSS 
 
 Flow:
 1. User presses Cmd+P
-2. Print configuration sheet appears with toggles
-3. User clicks Print
-4. Swift sets CSS classes on WebView body element via JavaScript
-5. Swift creates `NSPrintOperation` from WKWebView
-6. macOS print dialog appears
-7. After print completes/cancels, restore original display state
-
-Header/footer uses `NSPrintInfo` properties (`headerAndFooter`) with custom view or print info dictionary for file path, date, and page numbers.
+2. Swift reads print preferences from PreferencesManager
+3. Swift sets CSS classes on WebView body element via JavaScript
+4. Swift creates `NSPrintOperation` from WKWebView with configured margins
+5. macOS print dialog appears
+6. After print completes/cancels, restore original display state (remove CSS classes)
 
 ### File Changes
 
@@ -51,49 +53,28 @@ Header/footer uses `NSPrintInfo` properties (`headerAndFooter`) with custom view
 - Post notification to active document window
 
 **AppMain/DocumentView.swift** (modify)
-- Add `@State var showPrintSheet: Bool`
-- Add `@State var printConfig: PrintConfiguration`
 - Listen for `.printDocument` notification
-- Present `PrintConfigSheet` when triggered
-- Add `executePrint()` method that configures WebView and triggers print
+- Add `executePrint()` method that:
+  - Reads print settings from PreferencesManager
+  - Adds CSS classes via JavaScript (`print-light-theme`, `print-hide-gutter`, `print-hide-line-numbers`)
+  - Creates NSPrintInfo with A4 paper and configured margins
+  - Runs NSPrintOperation with completion handler to clean up CSS classes
 
-**src/Views/PrintConfigSheet.swift** (create)
-- SwiftUI sheet with three toggles:
-  - `includeGutter: Bool` (default: true)
-  - `includeLineNumbers: Bool` (default: false)
-  - `includeHeaderFooter: Bool` (default: true)
-- Print and Cancel buttons
-- Binding to `PrintConfiguration` struct
-- `onPrint` callback
+**src/Preferences/PreferencesManager.swift** (modify)
+- Add `printMargin: Double` (default: 28 pt)
+- Add `printShowGutter: Bool` (default: true)
+- Add `printShowLineNumbers: Bool` (default: false)
 
-**src/Models/PrintConfiguration.swift** (create)
-- `struct PrintConfiguration` with toggle properties
-- Default values for each option
-
-**src/Views/MarkdownWebView.swift** (modify)
-- Add `static func preparePrint(webView:config:)` method
-  - Calls JavaScript to add print classes to body
-  - Sets `print-hide-gutter`, `print-hide-line-numbers`, `print-light-theme` classes
-- Add `static func restoreFromPrint(webView:)` method
-  - Removes print classes after printing
-
-**src/Printing/PrintManager.swift** (create)
-- `class PrintManager`
-- `static func print(webView:fileURL:config:)` method
-- Creates `NSPrintInfo` with header/footer settings
-- Creates `NSPrintOperation` from webView
-- Configures header: file path (left), date (right)
-- Configures footer: page number (center)
-- Runs print operation
+**src/Preferences/PreferencesView.swift** (modify)
+- Add Print tab with:
+  - Toggle for gutter markers
+  - Toggle for line numbers
+  - Slider for margin (18-72 pt)
 
 **WebRenderer/styles/print.css** (create)
-- `@media print` rules
-- `.print-hide-gutter #git-gutter { display: none; }`
-- `.print-hide-gutter #gutter-container { width: 0; }`
+- `.print-hide-gutter #gutter-container { display: none; }`
 - `.print-hide-line-numbers #line-numbers-container { display: none; }`
-- `.print-light-theme` forces light theme colors
-- Page break rules (avoid breaks inside code blocks, tables)
-- Hide find bar in print
+- `@media print` rules for page breaks, colors, layout
 
 **WebRenderer/styles/light.css** (modify)
 - Add `.print-light-theme` selector alongside `:root` for shared variables
@@ -107,7 +88,6 @@ Header/footer uses `NSPrintInfo` properties (`headerAndFooter`) with custom view
 | Risk | Mitigation |
 |------|------------|
 | Print classes not applied before print starts | Use completion handler on JS evaluation before triggering print |
-| Header/footer styling limited by NSPrintInfo | Test NSPrintInfo capabilities; fall back to simpler format if needed |
 | Gutter positioning breaks in print | Test print layout; may need print-specific gutter CSS adjustments |
 | WKWebView print operation is async | Handle completion/cancellation to restore display state |
 
@@ -121,66 +101,28 @@ Header/footer uses `NSPrintInfo` properties (`headerAndFooter`) with custom view
 - [x] Link print.css in renderer.html
 - [x] Update light.css with `.print-light-theme` selector
 
-**Phase 2: Print Configuration UI**
-- [x] Create `src/Models/PrintConfiguration.swift` struct
-- [x] Create `src/Views/PrintConfigSheet.swift` SwiftUI view
-- [x] Add toggles for gutter, line numbers (header/footer descoped - WKWebView limitation)
-- [x] Add Print and Cancel buttons
-- [x] Style to match system appearance
+**Phase 2: Print Preferences**
+- [x] Add print settings to PreferencesManager (margin, gutter, line numbers)
+- [x] Add Print tab to PreferencesView with controls
 
-**Phase 3: WebView Print Preparation**
-- [x] Add `preparePrint(webView:config:)` to MarkdownWebView
-- [x] Add `restoreFromPrint(webView:)` to MarkdownWebView
-- [x] Implement JavaScript class toggling for print options
-
-**Phase 4: Print Manager**
-- [x] Create `src/Printing/PrintManager.swift`
-- [x] Implement `NSPrintOperation` creation from WKWebView
-- [x] ~~Configure `NSPrintInfo` for header/footer~~ (descoped - WKWebView limitation)
-- [x] Handle print completion callback
-
-**Phase 5: Integration**
+**Phase 3: Print Execution**
 - [x] Add `.printDocument` notification to RedMarginApp.swift
 - [x] Add File > Print menu item with Cmd+P
-- [x] Add print sheet state to DocumentView
-- [x] Wire notification to show print sheet
 - [x] Implement `executePrint()` in DocumentView
-- [ ] Test full print flow
+- [x] Apply CSS classes based on preferences before print
+- [x] Configure NSPrintInfo with A4 paper and margins from preferences
+- [x] Clean up CSS classes after print completes
 
 ---
 
 ## Testing
 
-### Automated Tests
-
-Tests in `Tests/PrintTests.swift`:
-
-- [x] `testPrintConfigurationDefaults` - Verify default config has gutter=true, lineNumbers=false
-- [x] `testPrintConfigurationCustomValues` - Verify custom config values work
-- [x] `testPreparePrintAddsLightThemeClass` - Verify print-light-theme class is added
-- [x] `testPreparePrintHidesGutterWhenConfigured` - Verify print-hide-gutter class when configured
-- [x] `testPreparePrintHidesLineNumbersWhenConfigured` - Verify print-hide-line-numbers class
-- [x] `testRestoreFromPrintRemovesClasses` - Call restore, verify print classes removed
-
-### Test Log
-
-| Date | Result | Notes |
-|------|--------|-------|
-| 2026-01-11 | PASS | 6 tests, 0 failures |
-
 ### Manual Verification
 
-After implementation, manually verify:
-
-- [ ] Cmd+P opens print configuration sheet
-- [ ] Toggle switches work and update state
-- [ ] Cancel dismisses sheet without printing
-- [ ] Print button opens macOS print dialog
-- [ ] Preview shows light theme regardless of app theme
-- [ ] Gutter hidden when toggle off
-- [ ] Line numbers hidden when toggle off (default)
-- [ ] Code blocks don't break across pages
-- [ ] Tables don't break mid-row
-- [ ] Print to PDF produces clean output
-
-Note: Header/footer toggle was descoped due to WKWebView print limitations.
+- [x] Cmd+P opens macOS print dialog
+- [x] Preview shows light theme regardless of app theme
+- [x] Gutter hidden when preference off
+- [x] Line numbers hidden when preference off (default)
+- [x] Margin setting affects print output
+- [x] Code blocks don't break across pages
+- [x] Print to PDF produces clean output
