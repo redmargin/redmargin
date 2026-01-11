@@ -68,6 +68,7 @@ class DocumentState: ObservableObject {
     @Published var isRefreshing: Bool = false
     let fileURL: URL
     private var fileWatcher: FileWatcher?
+    private var gitIndexWatcher: FileWatcher?
     private var repoRoot: URL?
 
     init(content: String, fileURL: URL) {
@@ -80,6 +81,14 @@ class DocumentState: ObservableObject {
     private func setupFileWatcher() {
         fileWatcher = FileWatcher(url: fileURL) { [weak self] in
             self?.reloadContent()
+        }
+    }
+
+    private func setupGitIndexWatcher() {
+        guard let root = repoRoot else { return }
+        let indexURL = root.appendingPathComponent(".git/index")
+        gitIndexWatcher = FileWatcher(url: indexURL) { [weak self] in
+            self?.detectGitChanges()
         }
     }
 
@@ -110,6 +119,7 @@ class DocumentState: ObservableObject {
                 if repoRoot == nil {
                     repoRoot = try await GitRepoDetector.detectRepoRoot(forFile: fileURL)
                     print("[Gutter] Detected repo root: \(repoRoot?.path ?? "nil")")
+                    setupGitIndexWatcher()
                 }
 
                 guard let root = repoRoot else {
@@ -169,7 +179,7 @@ class DocumentState: ObservableObject {
 }
 
 struct DocumentWindowContent: View {
-    @ObservedObject var state: DocumentState
+    @StateObject private var state: DocumentState
     @State private var showLineNumbers: Bool
     let initialScrollPosition: Double
     let onScrollPositionChange: (Double) -> Void
@@ -185,7 +195,7 @@ struct DocumentWindowContent: View {
         appDelegate: AppDelegate? = nil,
         onScrollPositionChange: @escaping (Double) -> Void = { _ in }
     ) {
-        self.state = DocumentState(content: content, fileURL: fileURL)
+        _state = StateObject(wrappedValue: DocumentState(content: content, fileURL: fileURL))
         _showLineNumbers = State(initialValue: showLineNumbers)
         self.initialScrollPosition = initialScrollPosition
         self.appDelegate = appDelegate

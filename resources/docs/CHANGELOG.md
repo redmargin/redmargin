@@ -1,5 +1,11 @@
 # Changelog
 
+## 260111 Fix: StateObject for Stable Document State
+- Fixed: DocumentWindowContent now uses @StateObject instead of @ObservedObject
+- Fixed: Git gutter markers no longer flash/disappear on view recreation
+- Fixed: File watcher and git index watcher persist correctly
+- Added: Git index watcher - auto-refreshes gutter when git index changes
+
 ## 260111 Line Numbers & WebRenderer
 - Added: WebRenderer source files now version controlled (was in .gitignore)
 - Added: Line numbers show ALL source lines including blank lines via gap interpolation
