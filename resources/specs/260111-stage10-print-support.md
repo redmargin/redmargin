@@ -1,7 +1,7 @@
 # Print Support
 
 ## Meta
-- Status: Draft
+- Status: In Progress
 - Branch: feature/print-support
 - Dependencies: 260110-stage2-webview-renderer.md, 260110-stage5-git-gutter.md
 
@@ -114,37 +114,37 @@ Header/footer uses `NSPrintInfo` properties (`headerAndFooter`) with custom view
 ### Implementation Plan
 
 **Phase 1: Print CSS**
-- [ ] Create `WebRenderer/styles/print.css` with `@media print` rules
-- [ ] Add print-hide classes for gutter and line numbers
-- [ ] Add `.print-light-theme` class to force light colors
-- [ ] Add page break rules for code blocks and tables
-- [ ] Link print.css in renderer.html
-- [ ] Update light.css with `.print-light-theme` selector
+- [x] Create `WebRenderer/styles/print.css` with `@media print` rules
+- [x] Add print-hide classes for gutter and line numbers
+- [x] Add `.print-light-theme` class to force light colors
+- [x] Add page break rules for code blocks and tables
+- [x] Link print.css in renderer.html
+- [x] Update light.css with `.print-light-theme` selector
 
 **Phase 2: Print Configuration UI**
-- [ ] Create `src/Models/PrintConfiguration.swift` struct
-- [ ] Create `src/Views/PrintConfigSheet.swift` SwiftUI view
-- [ ] Add toggles for gutter, line numbers, header/footer
-- [ ] Add Print and Cancel buttons
-- [ ] Style to match system appearance
+- [x] Create `src/Models/PrintConfiguration.swift` struct
+- [x] Create `src/Views/PrintConfigSheet.swift` SwiftUI view
+- [x] Add toggles for gutter, line numbers (header/footer descoped - WKWebView limitation)
+- [x] Add Print and Cancel buttons
+- [x] Style to match system appearance
 
 **Phase 3: WebView Print Preparation**
-- [ ] Add `preparePrint(webView:config:)` to MarkdownWebView
-- [ ] Add `restoreFromPrint(webView:)` to MarkdownWebView
-- [ ] Implement JavaScript class toggling for print options
+- [x] Add `preparePrint(webView:config:)` to MarkdownWebView
+- [x] Add `restoreFromPrint(webView:)` to MarkdownWebView
+- [x] Implement JavaScript class toggling for print options
 
 **Phase 4: Print Manager**
-- [ ] Create `src/Printing/PrintManager.swift`
-- [ ] Implement `NSPrintOperation` creation from WKWebView
-- [ ] Configure `NSPrintInfo` for header/footer
-- [ ] Handle print completion callback
+- [x] Create `src/Printing/PrintManager.swift`
+- [x] Implement `NSPrintOperation` creation from WKWebView
+- [x] ~~Configure `NSPrintInfo` for header/footer~~ (descoped - WKWebView limitation)
+- [x] Handle print completion callback
 
 **Phase 5: Integration**
-- [ ] Add `.printDocument` notification to RedMarginApp.swift
-- [ ] Add File > Print menu item with Cmd+P
-- [ ] Add print sheet state to DocumentView
-- [ ] Wire notification to show print sheet
-- [ ] Implement `executePrint()` in DocumentView
+- [x] Add `.printDocument` notification to RedMarginApp.swift
+- [x] Add File > Print menu item with Cmd+P
+- [x] Add print sheet state to DocumentView
+- [x] Wire notification to show print sheet
+- [x] Implement `executePrint()` in DocumentView
 - [ ] Test full print flow
 
 ---
@@ -155,16 +155,18 @@ Header/footer uses `NSPrintInfo` properties (`headerAndFooter`) with custom view
 
 Tests in `Tests/PrintTests.swift`:
 
-- [ ] `testPrintConfigurationDefaults` - Verify default config has gutter=true, lineNumbers=false, headerFooter=true
-- [ ] `testPreparePrintAddsClasses` - Call preparePrint with config, verify body has expected classes via JS query
-- [ ] `testRestoreFromPrintRemovesClasses` - Call restore, verify print classes removed
-- [ ] `testPrintManagerCreatesOperation` - Verify PrintManager returns valid NSPrintOperation
+- [x] `testPrintConfigurationDefaults` - Verify default config has gutter=true, lineNumbers=false
+- [x] `testPrintConfigurationCustomValues` - Verify custom config values work
+- [x] `testPreparePrintAddsLightThemeClass` - Verify print-light-theme class is added
+- [x] `testPreparePrintHidesGutterWhenConfigured` - Verify print-hide-gutter class when configured
+- [x] `testPreparePrintHidesLineNumbersWhenConfigured` - Verify print-hide-line-numbers class
+- [x] `testRestoreFromPrintRemovesClasses` - Call restore, verify print classes removed
 
 ### Test Log
 
 | Date | Result | Notes |
 |------|--------|-------|
-| — | — | No tests run yet |
+| 2026-01-11 | PASS | 6 tests, 0 failures |
 
 ### Manual Verification
 
@@ -176,9 +178,9 @@ After implementation, manually verify:
 - [ ] Print button opens macOS print dialog
 - [ ] Preview shows light theme regardless of app theme
 - [ ] Gutter hidden when toggle off
-- [ ] Line numbers hidden when toggle off
-- [ ] Header shows file path and date
-- [ ] Footer shows page numbers
+- [ ] Line numbers hidden when toggle off (default)
 - [ ] Code blocks don't break across pages
 - [ ] Tables don't break mid-row
 - [ ] Print to PDF produces clean output
+
+Note: Header/footer toggle was descoped due to WKWebView print limitations.

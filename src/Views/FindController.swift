@@ -9,7 +9,7 @@ public class FindController: ObservableObject {
     @Published public var currentMatch: Int = 0
     @Published public var searchText: String = ""
 
-    weak var webView: WKWebView?
+    public weak var webView: WKWebView?
     private var lastSearchText: String = ""
 
     public init() {}
