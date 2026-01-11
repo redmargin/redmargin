@@ -290,7 +290,10 @@ class DocumentState: ObservableObject {
 
 struct DocumentWindowContent: View {
     @StateObject private var state: DocumentState
+    @StateObject private var findController = FindController()
     @State private var showLineNumbers: Bool
+    @State private var showFindBar: Bool = false
+    @State private var findBarFocusTrigger: UUID = UUID()
     let initialScrollPosition: Double
     let onScrollPositionChange: (Double) -> Void
     weak var appDelegate: AppDelegate?
@@ -313,7 +316,7 @@ struct DocumentWindowContent: View {
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             MarkdownWebView(
                 markdown: state.content,
                 fileURL: fileURL,
@@ -321,7 +324,8 @@ struct DocumentWindowContent: View {
                 onScrollPositionChange: onScrollPositionChange,
                 initialScrollPosition: initialScrollPosition,
                 showLineNumbers: showLineNumbers,
-                gitChanges: state.gitChanges
+                gitChanges: state.gitChanges,
+                findController: findController
             )
 
             if state.isRefreshing {
@@ -338,24 +342,65 @@ struct DocumentWindowContent: View {
                     Spacer()
                 }
             }
+
+            if showFindBar {
+                FindBar(
+                    searchText: $findController.searchText,
+                    isVisible: $showFindBar,
+                    matchCount: findController.matchCount,
+                    currentMatch: findController.currentMatch,
+                    focusTrigger: findBarFocusTrigger,
+                    onFindNext: { findController.findNext() },
+                    onFindPrevious: { findController.findPrevious() },
+                    onDismiss: { dismissFindBar() }
+                )
+            }
         }
         .frame(minWidth: 500, idealWidth: 750, minHeight: 400, idealHeight: 1000)
         .onReceive(NotificationCenter.default.publisher(for: .toggleLineNumbers)) { _ in
-            if let window = NSApp.keyWindow,
-               let hostingController = window.contentViewController as? NSHostingController<DocumentWindowContent>,
-               hostingController.rootView.fileURL == fileURL {
+            if isKeyWindow {
                 showLineNumbers.toggle()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
-            if let window = NSApp.keyWindow,
-               let hostingController = window.contentViewController as? NSHostingController<DocumentWindowContent>,
-               hostingController.rootView.fileURL == fileURL {
+            if isKeyWindow {
                 state.refresh()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showFindBar)) { _ in
+            if isKeyWindow {
+                showFindBar = true
+                findBarFocusTrigger = UUID()  // Trigger refocus
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .findNext)) { _ in
+            if isKeyWindow && showFindBar {
+                findController.findNext()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .findPrevious)) { _ in
+            if isKeyWindow && showFindBar {
+                findController.findPrevious()
             }
         }
         .onChange(of: showLineNumbers) { _, newValue in
             appDelegate?.saveLineNumbersVisible(newValue, for: fileURL)
         }
+        .onChange(of: findController.searchText) { _, newValue in
+            findController.find(newValue)
+        }
+    }
+
+    private var isKeyWindow: Bool {
+        guard let window = NSApp.keyWindow,
+              let hostingController = window.contentViewController as? NSHostingController<DocumentWindowContent> else {
+            return false
+        }
+        return hostingController.rootView.fileURL == fileURL
+    }
+
+    private func dismissFindBar() {
+        showFindBar = false
+        findController.clearFind()
     }
 }

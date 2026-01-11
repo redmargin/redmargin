@@ -3,6 +3,9 @@ import SwiftUI
 extension Notification.Name {
     static let toggleLineNumbers = Notification.Name("RedMargin.toggleLineNumbers")
     static let refreshDocument = Notification.Name("RedMargin.refreshDocument")
+    static let showFindBar = Notification.Name("RedMargin.showFindBar")
+    static let findNext = Notification.Name("RedMargin.findNext")
+    static let findPrevious = Notification.Name("RedMargin.findPrevious")
 }
 
 extension URL {
@@ -35,6 +38,42 @@ struct RedMarginApp: App {
                     RecentDocumentsMenu(appDelegate: appDelegate)
                 }
                 Divider()
+            }
+
+            // Remove Undo/Redo - read-only app
+            CommandGroup(replacing: .undoRedo) { }
+
+            // Keep only Copy from pasteboard (remove Cut, Paste)
+            CommandGroup(replacing: .pasteboard) {
+                Button("Copy") {
+                    NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("c", modifiers: .command)
+
+                Divider()
+
+                Button("Select All") {
+                    NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("a", modifiers: .command)
+            }
+
+            // Add Find commands
+            CommandGroup(replacing: .textEditing) {
+                Button("Find...") {
+                    NotificationCenter.default.post(name: .showFindBar, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+
+                Button("Find Next") {
+                    NotificationCenter.default.post(name: .findNext, object: nil)
+                }
+                .keyboardShortcut("g", modifiers: .command)
+
+                Button("Find Previous") {
+                    NotificationCenter.default.post(name: .findPrevious, object: nil)
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
             }
 
             CommandGroup(after: .toolbar) {
