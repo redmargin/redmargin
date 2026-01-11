@@ -1,6 +1,6 @@
 .build/
 .DS_Store
-WebRenderer/
+WebRenderer/node_modules/
 
 # App bundle - keep structure, exclude binary and signature
 build/RedMargin.app/Contents/MacOS/

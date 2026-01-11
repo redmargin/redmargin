@@ -33,6 +33,7 @@ public struct MarkdownWebView: NSViewRepresentable {
     public func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.preferences.setValue(false, forKey: "allowFileAccessFromFileURLs")
+        configuration.websiteDataStore = WKWebsiteDataStore.nonPersistent()
 
         let contentController = configuration.userContentController
         contentController.add(context.coordinator, name: "checkboxToggle")
