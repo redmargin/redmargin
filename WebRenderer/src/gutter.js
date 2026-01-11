@@ -21,12 +21,17 @@
         modifiedRanges = changes.modifiedRanges || [];
         deletedAnchors = changes.deletedAnchors || [];
 
+        console.log('[Gutter] update called:', addedRanges.length, 'added,',
+                    modifiedRanges.length, 'modified,', deletedAnchors.length, 'deleted');
+
         // Build the sourcepos map
         sourceposMap = new window.SourcePosMap();
         sourceposMap.build();
 
         // Cache element references for scroll updates
         cacheElements();
+
+        console.log('[Gutter] cachedElements:', cachedElements.length);
 
         // Render markers
         render();

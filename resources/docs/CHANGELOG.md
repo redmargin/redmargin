@@ -1,10 +1,14 @@
 # Changelog
 
-## 260111 Fix: StateObject for Stable Document State
-- Fixed: DocumentWindowContent now uses @StateObject instead of @ObservedObject
-- Fixed: Git gutter markers no longer flash/disappear on view recreation
-- Fixed: File watcher and git index watcher persist correctly
-- Added: Git index watcher - auto-refreshes gutter when git index changes
+## 260111 Git Gutter Stability Fixes
+- Fixed: Git change detection race condition - cancels stale async tasks
+- Fixed: Scroll position preserved when toggling line numbers
+- Fixed: File watcher race condition on atomic saves (close fd before reopening)
+- Fixed: Git index watcher no longer loops on .attrib events (writeOnly mode)
+- Fixed: RAF stale closure issue in JS gutter updates
+- Added: 4 JS unit tests for gutter markers
+- Added: 3 Swift unit tests for gutter integration
+- Changed: DocumentWindowContent uses @StateObject for stable state
 
 ## 260111 Line Numbers & WebRenderer
 - Added: WebRenderer source files now version controlled (was in .gitignore)

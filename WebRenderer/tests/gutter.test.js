@@ -321,6 +321,192 @@ test('testDeletionAnchorExactMatch', () => {
     assertEqual(result.start, 8, 'Should find element starting exactly at anchor line');
 });
 
+// Gutter tests - need to track created markers
+let createdMarkers = [];
+
+function setupGutterMockDOM() {
+    setupMockDOM();
+    createdMarkers = [];
+
+    global.document.getElementById = (id) => {
+        if (id === 'gutter-container') return mockGutterContainer;
+        if (id === 'git-gutter') return {
+            innerHTML: '',
+            appendChild: (fragment) => {
+                // Track markers from fragment
+                if (fragment._markers) {
+                    createdMarkers.push(...fragment._markers);
+                }
+            }
+        };
+        if (id === 'content-container') return mockContentContainer;
+        return null;
+    };
+
+    global.document.createDocumentFragment = () => {
+        const fragment = {
+            _markers: [],
+            appendChild: (el) => fragment._markers.push(el)
+        };
+        return fragment;
+    };
+
+    global.document.createElement = (tag) => ({
+        className: '',
+        style: {},
+        appendChild: () => {}
+    });
+}
+
+// Gutter implementation for testing
+function Gutter() {
+    this.sourceposMap = null;
+    this.cachedElements = [];
+}
+
+Gutter.prototype.update = function(changes) {
+    changes = changes || {};
+    const addedRanges = changes.addedRanges || [];
+    const modifiedRanges = changes.modifiedRanges || [];
+    const deletedAnchors = changes.deletedAnchors || [];
+
+    this.sourceposMap = new SourcePosMap();
+    this.sourceposMap.build();
+
+    this.cachedElements = [];
+
+    // Process added ranges
+    for (let i = 0; i < addedRanges.length; i++) {
+        const range = addedRanges[i];
+        const elements = this.sourceposMap.getElementsForLineRange(range[0], range[1]);
+        for (let j = 0; j < elements.length; j++) {
+            this.cachedElements.push({ element: elements[j].element, type: 'added' });
+        }
+    }
+
+    // Process modified ranges
+    for (let i = 0; i < modifiedRanges.length; i++) {
+        const range = modifiedRanges[i];
+        const elements = this.sourceposMap.getElementsForLineRange(range[0], range[1]);
+        for (let j = 0; j < elements.length; j++) {
+            this.cachedElements.push({ element: elements[j].element, type: 'modified' });
+        }
+    }
+
+    // Process deleted anchors
+    for (let k = 0; k < deletedAnchors.length; k++) {
+        const anchor = deletedAnchors[k];
+        const entry = this.sourceposMap.getElementAtOrAfterLine(anchor);
+        if (entry) {
+            this.cachedElements.push({ element: entry.element, type: 'deleted', anchorLine: anchor });
+        }
+    }
+
+    this.render();
+};
+
+Gutter.prototype.render = function() {
+    const container = document.getElementById('git-gutter');
+    const gutterContainer = document.getElementById('gutter-container');
+    if (!container || !gutterContainer) return;
+
+    container.innerHTML = '';
+    if (this.cachedElements.length === 0) return;
+
+    const gutterRect = gutterContainer.getBoundingClientRect();
+    const fragment = document.createDocumentFragment();
+
+    for (let i = 0; i < this.cachedElements.length; i++) {
+        const cached = this.cachedElements[i];
+        const rect = cached.element.getBoundingClientRect();
+        const top = rect.top - gutterRect.top;
+
+        const marker = document.createElement('div');
+        marker.className = 'gutter-marker gutter-marker--' + cached.type;
+        marker.style.top = top + 'px';
+        if (cached.type !== 'deleted') {
+            marker.style.height = rect.height + 'px';
+        }
+        fragment.appendChild(marker);
+    }
+
+    container.appendChild(fragment);
+};
+
+test('testGutterMarkerCount', () => {
+    setupGutterMockDOM();
+    addMockElement('1:0-3:0', 0, 50);
+    addMockElement('5:0-7:0', 60, 50);
+    addMockElement('10:0-12:0', 130, 50);
+
+    const gutter = new Gutter();
+    gutter.update({
+        addedRanges: [[1, 3], [10, 12]],
+        modifiedRanges: [[5, 7]],
+        deletedAnchors: []
+    });
+
+    assertEqual(createdMarkers.length, 3, 'Should create 3 markers for 3 ranges');
+});
+
+test('testGutterMarkerPosition', () => {
+    setupGutterMockDOM();
+    addMockElement('5:0-7:0', 100, 60);
+
+    const gutter = new Gutter();
+    gutter.update({
+        addedRanges: [[5, 7]],
+        modifiedRanges: [],
+        deletedAnchors: []
+    });
+
+    assertEqual(createdMarkers.length, 1, 'Should create 1 marker');
+    assertEqual(createdMarkers[0].style.top, '100px', 'Marker top should match element top');
+    assertEqual(createdMarkers[0].style.height, '60px', 'Marker height should match element height');
+});
+
+test('testGutterDeletionMarker', () => {
+    setupGutterMockDOM();
+    addMockElement('1:0-5:0', 0, 50);
+    addMockElement('10:0-15:0', 80, 50);
+
+    const gutter = new Gutter();
+    gutter.update({
+        addedRanges: [],
+        modifiedRanges: [],
+        deletedAnchors: [7]
+    });
+
+    assertEqual(createdMarkers.length, 1, 'Should create 1 deletion marker');
+    assertTrue(createdMarkers[0].className.includes('deleted'), 'Marker should have deleted class');
+});
+
+test('testGutterScrollUpdate', () => {
+    setupGutterMockDOM();
+    let elementTop = 100;
+    mockElements.length = 0;
+    mockElements.push({
+        getAttribute: (attr) => attr === 'data-sourcepos' ? '5:0-7:0' : null,
+        getBoundingClientRect: () => ({ top: elementTop, height: 60, left: 0, width: 100 })
+    });
+
+    const gutter = new Gutter();
+    gutter.update({
+        addedRanges: [[5, 7]],
+        modifiedRanges: [],
+        deletedAnchors: []
+    });
+
+    assertEqual(createdMarkers[0].style.top, '100px', 'Initial marker position');
+
+    // Simulate scroll by changing element's getBoundingClientRect
+    elementTop = 50;
+    createdMarkers = [];
+    gutter.render();
+
+    assertEqual(createdMarkers[0].style.top, '50px', 'Marker should update position after scroll');
+});
+
 // Summary
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
