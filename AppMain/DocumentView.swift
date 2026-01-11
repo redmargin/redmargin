@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 import RedmarginLib
 
 struct DocumentWindowContent: View {
@@ -148,10 +149,69 @@ struct DocumentWindowContent: View {
     }
 
     private func executePrint() {
-        guard let webView = findController.webView else { return }
-        let printOperation = webView.printOperation(with: NSPrintInfo.shared)
-        printOperation.showsPrintPanel = true
-        printOperation.showsProgressPanel = true
-        printOperation.run()
+        guard let webView = findController.webView,
+              let window = NSApp.mainWindow ?? NSApp.keyWindow else { return }
+
+        // Build print CSS classes based on preferences
+        var classes: [String] = ["print-light-theme"]
+        if !prefs.printShowGutter {
+            classes.append("print-hide-gutter")
+        }
+        if !prefs.printShowLineNumbers {
+            classes.append("print-hide-line-numbers")
+        }
+
+        let jsCommands: [String] = classes.map { "document.body.classList.add('\($0)');" }
+
+        let prepareJS = jsCommands.joined()
+
+        webView.evaluateJavaScript(prepareJS) { [weak webView] _, _ in
+            guard let webView = webView else { return }
+
+            webView.setValue(true, forKey: "drawsBackground")
+
+            let printInfo = NSPrintInfo.shared
+            printInfo.paperSize = NSSize(width: 595.28, height: 841.89) // A4
+            printInfo.topMargin = 56
+            printInfo.bottomMargin = 56
+            printInfo.leftMargin = self.prefs.printMargin
+            printInfo.rightMargin = self.prefs.printMargin
+
+            let printOperation = webView.printOperation(with: printInfo)
+            printOperation.showsPrintPanel = true
+            printOperation.showsProgressPanel = true
+
+            let handler = PrintCompletionHandler(webView: webView, printClasses: classes)
+            objc_setAssociatedObject(printOperation, "handler", handler, .OBJC_ASSOCIATION_RETAIN)
+
+            printOperation.runModal(
+                for: window,
+                delegate: handler,
+                didRun: #selector(PrintCompletionHandler.printOperationDidRun(_:success:contextInfo:)),
+                contextInfo: nil
+            )
+        }
+    }
+}
+
+private class PrintCompletionHandler: NSObject {
+    private let webView: WKWebView
+    private let printClasses: [String]
+
+    init(webView: WKWebView, printClasses: [String]) {
+        self.webView = webView
+        self.printClasses = printClasses
+        super.init()
+    }
+
+    @objc func printOperationDidRun(
+        _ operation: NSPrintOperation,
+        success: Bool,
+        contextInfo: UnsafeMutableRawPointer?
+    ) {
+        webView.setValue(false, forKey: "drawsBackground")
+
+        let cleanupJS = printClasses.map { "document.body.classList.remove('\($0)');" }.joined()
+        webView.evaluateJavaScript(cleanupJS, completionHandler: nil)
     }
 }
