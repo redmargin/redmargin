@@ -9,6 +9,7 @@ public struct MarkdownWebView: NSViewRepresentable {
     public var initialScrollPosition: Double
     public var showLineNumbers: Bool
     public var gitChanges: GitChangeResult?
+    public var findController: FindController?
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -19,7 +20,8 @@ public struct MarkdownWebView: NSViewRepresentable {
         onScrollPositionChange: ((Double) -> Void)? = nil,
         initialScrollPosition: Double = 0,
         showLineNumbers: Bool = true,
-        gitChanges: GitChangeResult? = nil
+        gitChanges: GitChangeResult? = nil,
+        findController: FindController? = nil
     ) {
         self.markdown = markdown
         self.fileURL = fileURL
@@ -28,6 +30,7 @@ public struct MarkdownWebView: NSViewRepresentable {
         self.initialScrollPosition = initialScrollPosition
         self.showLineNumbers = showLineNumbers
         self.gitChanges = gitChanges
+        self.findController = findController
     }
 
     public func makeNSView(context: Context) -> WKWebView {
@@ -46,6 +49,9 @@ public struct MarkdownWebView: NSViewRepresentable {
         context.coordinator.onCheckboxToggle = onCheckboxToggle
         context.coordinator.onScrollPositionChange = onScrollPositionChange
         context.coordinator.initialScrollPosition = initialScrollPosition
+
+        // Wire up find controller
+        findController?.webView = webView
 
         loadRenderer(webView: webView)
 
