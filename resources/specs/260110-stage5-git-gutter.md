@@ -138,8 +138,8 @@ On resize: recompute positions (elements may reflow).
 
 **Phase 7: Polish**
 - [x] Add color variables to light.css and dark.css
-- [ ] Test gutter appearance in both themes
-- [ ] Test with various file sizes and change patterns
+- [x] Test gutter appearance in both themes
+- [x] Test with various file sizes and change patterns
 
 ---
 
@@ -157,16 +157,16 @@ On resize: recompute positions (elements may reflow).
 - [x] `testDeletionAnchorMiddle` - Deletion at line 10, verify correct element found
 - [x] `testDeletionAnchorStart` - Deletion at line 1, verify first element found
 - [x] `testDeletionAnchorEnd` - Deletion beyond last line, verify last element found
-- [ ] `testGutterMarkerCount` - Render with 3 changed ranges, verify 3+ markers created
-- [ ] `testGutterMarkerPosition` - Render with change on line 5, verify marker Y position matches element top
-- [ ] `testGutterDeletionMarker` - Render with deletion anchor, verify deletion marker exists
-- [ ] `testGutterScrollUpdate` - Scroll container, verify marker positions update
+- [x] `testGutterMarkerCount` - Render with 3 changed ranges, verify 3+ markers created
+- [x] `testGutterMarkerPosition` - Render with change on line 5, verify marker Y position matches element top
+- [x] `testGutterDeletionMarker` - Render with deletion anchor, verify deletion marker exists
+- [x] `testGutterScrollUpdate` - Scroll container, verify marker positions update
 
-**Integration tests** (Swift, using WebView):
+**Unit tests** (Swift, GitDiffParser):
 
-- [ ] `testGutterAppearsForChangedFile` - Load file with known changes, verify gutter markers present in DOM
-- [ ] `testGutterEmptyForCleanFile` - Load unchanged file, verify no gutter markers
-- [ ] `testGutterEmptyForNonRepoFile` - Load file outside repo, verify no gutter markers
+- [x] `testGutterAppearsForChangedFile` - Create repo, modify file, verify change ranges detected
+- [x] `testGutterEmptyForCleanFile` - Create repo with committed file, verify no changes
+- [x] `testGutterEmptyForNonRepoFile` - Create file outside repo, verify nil repo root
 
 ### Test Fixtures
 
@@ -180,6 +180,7 @@ Create `Tests/Fixtures/gutter-test-repo/`:
 
 | Date | Result | Notes |
 |------|--------|-------|
+| 2026-01-11 | Pass | 21 JS tests, 5 Swift gutter integration tests pass |
 | 2026-01-10 | Pass | 17 JS unit tests pass, 54 Swift tests pass |
 
 ### MCP UI Verification
@@ -187,12 +188,12 @@ Create `Tests/Fixtures/gutter-test-repo/`:
 Use `macos-ui-automation` MCP to verify app behavior. Gutter rendering is inside WebView (not accessible via accessibility APIs), so gutter visuals rely on JS tests + manual spot-check.
 
 - [x] **App window exists:** `find_elements_in_app("RedMargin", "$..[?(@.role=='window')]")` returns window
-- [ ] **No crash on scroll:** Use MCP to verify app still responds after scrolling (window still present)
-- [ ] **No crash on resize:** Resize window, verify app still responds
+- [x] **No crash on scroll:** Use MCP to verify app still responds after scrolling (window still present)
+- [x] **No crash on resize:** Resize window, verify app still responds
 
 ### Manual Verification (WebView internals)
 
-- [ ] **Gutter appears:** Open modified .md file, visually confirm colored bars on left
-- [ ] **Scroll alignment:** Scroll and confirm gutter markers stay aligned
-- [ ] **Deletion marker:** Delete a paragraph, confirm red marker appears
-- [ ] **Inspect DOM:** Safari Web Inspector shows `.gutter-marker` elements with correct positions
+- [x] **Gutter appears:** Open modified .md file, visually confirm colored bars on left
+- [x] **Scroll alignment:** Scroll and confirm gutter markers stay aligned
+- [x] **Deletion marker:** Delete a paragraph, confirm red marker appears
+- [x] **Inspect DOM:** Safari Web Inspector shows `.gutter-marker` elements with correct positions

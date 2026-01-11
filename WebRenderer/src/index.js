@@ -18,6 +18,7 @@
     let currentTheme = 'light';
     let currentBasePath = '';
     let lastRenderedMarkdown = null;
+    let latestChanges = null;  // Always use latest changes for gutter
 
     function setTheme(theme) {
         if (theme === currentTheme) return;
@@ -51,6 +52,9 @@
         currentBasePath = basePath;
         setTheme(theme);
 
+        // Always store latest changes - RAF callback will use this instead of stale captured value
+        latestChanges = changes;
+
         // Check if content actually changed
         const contentChanged = markdown !== lastRenderedMarkdown;
 
@@ -75,9 +79,9 @@
                     window.LineNumbers.generate();
                 }
 
-                // Update git gutter markers
+                // Update git gutter markers with LATEST changes (not stale captured value)
                 if (window.Gutter && window.Gutter.update) {
-                    window.Gutter.update(changes);
+                    window.Gutter.update(latestChanges);
                 }
 
                 // Restore scroll position
