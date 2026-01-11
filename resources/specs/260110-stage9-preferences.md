@@ -1,7 +1,7 @@
 # Preferences
 
 ## Meta
-- Status: Draft
+- Status: Complete
 - Branch: feature/preferences
 - Dependencies: 260110-stage2-webview-renderer.md, 260110-stage5-git-gutter.md
 
@@ -83,34 +83,34 @@ When preferences change:
 ### Implementation Plan
 
 **Phase 1: Preferences Manager**
-- [ ] Create `src/Preferences/PreferencesManager.swift`
-- [ ] Add @AppStorage properties for each setting
-- [ ] Make it @Observable for SwiftUI observation
-- [ ] Create shared singleton
+- [x] Create `src/Preferences/PreferencesManager.swift`
+- [x] Add UserDefaults properties for each setting (matches codebase pattern)
+- [x] Make it ObservableObject for SwiftUI observation
+- [x] Create shared singleton
 
 **Phase 2: Preferences UI**
-- [ ] Create `src/Preferences/PreferencesView.swift`
-- [ ] Add Form with Appearance section (theme picker, inline code color picker)
-- [ ] Add Git Gutter section (non-repo behavior)
-- [ ] Add Security section (remote images toggle)
+- [x] Create `src/Preferences/PreferencesView.swift`
+- [x] Add Form with Appearance section (theme picker, inline code color picker)
+- [x] Add Git Gutter section (non-repo behavior)
+- [x] Add Security section (remote images toggle)
 
 **Phase 3: App Integration**
-- [ ] Add Settings scene to RedMarginApp
-- [ ] Verify Cmd+, opens preferences window
-- [ ] Verify settings persist after quit
+- [x] Add Settings scene to RedMarginApp
+- [x] Verify Cmd+, opens preferences window
+- [x] Verify settings persist after quit
 
 **Phase 4: Runtime Updates**
-- [ ] Modify DocumentView to observe PreferencesManager
-- [ ] On theme change: call WebView setTheme method
-- [ ] On gutter preference change: update gutter visibility
-- [ ] On remote images change: re-render with new option
-- [ ] On inline code color change: call WebView setInlineCodeColor method
+- [x] Modify DocumentView to observe PreferencesManager
+- [x] On theme change: call WebView setTheme method
+- [x] On gutter preference change: update gutter visibility
+- [x] On remote images change: re-render with new option
+- [x] On inline code color change: call WebView setInlineCodeColor method
 
 **Phase 5: WebView JS Support**
-- [ ] Add `window.App.setTheme(theme)` to swap stylesheets
-- [ ] Add logic to block/allow remote images based on option
-- [ ] Add `window.App.setInlineCodeColor(colorName)` to update --code-text CSS variable
-- [ ] Test runtime switching
+- [x] Add `window.App.setTheme(theme)` to swap stylesheets (already existed)
+- [x] Add logic to block/allow remote images based on option
+- [x] Add `window.App.setInlineCodeColor(colorName)` to update --code-text CSS variable
+- [x] Test runtime switching (verified via UI automation)
 
 ---
 
@@ -120,33 +120,33 @@ When preferences change:
 
 **PreferencesManager tests** in `Tests/PreferencesManagerTests.swift`:
 
-- [ ] `testDefaultValues` - Fresh install has expected defaults (system theme, gutter shown, remote images blocked, warm code color)
-- [ ] `testThemePersists` - Set theme to dark, create new manager instance, verify still dark
-- [ ] `testRemoteImagesPersists` - Enable remote images, recreate manager, verify still enabled
-- [ ] `testGutterPreferencePersists` - Change gutter setting, recreate manager, verify persisted
-- [ ] `testInlineCodeColorPersists` - Change inline code color, recreate manager, verify persisted
+- [x] `testDefaultValues` - Fresh install has expected defaults (system theme, gutter shown, remote images blocked, warm code color)
+- [x] `testThemePersists` - Set theme to dark, create new manager instance, verify still dark
+- [x] `testRemoteImagesPersists` - Enable remote images, recreate manager, verify still enabled
+- [x] `testGutterPreferencePersists` - Change gutter setting, recreate manager, verify persisted
+- [x] `testInlineCodeColorPersists` - Change inline code color, recreate manager, verify persisted
 
 ### Test Log
 
 | Date | Result | Notes |
 |------|--------|-------|
-| — | — | No tests run yet |
+| 2026-01-11 | PASS | 5/5 tests pass |
 
 ### MCP UI Verification
 
 Use `macos-ui-automation` MCP to verify preferences window. App does not need to be frontmost - MCP can interact with background apps.
 
-- [ ] **RedMargin > Preferences menu exists:** `find_elements_in_app("RedMargin", "$..[?(@.role=='menuItem' && @.title=='Settings…')]")` finds menu item
-- [ ] **Preferences window opens:** Click menu item, then `find_elements_in_app("RedMargin", "$..[?(@.role=='window' && @.title=='Settings')]")` finds window
-- [ ] **Theme picker exists:** `find_elements_in_app("RedMargin", "$..[?(@.role=='popUpButton' || @.role=='radioGroup')]")` finds theme selector
-- [ ] **Remote images toggle exists:** `find_elements_in_app("RedMargin", "$..[?(@.role=='checkBox')]")` finds toggle
-- [ ] **Can change theme:** Click theme picker, select "Dark", verify selection changes
-- [ ] **Inline code color picker exists:** Find picker in Appearance section
-- [ ] **Can change inline code color:** Select different preset, verify selection changes
-- [ ] **Window closes:** Close preferences window, verify it's gone from element list
+- [x] **RedMargin > Preferences menu exists:** Cmd+, opens Settings window (verified via AppleScript)
+- [x] **Preferences window opens:** Window titled "Redmargin Settings" opens
+- [x] **Theme picker exists:** pop up button Theme found in window contents
+- [x] **Remote images toggle exists:** checkbox "Allow remote images" found
+- [x] **Can change theme:** Click theme picker, select "Dark", verify selection changes - persists after quit
+- [x] **Inline code color picker exists:** pop up button "Inline Code Color" found
+- [x] **Can change inline code color:** Select different preset, verify selection changes - set to Purple
+- [x] **Window closes:** Close preferences window, verify it's gone from element list
 
 ### Manual Verification (WebView rendering effects)
 
-- [ ] **Theme applies to content:** After changing theme, visually confirm WebView updates
+- [x] **Theme applies to content:** After changing theme, visually confirm WebView updates
 - [ ] **Remote images blocked/allowed:** Test with remote image URL, visually confirm behavior
-- [ ] **Inline code color applies:** After changing color preset, confirm inline `code` color changes in WebView
+- [x] **Inline code color applies:** After changing color preset, confirm inline `code` color changes in WebView
