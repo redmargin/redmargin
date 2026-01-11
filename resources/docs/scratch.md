@@ -1,4 +1,3 @@
-What is this shit? Missing line numbers all over the place??? And while you were testing, the test_log was scrolling all over the place.
 
 ---
 
