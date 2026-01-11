@@ -1,5 +1,9 @@
 # Changelog
 
+## 260111 Stage 10: Print Support (Spec)
+- Added: Print support spec with configurable gutter, line numbers, header/footer
+- Changed: Security & Sandbox moved from Stage 10 to Stage 11
+
 ## 260111 Stage 8: Find in Page
 - Added: Find bar with search text field, match count, and navigation buttons
 - Added: FindController class for managing find operations via JavaScript window.find()
@@ -105,7 +109,7 @@
 - Added: SwiftLint configuration
 
 ## 260110 Implementation Specs
-- Added: 10 implementation specs breaking down PRD into stages
+- Added: 11 implementation specs breaking down PRD into stages
   - Stage 1: App Shell (file open, recent files, window management)
   - Stage 2: WebView Renderer (markdown-it, sourcepos, theming)
   - Stage 3: Git Repo Detection
@@ -115,7 +119,8 @@
   - Stage 7: Git State Watching (index/HEAD changes)
   - Stage 8: Find in Page
   - Stage 9: Preferences
-  - Stage 10: Security & Sandbox
+  - Stage 10: Print Support
+  - Stage 11: Security & Sandbox
 - Added: MCP UI Verification section to PROJECT.md
 - Changed: Each spec includes automated tests + MCP-based UI verification
 
