@@ -45,12 +45,28 @@
         );
     }
 
+    function filterRemoteImages(html) {
+        return html.replace(
+            /<img[^>]+src=["']https?:\/\/[^"']+["'][^>]*>/gi,
+            '<span class="blocked-image">[Remote image blocked]</span>'
+        );
+    }
+
+    function setGutterVisible(visible) {
+        const gutterContainer = document.getElementById('gutter-container');
+        if (gutterContainer) {
+            gutterContainer.style.display = visible ? '' : 'none';
+        }
+    }
+
     function render(payload) {
         const { markdown, options = {}, changes = null } = payload;
-        const { theme = 'light', basePath = '' } = options;
+        const { theme = 'light', basePath = '', inlineCodeColor = 'warm', allowRemoteImages = false, showGutter = true } = options;
 
         currentBasePath = basePath;
         setTheme(theme);
+        setInlineCodeColor(inlineCodeColor);
+        setGutterVisible(showGutter);
 
         // Always store latest changes - RAF callback will use this instead of stale captured value
         latestChanges = changes;
@@ -66,6 +82,9 @@
 
             let html = md.render(markdown || '');
             html = resolveImagePaths(html, basePath);
+            if (!allowRemoteImages) {
+                html = filterRemoteImages(html);
+            }
 
             const container = document.getElementById('content-container');
             if (container) {
@@ -95,9 +114,40 @@
         }
     }
 
+    const inlineCodeColors = {
+        warm: { light: '#b45309', dark: '#f59e0b' },
+        cool: { light: '#0369a1', dark: '#38bdf8' },
+        rose: { light: '#be185d', dark: '#f472b6' },
+        purple: { light: '#7c3aed', dark: '#a78bfa' },
+        neutral: { light: '#525252', dark: '#a3a3a3' }
+    };
+
+    let currentInlineCodeColor = 'warm';
+
+    function setInlineCodeColor(colorName) {
+        if (!inlineCodeColors[colorName]) return;
+        currentInlineCodeColor = colorName;
+        const colors = inlineCodeColors[colorName];
+        const color = currentTheme === 'dark' ? colors.dark : colors.light;
+        document.documentElement.style.setProperty('--code-text', color);
+    }
+
+    // Re-apply inline code color when theme changes
+    const originalSetTheme = setTheme;
+    setTheme = function(theme) {
+        originalSetTheme(theme);
+        // Reapply inline code color for new theme
+        const colors = inlineCodeColors[currentInlineCodeColor];
+        if (colors) {
+            const color = theme === 'dark' ? colors.dark : colors.light;
+            document.documentElement.style.setProperty('--code-text', color);
+        }
+    };
+
     window.App = {
         render: render,
         setTheme: setTheme,
+        setInlineCodeColor: setInlineCodeColor,
         getMarkdownIt: function() { return md; }
     };
 })();

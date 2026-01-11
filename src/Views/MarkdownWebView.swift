@@ -10,8 +10,10 @@ public struct MarkdownWebView: NSViewRepresentable {
     public var showLineNumbers: Bool
     public var gitChanges: GitChangeResult?
     public var findController: FindController?
-
-    @Environment(\.colorScheme) private var colorScheme
+    public var theme: String
+    public var inlineCodeColor: String
+    public var allowRemoteImages: Bool
+    public var showGutter: Bool
 
     public init(
         markdown: String,
@@ -21,7 +23,11 @@ public struct MarkdownWebView: NSViewRepresentable {
         initialScrollPosition: Double = 0,
         showLineNumbers: Bool = true,
         gitChanges: GitChangeResult? = nil,
-        findController: FindController? = nil
+        findController: FindController? = nil,
+        theme: String = "light",
+        inlineCodeColor: String = "warm",
+        allowRemoteImages: Bool = false,
+        showGutter: Bool = true
     ) {
         self.markdown = markdown
         self.fileURL = fileURL
@@ -31,6 +37,10 @@ public struct MarkdownWebView: NSViewRepresentable {
         self.showLineNumbers = showLineNumbers
         self.gitChanges = gitChanges
         self.findController = findController
+        self.theme = theme
+        self.inlineCodeColor = inlineCodeColor
+        self.allowRemoteImages = allowRemoteImages
+        self.showGutter = showGutter
     }
 
     public func makeNSView(context: Context) -> WKWebView {
@@ -62,14 +72,16 @@ public struct MarkdownWebView: NSViewRepresentable {
         context.coordinator.onCheckboxToggle = onCheckboxToggle
         context.coordinator.onScrollPositionChange = onScrollPositionChange
 
-        let theme = colorScheme == .dark ? "dark" : "light"
         let basePath = fileURL?.deletingLastPathComponent().path ?? ""
         let params = RenderParams(
             markdown: markdown,
             theme: theme,
             basePath: basePath,
             scrollPosition: initialScrollPosition,
-            gitChanges: gitChanges
+            gitChanges: gitChanges,
+            inlineCodeColor: inlineCodeColor,
+            allowRemoteImages: allowRemoteImages,
+            showGutter: showGutter
         )
 
         if context.coordinator.isLoaded {
@@ -114,7 +126,10 @@ public struct MarkdownWebView: NSViewRepresentable {
             "markdown": params.markdown,
             "options": [
                 "theme": params.theme,
-                "basePath": params.basePath
+                "basePath": params.basePath,
+                "inlineCodeColor": params.inlineCodeColor,
+                "allowRemoteImages": params.allowRemoteImages,
+                "showGutter": params.showGutter
             ]
         ]
 
@@ -154,12 +169,25 @@ public struct MarkdownWebView: NSViewRepresentable {
         webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
+    static func setTheme(webView: WKWebView, theme: String) {
+        let script = "window.App.setTheme('\(theme)')"
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    static func setInlineCodeColor(webView: WKWebView, colorName: String) {
+        let script = "window.App.setInlineCodeColor('\(colorName)')"
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
     struct RenderParams {
         let markdown: String
         let theme: String
         let basePath: String
         var scrollPosition: Double = 0
         var gitChanges: GitChangeResult?
+        var inlineCodeColor: String = "warm"
+        var allowRemoteImages: Bool = false
+        var showGutter: Bool = true
     }
 
     public class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {

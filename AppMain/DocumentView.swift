@@ -291,6 +291,8 @@ class DocumentState: ObservableObject {
 struct DocumentWindowContent: View {
     @StateObject private var state: DocumentState
     @StateObject private var findController = FindController()
+    @ObservedObject private var prefs = PreferencesManager.shared
+    @Environment(\.colorScheme) private var systemColorScheme
     @State private var showLineNumbers: Bool
     @State private var showFindBar: Bool = false
     @State private var findBarFocusTrigger: UUID = UUID()
@@ -299,6 +301,25 @@ struct DocumentWindowContent: View {
     weak var appDelegate: AppDelegate?
 
     var fileURL: URL { state.fileURL }
+
+    private var effectiveTheme: String {
+        switch prefs.theme {
+        case .system:
+            return systemColorScheme == .dark ? "dark" : "light"
+        case .light:
+            return "light"
+        case .dark:
+            return "dark"
+        }
+    }
+
+    private var shouldShowGutter: Bool {
+        // Show gutter if we have git changes (it's a repo), or if preference says show for non-repo
+        if state.gitChanges != nil {
+            return true
+        }
+        return prefs.gutterVisibilityForNonRepo == .showEmpty
+    }
 
     init(
         content: String,
@@ -325,7 +346,11 @@ struct DocumentWindowContent: View {
                 initialScrollPosition: initialScrollPosition,
                 showLineNumbers: showLineNumbers,
                 gitChanges: state.gitChanges,
-                findController: findController
+                findController: findController,
+                theme: effectiveTheme,
+                inlineCodeColor: prefs.inlineCodeColor.rawValue,
+                allowRemoteImages: prefs.allowRemoteImages,
+                showGutter: shouldShowGutter
             )
 
             if state.isRefreshing {
