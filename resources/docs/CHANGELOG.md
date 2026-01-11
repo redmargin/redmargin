@@ -1,5 +1,14 @@
 # Changelog
 
+## 260111 Stage 8: Find in Page
+- Added: Find bar with search text field, match count, and navigation buttons
+- Added: FindController class for managing find operations via JavaScript window.find()
+- Added: Edit menu with Find... (Cmd+F), Find Next (Cmd+G), Find Previous (Cmd+Shift+G)
+- Added: Escape key dismisses find bar, Cmd+F refocuses when already open
+- Added: 5 unit tests for find functionality (FindTests.swift)
+- Changed: Edit menu cleaned up - removed Undo/Redo/Cut/Paste, kept Copy/Select All
+- Changed: Find jumps to first match and stays there while typing
+
 ## 260111 Stage 7: Git State Watching
 - Added: HEAD watcher detects branch switches and updates gutter
 - Added: Branch ref watcher detects commits and clears gutter for committed lines
