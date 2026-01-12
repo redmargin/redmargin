@@ -178,6 +178,7 @@ struct DocumentWindowContent: View {
             printInfo.rightMargin = self.prefs.printMargin
 
             let printOperation = webView.printOperation(with: printInfo)
+            printOperation.jobTitle = self.fileURL.deletingPathExtension().lastPathComponent
             printOperation.showsPrintPanel = true
             printOperation.showsProgressPanel = true
 
