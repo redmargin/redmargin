@@ -1,5 +1,15 @@
 # Changelog
 
+## 260112 Stage 10: Print Support
+- Added: Print support (Cmd+P) opens macOS print dialog directly
+- Added: Print settings in Preferences > Print tab: gutter markers, line numbers, margin
+- Added: Resizable preferences window with sidebar navigation (General, Print tabs)
+- Added: Print-friendly CSS for tables (light headers, borders) and code blocks
+- Added: PDF filename uses original document name instead of "RedmarginRender"
+- Added: Always uses light theme for print output
+- Changed: Preferences window uses NavigationSplitView with column width constraints
+- Removed: Header/footer feature descoped (WKWebView limitation documented in spec)
+
 ## 260111 Stage 9: Preferences
 - Added: Preferences window (Cmd+,) with theme, inline code color, gutter, and remote images settings
 - Added: PreferencesManager singleton with UserDefaults persistence
@@ -11,10 +21,6 @@
 - Added: 5 unit tests for PreferencesManager persistence
 - Changed: WebView now receives theme and preferences from DocumentWindowContent
 - Changed: JS renderer supports runtime theme and inline code color switching
-
-## 260111 Stage 10: Print Support (Spec)
-- Added: Print support spec with configurable gutter, line numbers, header/footer
-- Changed: Security & Sandbox moved from Stage 10 to Stage 11
 
 ## 260111 Stage 8: Find in Page
 - Added: Find bar with search text field, match count, and navigation buttons

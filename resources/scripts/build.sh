@@ -53,17 +53,16 @@ cp resources/Redmargin.icns "$RESOURCES_DIR/"
 /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" "build/Redmargin.app/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string Redmargin" "build/Redmargin.app/Contents/Info.plist"
 
-CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-RedMargin Dev}"
-CODESIGN_KEYCHAIN="${CODESIGN_KEYCHAIN:-$HOME/Library/Keychains/redmargin-codesign.keychain-db}"
-
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-Detour Dev}"
+CODESIGN_KEYCHAIN="$HOME/Library/Keychains/detour-codesign.keychain-db"
 ENTITLEMENTS="Redmargin.entitlements"
 
-if [ -d "$APP_DIR" ] && [ -f "$CODESIGN_KEYCHAIN" ]; then
-    security unlock-keychain -p "" "$CODESIGN_KEYCHAIN" >/dev/null 2>&1 || true
+if [ -d "$APP_DIR" ]; then
+    security unlock-keychain -p "" "$CODESIGN_KEYCHAIN" 2>/dev/null || true
     /usr/bin/codesign --force --options runtime --entitlements "$ENTITLEMENTS" --keychain "$CODESIGN_KEYCHAIN" -s "$CODESIGN_IDENTITY" "$APP_DIR"
-    echo "Codesigned app bundle with entitlements."
+    echo "Codesigned app bundle."
 else
-    echo "Codesign skipped (missing app bundle or keychain)."
+    echo "Codesign skipped (missing app bundle)."
 fi
 
 echo "Touching app bundle to refresh Spotlight..."

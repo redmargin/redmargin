@@ -26,6 +26,9 @@ public class PreferencesManager: ObservableObject {
     private let gutterVisibilityKey = "RedMargin.Preferences.GutterVisibilityForNonRepo"
     private let allowRemoteImagesKey = "RedMargin.Preferences.AllowRemoteImages"
     private let inlineCodeColorKey = "RedMargin.Preferences.InlineCodeColor"
+    private let printMarginKey = "RedMargin.Preferences.PrintMargin"
+    private let printShowGutterKey = "RedMargin.Preferences.PrintShowGutter"
+    private let printShowLineNumbersKey = "RedMargin.Preferences.PrintShowLineNumbers"
 
     @Published public var theme: Theme {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: themeKey) }
@@ -43,16 +46,35 @@ public class PreferencesManager: ObservableObject {
         didSet { UserDefaults.standard.set(inlineCodeColor.rawValue, forKey: inlineCodeColorKey) }
     }
 
+    @Published public var printMargin: Double {
+        didSet { UserDefaults.standard.set(printMargin, forKey: printMarginKey) }
+    }
+
+    @Published public var printShowGutter: Bool {
+        didSet { UserDefaults.standard.set(printShowGutter, forKey: printShowGutterKey) }
+    }
+
+    @Published public var printShowLineNumbers: Bool {
+        didSet { UserDefaults.standard.set(printShowLineNumbers, forKey: printShowLineNumbersKey) }
+    }
+
     private init() {
         let themeString = UserDefaults.standard.string(forKey: themeKey) ?? Theme.system.rawValue
         self.theme = Theme(rawValue: themeString) ?? .system
 
-        let gutterString = UserDefaults.standard.string(forKey: gutterVisibilityKey) ?? GutterVisibility.showEmpty.rawValue
+        let defaultGutter = GutterVisibility.showEmpty.rawValue
+        let gutterString = UserDefaults.standard.string(forKey: gutterVisibilityKey) ?? defaultGutter
         self.gutterVisibilityForNonRepo = GutterVisibility(rawValue: gutterString) ?? .showEmpty
 
         self.allowRemoteImages = UserDefaults.standard.object(forKey: allowRemoteImagesKey) as? Bool ?? false
 
         let colorString = UserDefaults.standard.string(forKey: inlineCodeColorKey) ?? InlineCodeColor.warm.rawValue
         self.inlineCodeColor = InlineCodeColor(rawValue: colorString) ?? .warm
+
+        self.printMargin = UserDefaults.standard.object(forKey: printMarginKey) as? Double ?? 28
+
+        self.printShowGutter = UserDefaults.standard.object(forKey: printShowGutterKey) as? Bool ?? true
+
+        self.printShowLineNumbers = UserDefaults.standard.object(forKey: printShowLineNumbersKey) as? Bool ?? false
     }
 }

@@ -7,6 +7,7 @@ extension Notification.Name {
     static let showFindBar = Notification.Name("RedMargin.showFindBar")
     static let findNext = Notification.Name("RedMargin.findNext")
     static let findPrevious = Notification.Name("RedMargin.findPrevious")
+    static let printDocument = Notification.Name("RedMargin.printDocument")
 }
 
 extension URL {
@@ -27,6 +28,7 @@ struct RedMarginApp: App {
         Settings {
             PreferencesView()
         }
+        .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open...") {
@@ -38,6 +40,13 @@ struct RedMarginApp: App {
                     RecentDocumentsMenu(appDelegate: appDelegate)
                 }
                 Divider()
+            }
+
+            CommandGroup(after: .newItem) {
+                Button("Print...") {
+                    NotificationCenter.default.post(name: .printDocument, object: nil)
+                }
+                .keyboardShortcut("p", modifiers: .command)
             }
 
             // Remove Undo/Redo - read-only app
