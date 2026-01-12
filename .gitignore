@@ -9,3 +9,4 @@ build/RedMargin.app/Contents/_CodeSignature/
 # Claude Code local config
 .claude/CLAUDE.local.md
 default.profraw
+.mcp.json
