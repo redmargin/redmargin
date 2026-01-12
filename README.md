@@ -11,6 +11,7 @@ A native macOS Markdown viewer with live rendering.
 - **Find in page** - Search text with match count and navigation (Cmd+F)
 - **Interactive checkboxes** - Click to toggle task list items, saves immediately
 - **Preferences** - Theme (light/dark/system), inline code colors, gutter visibility, remote images
+- **Print support** - Print rendered documents (Cmd+P) with configurable gutter/line number visibility
 - **Light/dark themes** - Follows system appearance automatically
 - **Line numbers** - Optional source line numbers aligned with rendered content
 - **Local images** - Relative image paths work correctly
@@ -47,6 +48,7 @@ The build script will:
 |--------|----------|
 | Open File | Cmd-O |
 | Preferences | Cmd-, |
+| Print | Cmd-P |
 | Refresh | Cmd-R |
 | Toggle Line Numbers | Cmd-L |
 | Find | Cmd-F |
@@ -74,7 +76,7 @@ redmargin/
 
 ## Status
 
-Stage 9 complete - Preferences window with theme, inline code color, gutter visibility, and remote images settings. See `resources/specs/` for design documents.
+Stage 10 in progress - Print support with Cmd+P, configuration sheet for gutter/line number visibility. See `resources/specs/` for design documents.
 
 ## License
 

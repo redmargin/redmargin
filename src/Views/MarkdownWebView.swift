@@ -179,6 +179,28 @@ public struct MarkdownWebView: NSViewRepresentable {
         webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
+    public static func preparePrint(webView: WKWebView, config: PrintConfiguration, completion: @escaping () -> Void) {
+        var classes: [String] = ["print-light-theme"]
+        if !config.includeGutter {
+            classes.append("print-hide-gutter")
+        }
+        if !config.includeLineNumbers {
+            classes.append("print-hide-line-numbers")
+        }
+        let classString = classes.joined(separator: " ")
+        let script = "document.body.classList.add(...'\(classString)'.split(' '))"
+        webView.evaluateJavaScript(script) { _, _ in
+            completion()
+        }
+    }
+
+    public static func restoreFromPrint(webView: WKWebView) {
+        let script = """
+            document.body.classList.remove('print-light-theme', 'print-hide-gutter', 'print-hide-line-numbers')
+        """
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
     struct RenderParams {
         let markdown: String
         let theme: String

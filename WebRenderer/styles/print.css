@@ -1,0 +1,114 @@
+/* Print Styles */
+
+/* Hide gutter when print-hide-gutter class is on body */
+.print-hide-gutter #gutter-container {
+    display: none !important;
+}
+
+/* Hide line numbers when print-hide-line-numbers class is on body */
+.print-hide-line-numbers #line-numbers-container {
+    display: none !important;
+}
+
+/* .print-light-theme class forces light theme variables (defined in light.css) */
+
+/* Print-specific media rules */
+@media print {
+    /* Always hide find bar in print */
+    #find-bar {
+        display: none !important;
+    }
+
+    /* Reset body for print */
+    html, body {
+        background: white !important;
+        color: #262627 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* Force all text to be dark */
+    * {
+        color: #262627 !important;
+    }
+
+    a {
+        color: #2563eb !important;
+    }
+
+    /* Inline code - print-friendly */
+    code {
+        color: #b45309 !important;
+        background: #f5f5f5 !important;
+        border: 0.5px solid #ddd !important;
+        padding: 1px 4px !important;
+    }
+
+    /* Code blocks - print-friendly */
+    pre {
+        background: #f8f8f8 !important;
+        border: 1px solid #ddd !important;
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    pre code {
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+    }
+
+    /* Tables - print-friendly (no dark backgrounds) */
+    table {
+        border-collapse: collapse !important;
+        page-break-inside: auto;
+        break-inside: auto;
+    }
+
+    th, td {
+        border: 1px solid #999 !important;
+        padding: 6px 10px !important;
+        background: white !important;
+        color: #262627 !important;
+    }
+
+    th {
+        font-weight: 600 !important;
+        background: #f0f0f0 !important;
+    }
+
+    /* Avoid breaking table rows */
+    tr {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    /* Avoid breaking blockquotes */
+    blockquote {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    /* Avoid orphan headings */
+    h1, h2, h3, h4, h5, h6 {
+        page-break-after: avoid;
+        break-after: avoid;
+    }
+
+    /* Keep images with their captions/context */
+    img {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    /* Adjust content container for print */
+    #content-container {
+        max-width: none;
+        padding: 0 0 0 32px;
+    }
+
+    /* When gutter is hidden, let content use full width */
+    .print-hide-gutter #content-container {
+        margin-left: 0;
+    }
+}
