@@ -1,4 +1,72 @@
 import SwiftUI
+import AppKit
+
+// MARK: - Number TextField with Arrow Key Support
+
+struct NumberTextField: NSViewRepresentable {
+    @Binding var value: Double
+    var range: ClosedRange<Double>
+    var step: Double
+
+    func makeNSView(context: Context) -> NSTextField {
+        let textField = NSTextField()
+        textField.delegate = context.coordinator
+        textField.alignment = .right
+        textField.bezelStyle = .roundedBezel
+        textField.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        textField.stringValue = "\(Int(value))"
+        return textField
+    }
+
+    func updateNSView(_ textField: NSTextField, context: Context) {
+        let intValue = Int(value)
+        if textField.stringValue != "\(intValue)" && !context.coordinator.isEditing {
+            textField.stringValue = "\(intValue)"
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: NumberTextField
+        var isEditing = false
+
+        init(_ parent: NumberTextField) {
+            self.parent = parent
+        }
+
+        func controlTextDidBeginEditing(_ obj: Notification) {
+            isEditing = true
+        }
+
+        func controlTextDidEndEditing(_ obj: Notification) {
+            isEditing = false
+            guard let textField = obj.object as? NSTextField,
+                  let newValue = Double(textField.stringValue) else { return }
+            parent.value = min(max(newValue, parent.range.lowerBound), parent.range.upperBound)
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.moveUp(_:)) {
+                adjustValue(by: parent.step)
+                return true
+            } else if commandSelector == #selector(NSResponder.moveDown(_:)) {
+                adjustValue(by: -parent.step)
+                return true
+            }
+            return false
+        }
+
+        private func adjustValue(by delta: Double) {
+            let newValue = min(max(parent.value + delta, parent.range.lowerBound), parent.range.upperBound)
+            parent.value = newValue
+        }
+    }
+}
+
+// MARK: - Preferences Sections
 
 enum PreferencesSection: String, CaseIterable, Identifiable {
     case general
@@ -21,24 +89,22 @@ enum PreferencesSection: String, CaseIterable, Identifiable {
     }
 }
 
-public struct PreferencesView: View {
+struct PreferencesView: View {
     @State private var selectedSection: PreferencesSection = .general
 
-    public init() {}
-
-    public var body: some View {
-        NavigationSplitView(columnVisibility: .constant(.all)) {
+    var body: some View {
+        NavigationSplitView {
             List(PreferencesSection.allCases, selection: $selectedSection) { section in
                 Label(section.title, systemImage: section.icon)
                     .tag(section)
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 120, ideal: 140, max: 180)
+            .frame(minWidth: 120)
         } detail: {
             detailView(for: selectedSection)
-                .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 400)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationSplitViewStyle(.balanced)
+        .frame(minWidth: 450, minHeight: 300)
     }
 
     @ViewBuilder
@@ -100,19 +166,13 @@ private struct PrintSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Show gutter markers", isOn: $prefs.printShowGutter)
-                Toggle("Show line numbers", isOn: $prefs.printShowLineNumbers)
-            } header: {
-                Text("Content")
-            }
-
-            Section {
                 HStack {
                     Text("Margin")
-                    Slider(value: $prefs.printMargin, in: 18...72, step: 1)
-                    Text("\(Int(prefs.printMargin)) pt")
-                        .monospacedDigit()
-                        .frame(width: 40, alignment: .trailing)
+                    Spacer()
+                    NumberTextField(value: $prefs.printMargin, range: 0...144, step: 1)
+                        .frame(width: 50, height: 22)
+                    Text("pt")
+                        .foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Layout")

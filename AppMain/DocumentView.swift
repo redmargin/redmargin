@@ -152,12 +152,12 @@ struct DocumentWindowContent: View {
         guard let webView = findController.webView,
               let window = NSApp.mainWindow ?? NSApp.keyWindow else { return }
 
-        // Build print CSS classes based on preferences
+        // Build print CSS classes based on current document settings
         var classes: [String] = ["print-light-theme"]
-        if !prefs.printShowGutter {
+        if !shouldShowGutter {
             classes.append("print-hide-gutter")
         }
-        if !prefs.printShowLineNumbers {
+        if !showLineNumbers {
             classes.append("print-hide-line-numbers")
         }
 

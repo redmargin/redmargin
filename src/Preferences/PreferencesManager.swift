@@ -27,8 +27,6 @@ public class PreferencesManager: ObservableObject {
     private let allowRemoteImagesKey = "RedMargin.Preferences.AllowRemoteImages"
     private let inlineCodeColorKey = "RedMargin.Preferences.InlineCodeColor"
     private let printMarginKey = "RedMargin.Preferences.PrintMargin"
-    private let printShowGutterKey = "RedMargin.Preferences.PrintShowGutter"
-    private let printShowLineNumbersKey = "RedMargin.Preferences.PrintShowLineNumbers"
 
     @Published public var theme: Theme {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: themeKey) }
@@ -50,14 +48,6 @@ public class PreferencesManager: ObservableObject {
         didSet { UserDefaults.standard.set(printMargin, forKey: printMarginKey) }
     }
 
-    @Published public var printShowGutter: Bool {
-        didSet { UserDefaults.standard.set(printShowGutter, forKey: printShowGutterKey) }
-    }
-
-    @Published public var printShowLineNumbers: Bool {
-        didSet { UserDefaults.standard.set(printShowLineNumbers, forKey: printShowLineNumbersKey) }
-    }
-
     private init() {
         let themeString = UserDefaults.standard.string(forKey: themeKey) ?? Theme.system.rawValue
         self.theme = Theme(rawValue: themeString) ?? .system
@@ -72,9 +62,5 @@ public class PreferencesManager: ObservableObject {
         self.inlineCodeColor = InlineCodeColor(rawValue: colorString) ?? .warm
 
         self.printMargin = UserDefaults.standard.object(forKey: printMarginKey) as? Double ?? 28
-
-        self.printShowGutter = UserDefaults.standard.object(forKey: printShowGutterKey) as? Bool ?? true
-
-        self.printShowLineNumbers = UserDefaults.standard.object(forKey: printShowLineNumbersKey) as? Bool ?? false
     }
 }

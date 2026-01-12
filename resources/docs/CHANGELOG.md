@@ -1,5 +1,12 @@
 # Changelog
 
+## 260112 Settings Window Refactor
+- Changed: Settings window now uses pure AppKit (NSWindowController) instead of SwiftUI Settings scene
+- Fixed: Removed unwanted sidebar toggle button from settings window
+- Fixed: Removed empty window appearing on app launch
+- Changed: Print margin uses NumberTextField with arrow key support for increment/decrement
+- Changed: Menus rebuilt in AppKit for cleaner integration
+
 ## 260112 Stage 10: Print Support
 - Added: Print support (Cmd+P) opens macOS print dialog directly
 - Added: Print settings in Preferences > Print tab: gutter markers, line numbers, margin
