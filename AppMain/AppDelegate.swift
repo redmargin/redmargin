@@ -1,4 +1,25 @@
+import AppKit
 import SwiftUI
+import RedmarginLib
+
+extension Notification.Name {
+    static let toggleLineNumbers = Notification.Name("RedMargin.toggleLineNumbers")
+    static let refreshDocument = Notification.Name("RedMargin.refreshDocument")
+    static let showFindBar = Notification.Name("RedMargin.showFindBar")
+    static let findNext = Notification.Name("RedMargin.findNext")
+    static let findPrevious = Notification.Name("RedMargin.findPrevious")
+    static let printDocument = Notification.Name("RedMargin.printDocument")
+}
+
+extension URL {
+    var displayPath: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if path.hasPrefix(home) {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
+    }
+}
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     private var documentWindows: [URL: NSWindow] = [:]
@@ -21,6 +42,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     // MARK: - App Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        setupMainMenu(target: self)
+
         if launchedWithFiles { return }
 
         let savedURLs = restoreSavedURLs()
@@ -109,7 +132,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     // MARK: - Document Management
 
-    func showOpenPanel() {
+    @objc func showOpenPanel() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.init(filenameExtension: "md")!, .plainText]
         panel.allowsMultipleSelection = false
@@ -212,5 +235,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     func loadLineNumbersVisible(for url: URL) -> Bool {
         let settings = UserDefaults.standard.dictionary(forKey: lineNumbersKey) as? [String: Bool] ?? [:]
         return settings[url.path] ?? false
+    }
+
+    // MARK: - Menu Actions
+
+    @objc func showPreferences(_ sender: Any?) {
+        PreferencesWindowController.shared.showWindow(nil)
+    }
+
+    @objc func printDocument(_ sender: Any?) {
+        NotificationCenter.default.post(name: .printDocument, object: nil)
+    }
+
+    @objc func showFindBar(_ sender: Any?) {
+        NotificationCenter.default.post(name: .showFindBar, object: nil)
+    }
+
+    @objc func findNext(_ sender: Any?) {
+        NotificationCenter.default.post(name: .findNext, object: nil)
+    }
+
+    @objc func findPrevious(_ sender: Any?) {
+        NotificationCenter.default.post(name: .findPrevious, object: nil)
+    }
+
+    @objc func refreshDocument(_ sender: Any?) {
+        NotificationCenter.default.post(name: .refreshDocument, object: nil)
+    }
+
+    @objc func toggleLineNumbers(_ sender: Any?) {
+        NotificationCenter.default.post(name: .toggleLineNumbers, object: nil)
     }
 }
