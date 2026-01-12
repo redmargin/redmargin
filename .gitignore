@@ -3,11 +3,10 @@
 *.dmg
 WebRenderer/node_modules/
 
-# App bundle - keep structure, exclude binary and signature
-build/Redmargin.app/Contents/MacOS/
-build/Redmargin.app/Contents/_CodeSignature/
+# App bundle (build artifact)
+build/Redmargin.app/
 
-# Claude Code local config
-.claude/CLAUDE.local.md
+# Claude Code
+.claude/
 default.profraw
 .mcp.json
