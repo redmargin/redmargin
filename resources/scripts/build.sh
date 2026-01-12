@@ -3,6 +3,11 @@ set -e
 
 cd "$(dirname "$0")/../.."
 
+NO_INSTALL=false
+if [[ "${1:-}" == "--no-install" ]]; then
+    NO_INSTALL=true
+fi
+
 APP_NAME="Redmargin"
 APP_BUNDLE_ID="com.redmargin.app"
 APP_DIR="build/Redmargin.app"
@@ -54,12 +59,16 @@ cp resources/Redmargin.icns "$RESOURCES_DIR/"
 /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string Redmargin" "build/Redmargin.app/Contents/Info.plist"
 
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-Detour Dev}"
-CODESIGN_KEYCHAIN="$HOME/Library/Keychains/detour-codesign.keychain-db"
+CODESIGN_KEYCHAIN="${CODESIGN_KEYCHAIN:-$HOME/Library/Keychains/detour-codesign.keychain-db}"
 ENTITLEMENTS="Redmargin.entitlements"
 
 if [ -d "$APP_DIR" ]; then
-    security unlock-keychain -p "" "$CODESIGN_KEYCHAIN" 2>/dev/null || true
-    /usr/bin/codesign --force --options runtime --entitlements "$ENTITLEMENTS" --keychain "$CODESIGN_KEYCHAIN" -s "$CODESIGN_IDENTITY" "$APP_DIR"
+    if [ -f "$CODESIGN_KEYCHAIN" ]; then
+        security unlock-keychain -p "" "$CODESIGN_KEYCHAIN" 2>/dev/null || true
+        /usr/bin/codesign --force --options runtime --entitlements "$ENTITLEMENTS" --keychain "$CODESIGN_KEYCHAIN" -s "$CODESIGN_IDENTITY" "$APP_DIR"
+    else
+        /usr/bin/codesign --force --options runtime --entitlements "$ENTITLEMENTS" -s "$CODESIGN_IDENTITY" "$APP_DIR"
+    fi
     echo "Codesigned app bundle."
 else
     echo "Codesign skipped (missing app bundle)."
@@ -68,8 +77,10 @@ fi
 echo "Touching app bundle to refresh Spotlight..."
 touch build/Redmargin.app
 
-echo "Installing to /Applications..."
-rm -rf /Applications/Redmargin.app 2>/dev/null || true
-mv build/Redmargin.app /Applications/
+if [[ "$NO_INSTALL" == "false" ]]; then
+    echo "Installing to /Applications..."
+    rm -rf /Applications/Redmargin.app 2>/dev/null || true
+    mv build/Redmargin.app /Applications/
+fi
 
 echo "Done!"
