@@ -243,6 +243,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         PreferencesWindowController.shared.showWindow(nil)
     }
 
+    @objc func showAbout(_ sender: Any?) {
+        let credits = NSAttributedString(
+            string: "A clean, fast Markdown viewer for macOS.",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor.secondaryLabelColor
+            ]
+        )
+
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationIcon: NSApp.applicationIconImage as Any,
+            .applicationName: "Redmargin",
+            .applicationVersion: "0.42.0",
+            .version: "",
+            .credits: credits
+        ])
+    }
+
     @objc func printDocument(_ sender: Any?) {
         NotificationCenter.default.post(name: .printDocument, object: nil)
     }

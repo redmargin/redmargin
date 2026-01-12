@@ -12,7 +12,9 @@ func setupMainMenu(target: AppDelegate) {
     appMenuItem.submenu = appMenu
     mainMenu.addItem(appMenuItem)
 
-    appMenu.addItem(withTitle: "About Redmargin", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+    let aboutItem = NSMenuItem(title: "About Redmargin", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
+    aboutItem.target = target
+    appMenu.addItem(aboutItem)
     appMenu.addItem(NSMenuItem.separator())
 
     let prefsItem = NSMenuItem(title: "Settings...", action: #selector(AppDelegate.showPreferences(_:)), keyEquivalent: ",")
