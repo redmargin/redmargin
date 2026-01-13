@@ -43,6 +43,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMainMenu(target: self)
+        BookmarkManager.shared.cleanupStaleBookmarks()
 
         if launchedWithFiles { return }
 
@@ -73,6 +74,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
                 documentWindows.first { $0.value === window }?.key
             }
         UserDefaults.standard.set(orderedURLs.map { $0.path }, forKey: windowOrderKey)
+
+        BookmarkManager.shared.stopAccessingAll()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -102,8 +105,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     private func restoreSavedURLs() -> [URL] {
         guard let paths = UserDefaults.standard.stringArray(forKey: savedURLsKey) else { return [] }
-        return paths.compactMap { path in
-            FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
+        return paths.compactMap { path -> URL? in
+            let url = URL(fileURLWithPath: path)
+
+            // Try to resolve bookmark first for sandboxed access
+            if let resolvedURL = BookmarkManager.shared.resolveBookmark(for: url) {
+                if BookmarkManager.shared.startAccessing(resolvedURL) {
+                    return resolvedURL
+                }
+            }
+
+            // Fall back to direct file access (works when not sandboxed)
+            guard FileManager.default.fileExists(atPath: path) else { return nil }
+            return url
         }
     }
 
@@ -120,8 +134,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     private func loadRecentDocuments() -> [URL] {
         guard let paths = UserDefaults.standard.stringArray(forKey: recentURLsKey) else { return [] }
-        return paths.compactMap { path in
-            FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
+        return paths.compactMap { path -> URL? in
+            let url = URL(fileURLWithPath: path)
+            // Check if file exists (bookmark will be resolved when opening)
+            guard FileManager.default.fileExists(atPath: path) else { return nil }
+            return url
         }
     }
 
@@ -151,6 +168,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     func openDocument(_ url: URL) {
         addToRecentDocuments(url)
+
+        // Create security-scoped bookmark for sandboxed access
+        BookmarkManager.shared.createBookmark(for: url)
 
         if let existingWindow = documentWindows[url] {
             existingWindow.makeKeyAndOrderFront(nil)
