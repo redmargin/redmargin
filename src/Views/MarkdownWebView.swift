@@ -55,22 +55,41 @@ public struct MarkdownWebView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
+        webView.allowsLinkPreview = false
 
         context.coordinator.onCheckboxToggle = onCheckboxToggle
         context.coordinator.onScrollPositionChange = onScrollPositionChange
         context.coordinator.initialScrollPosition = initialScrollPosition
+        context.coordinator.lastAllowRemoteImages = allowRemoteImages
 
         // Wire up find controller
         findController?.webView = webView
+
+        // Load content rules for remote resource blocking
+        loadContentRules(webView: webView, allowRemoteImages: allowRemoteImages)
 
         loadRenderer(webView: webView)
 
         return webView
     }
 
+    private func loadContentRules(webView: WKWebView, allowRemoteImages: Bool) {
+        ContentRuleList.compileForPreference(allowRemoteImages: allowRemoteImages) { ruleList in
+            if let ruleList = ruleList {
+                webView.configuration.userContentController.add(ruleList)
+            }
+        }
+    }
+
     public func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onCheckboxToggle = onCheckboxToggle
         context.coordinator.onScrollPositionChange = onScrollPositionChange
+
+        // Update content rules if allowRemoteImages preference changed
+        if context.coordinator.lastAllowRemoteImages != allowRemoteImages {
+            context.coordinator.lastAllowRemoteImages = allowRemoteImages
+            updateContentRules(webView: webView, allowRemoteImages: allowRemoteImages)
+        }
 
         let basePath = fileURL?.deletingLastPathComponent().path ?? ""
         let params = RenderParams(
@@ -80,7 +99,6 @@ public struct MarkdownWebView: NSViewRepresentable {
             scrollPosition: initialScrollPosition,
             gitChanges: gitChanges,
             inlineCodeColor: inlineCodeColor,
-            allowRemoteImages: allowRemoteImages,
             showGutter: showGutter
         )
 
@@ -99,6 +117,12 @@ public struct MarkdownWebView: NSViewRepresentable {
             context.coordinator.pendingRender = params
             context.coordinator.pendingLineNumbersVisible = showLineNumbers
         }
+    }
+
+    private func updateContentRules(webView: WKWebView, allowRemoteImages: Bool) {
+        let contentController = webView.configuration.userContentController
+        contentController.removeAllContentRuleLists()
+        loadContentRules(webView: webView, allowRemoteImages: allowRemoteImages)
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -128,7 +152,6 @@ public struct MarkdownWebView: NSViewRepresentable {
                 "theme": params.theme,
                 "basePath": params.basePath,
                 "inlineCodeColor": params.inlineCodeColor,
-                "allowRemoteImages": params.allowRemoteImages,
                 "showGutter": params.showGutter
             ]
         ]
@@ -208,7 +231,6 @@ public struct MarkdownWebView: NSViewRepresentable {
         var scrollPosition: Double = 0
         var gitChanges: GitChangeResult?
         var inlineCodeColor: String = "warm"
-        var allowRemoteImages: Bool = false
         var showGutter: Bool = true
     }
 
@@ -218,6 +240,7 @@ public struct MarkdownWebView: NSViewRepresentable {
         var pendingRender: RenderParams?
         var pendingLineNumbersVisible: Bool = true
         var lastLineNumbersVisible: Bool = true
+        var lastAllowRemoteImages: Bool = false
         var onCheckboxToggle: ((Int, Bool) -> Void)?
         var onScrollPositionChange: ((Double) -> Void)?
         var initialScrollPosition: Double = 0
