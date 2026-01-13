@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import RedmarginLib
 
 extension Notification.Name {
@@ -24,6 +25,9 @@ extension URL {
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     private var documentWindows: [URL: NSWindow] = [:]
     private var launchedWithFiles = false
+
+    // Cache UTType to avoid repeated LaunchServices lookups
+    private static let markdownType = UTType(filenameExtension: "md")!
 
     private let savedURLsKey = "RedMargin.OpenDocumentURLs"
     private let recentURLsKey = "RedMargin.RecentDocumentURLs"
@@ -151,18 +155,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     @objc func showOpenPanel() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "md")!, .plainText]
+        panel.allowedContentTypes = [Self.markdownType, .plainText]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
+        panel.styleMask.insert(.resizable)
 
-        if let keyWindow = NSApp.keyWindow,
+        let keyWindow = NSApp.keyWindow
+        if let keyWindow,
            let activeURL = documentWindows.first(where: { $0.value === keyWindow })?.key {
             panel.directoryURL = activeURL.deletingLastPathComponent()
         }
 
         NSApp.activate(ignoringOtherApps: true)
-        if panel.runModal() == .OK, let url = panel.url {
-            openDocument(url)
+
+        let completionHandler: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            if response == .OK, let url = panel.url {
+                self?.openDocument(url)
+            }
+        }
+
+        if let keyWindow {
+            panel.beginSheetModal(for: keyWindow, completionHandler: completionHandler)
+        } else {
+            panel.begin(completionHandler: completionHandler)
         }
     }
 
@@ -209,7 +224,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         window.setFrameAutosaveName(autosaveName)
 
         if !hasSavedFrame {
-            let size = NSSize(width: 750, height: 1000)
+            let size = NSSize(width: 950, height: 1100)
             if let screen = NSScreen.main {
                 let origin = NSPoint(
                     x: screen.visibleFrame.midX - size.width / 2,
