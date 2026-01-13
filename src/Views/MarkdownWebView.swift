@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import WebKit
 
@@ -233,7 +234,11 @@ public struct MarkdownWebView: NSViewRepresentable {
         var inlineCodeColor: String = "warm"
         var showGutter: Bool = true
     }
+}
 
+// MARK: - Coordinator
+
+extension MarkdownWebView {
     public class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var isLoaded = false
         var hasRestoredInitialScroll = false
@@ -258,6 +263,59 @@ public struct MarkdownWebView: NSViewRepresentable {
                 lastLineNumbersVisible = pendingLineNumbersVisible
                 MarkdownWebView.setLineNumbersVisible(webView: webView, visible: pendingLineNumbersVisible)
             }
+        }
+
+        public func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+
+            let scheme = url.scheme?.lowercased()
+
+            // Allow initial page load and internal navigation
+            if navigationAction.navigationType == .other ||
+               navigationAction.navigationType == .reload ||
+               navigationAction.navigationType == .backForward {
+                decisionHandler(.allow)
+                return
+            }
+
+            // Handle link clicks
+            if navigationAction.navigationType == .linkActivated {
+                switch scheme {
+                case "http", "https":
+                    // Open external links in system browser
+                    NSWorkspace.shared.open(url)
+                    decisionHandler(.cancel)
+                    return
+
+                case "mailto":
+                    // Let system handle mailto links
+                    NSWorkspace.shared.open(url)
+                    decisionHandler(.cancel)
+                    return
+
+                case "file":
+                    // Block navigation to local files (security)
+                    print("[Navigation] Blocked file:// navigation: \(url.path)")
+                    decisionHandler(.cancel)
+                    return
+
+                default:
+                    // Block unknown schemes
+                    print("[Navigation] Blocked unknown scheme: \(scheme ?? "nil")")
+                    decisionHandler(.cancel)
+                    return
+                }
+            }
+
+            // Allow other navigation types (resource loads, etc.)
+            decisionHandler(.allow)
         }
 
         public func userContentController(
