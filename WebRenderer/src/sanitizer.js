@@ -70,7 +70,8 @@
         if (!trimmed.startsWith('data:')) return true;
         // Only allow data URLs for images, and only image MIME types
         if (tagName === 'img') {
-            return /^data:image\/(png|jpeg|jpg|gif|webp|svg\+xml|bmp|ico);/i.test(trimmed);
+            // Only safe raster formats - NOT svg+xml (can contain scripts)
+            return /^data:image\/(png|jpeg|jpg|gif|webp);/i.test(trimmed);
         }
         return false;
     }
@@ -179,11 +180,13 @@
             if (attrName === 'href' || attrName === 'src') {
                 const url = attr.value;
                 if (!isSafeUrl(url)) {
+                    console.log('[Sanitizer] Blocked unsafe URL:', url.substring(0, 50));
                     attrsToRemove.push(attr.name);
                     continue;
                 }
                 // Additional check for data URLs
                 if (!isSafeDataUrl(url, tagName)) {
+                    console.log('[Sanitizer] Blocked data URL for', tagName + ':', url.substring(0, 50));
                     attrsToRemove.push(attr.name);
                     continue;
                 }

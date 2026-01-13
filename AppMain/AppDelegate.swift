@@ -265,7 +265,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     @objc func showAbout(_ sender: Any?) {
         let credits = NSAttributedString(
-            string: "A clean, fast Markdown viewer for macOS.",
+            string: "Markdown viewer with Git diff gutter.",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: NSColor.secondaryLabelColor

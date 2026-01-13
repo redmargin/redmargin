@@ -11,8 +11,10 @@ fi
 APP_NAME="Redmargin"
 APP_BUNDLE_ID="com.redmargin.app"
 APP_DIR="build/Redmargin.app"
+WAS_RUNNING=false
 
 if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
+    WAS_RUNNING=true
     echo "Redmargin is running; quitting before rebuild..."
     osascript -e "tell application id \"$APP_BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
     for _ in {1..50}; do
@@ -82,6 +84,11 @@ if [[ "$NO_INSTALL" == "false" ]]; then
     echo "Installing to /Applications..."
     rm -rf /Applications/Redmargin.app 2>/dev/null || true
     mv build/Redmargin.app /Applications/
+
+    if [[ "$WAS_RUNNING" == "true" ]]; then
+        echo "Restarting Redmargin..."
+        open -a Redmargin
+    fi
 fi
 
 echo "Done!"

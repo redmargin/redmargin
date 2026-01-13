@@ -60,7 +60,8 @@ Sanitize HTML content, block remote loads by default, configure WKWebView securi
 - HTML sanitizer using allowlist approach
 - Allowed tags: p, h1-h6, ul, ol, li, a, img, table, tr, td, th, thead, tbody, code, pre, blockquote, em, strong, del, input (checkbox only), label, div, span, br, hr, etc.
 - Strip all attributes except: href (on a), src/alt (on img), data-sourcepos, type/checked/disabled (on input), for (on label)
-- Remove javascript: and data: URLs from href/src
+- Block javascript: and vbscript: URLs from href/src
+- Allow data: URIs only for img src, and only safe raster MIME types: image/png, image/jpeg, image/gif, image/webp (NOT svg+xml - can contain scripts)
 
 **WebRenderer/src/index.js** (modify)
 - Import and use sanitizer before inserting HTML into DOM
@@ -180,6 +181,6 @@ Create `Tests/Scripts/test-security.sh` to automate:
 
 ### Manual Verification (visual confirmation)
 
-- [ ] **Safe HTML renders:** Inline HTML table displays correctly
+- [x] **Safe HTML renders:** Inline HTML table displays correctly
 - [ ] **Remote images blocked:** Remote image URL shows nothing or placeholder
 - [ ] **Local images work:** Relative image path displays image

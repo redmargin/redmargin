@@ -273,10 +273,39 @@ test('testAllowsSafeImageDataUrls', () => {
     assertContains(output, 'data:image/png', 'Safe image data URL should be preserved');
 });
 
-test('testBlocksDangerousDataUrls', () => {
+test('testAllowsAllSafeImageFormats', () => {
+    const safeFormats = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+    for (const format of safeFormats) {
+        const input = `<img src="data:${format};base64,abc123">`;
+        const output = sanitize(input);
+        assertContains(output, `data:${format}`, `${format} data URL should be allowed`);
+    }
+});
+
+test('testBlocksSvgDataUrl', () => {
+    // SVG can contain JavaScript - must be blocked
+    const input = '<img src="data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9ImFsZXJ0KDEpIj48L3N2Zz4=">';
+    const output = sanitize(input);
+    assertNotMatch(output, /src\s*=/, 'SVG data URL should be blocked (can contain scripts)');
+});
+
+test('testBlocksTextHtmlDataUrl', () => {
+    const input = '<img src="data:text/html,<script>alert(1)</script>">';
+    const output = sanitize(input);
+    assertNotMatch(output, /src\s*=/, 'text/html data URL should be blocked');
+});
+
+test('testBlocksDataUrlInLinks', () => {
     const input = '<a href="data:text/html,<script>alert(1)</script>">link</a>';
     const output = sanitize(input);
-    assertNotMatch(output, /href\s*=\s*["']data:/, 'Dangerous data URL should be removed from href');
+    assertNotMatch(output, /href\s*=\s*["']data:/, 'Data URL should be blocked in href');
+});
+
+test('testBlocksDataUrlInLinksEvenForImages', () => {
+    // Data URLs in links could open malicious content in new tab
+    const input = '<a href="data:image/png;base64,abc123">link</a>';
+    const output = sanitize(input);
+    assertNotMatch(output, /href\s*=\s*["']data:/, 'Even image data URLs blocked in href (could be opened in new tab)');
 });
 
 // === ID and class preservation ===
