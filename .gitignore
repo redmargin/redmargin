@@ -1,6 +1,7 @@
 .build/
 .DS_Store
 *.dmg
+*.zip
 WebRenderer/node_modules/
 
 # App bundle (build artifact)
@@ -10,3 +11,6 @@ build/Redmargin.app/
 .claude/
 default.profraw
 .mcp.json
+
+# Scratch files
+resources/docs/scratch.md

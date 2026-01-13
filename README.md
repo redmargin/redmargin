@@ -70,11 +70,14 @@ The build script will:
 
 ```
 redmargin/
-├── src/                  # Swift source
-│   ├── App/              # Entry point, document management
-│   └── Views/            # SwiftUI views, WebView wrapper
+├── AppMain/              # App entry point, window management
+├── src/                  # Swift library source
+│   ├── App/              # Document management, security
+│   ├── Views/            # SwiftUI views, WebView wrapper
+│   ├── Git/              # Git operations, diff parsing
+│   └── Preferences/      # Settings management
 ├── WebRenderer/          # JavaScript markdown rendering
-│   ├── src/              # markdown-it, sourcepos plugin
+│   ├── src/              # markdown-it, sourcepos, sanitizer
 │   ├── styles/           # Light/dark CSS themes
 │   └── tests/            # JavaScript tests
 ├── Tests/                # Swift XCTest suite
@@ -87,7 +90,7 @@ redmargin/
 
 ## Status
 
-Stage 11 - Security hardening with HTML sanitization and content blocking. See `resources/specs/` for design documents.
+v0.42.0 - Feature complete. See `resources/docs/CHANGELOG.md` for version history.
 
 ## License
 

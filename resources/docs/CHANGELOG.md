@@ -1,5 +1,13 @@
 # Changelog
 
+## 260113 Documentation Cleanup
+- Changed: Renamed `resources/redmargin_icon_pack` to `resources/icons`
+- Changed: Updated README project structure to reflect actual codebase
+- Changed: README status now shows version number
+- Removed: RedMargin_IconPack.zip (redundant with unpacked icons folder)
+- Removed: scratch.md from git history
+- Fixed: Package.swift warning for unhandled test script
+
 ## 260113 File Dialog Improvements
 - Changed: File open dialog now uses async presentation for better responsiveness
 - Changed: Dialog opens as sheet when a window is active, standalone otherwise
@@ -7,7 +15,7 @@
 - Fixed: Sluggish file dialog behavior with Default Folder X
 - Added: File dialog is now resizable
 
-## 260112 Settings Window Refactor
+## 260112 Settings Window Refactor (v0.42.0)
 - Changed: Settings window now uses pure AppKit (NSWindowController) instead of SwiftUI Settings scene
 - Fixed: Removed unwanted sidebar toggle button from settings window
 - Fixed: Removed empty window appearing on app launch
