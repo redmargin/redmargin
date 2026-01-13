@@ -1,5 +1,8 @@
 # Changelog
 
+## 260113 Document Restoration Fix
+- Fixed: `open -a Redmargin file.md` now restores previously open documents instead of forgetting them
+
 ## 260113 Documentation Cleanup
 - Changed: Renamed `resources/redmargin_icon_pack` to `resources/icons`
 - Changed: Updated README project structure to reflect actual codebase

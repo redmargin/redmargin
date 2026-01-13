@@ -60,8 +60,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         BookmarkManager.shared.cleanupStaleBookmarks()
         _ = openPanel  // Pre-initialize to avoid delay on first open
 
-        if launchedWithFiles { return }
-
+        // Always restore previously open documents, even when launched via `open -a`.
+        // Files opened via command line will appear on top of restored documents.
         let savedURLs = restoreSavedURLs()
         if !savedURLs.isEmpty {
             let orderedPaths = UserDefaults.standard.stringArray(forKey: windowOrderKey) ?? []
@@ -75,7 +75,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             for url in allURLsOrdered.reversed() {
                 openDocument(url)
             }
-        } else {
+        } else if !launchedWithFiles {
             showOpenPanel()
         }
     }
