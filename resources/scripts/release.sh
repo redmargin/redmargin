@@ -51,12 +51,20 @@ xcrun stapler staple "$DMG_PATH"
 echo ""
 echo "Release prepared: $DMG_PATH"
 echo ""
-echo "Next steps:"
-echo "  1. Test the DMG"
-echo "  2. Tag and push to trigger release workflow:"
+echo "Test the DMG, then press Enter to publish v$VERSION to GitHub (Ctrl+C to cancel)"
+read -r
+
+echo "==> Creating tag and pushing..."
+git tag "v$VERSION"
+git push public "v$VERSION"
+
+echo "==> Waiting for release workflow..."
+sleep 5
+RUN_ID=$(gh run list --repo redmargin/redmargin --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run watch "$RUN_ID" --repo redmargin/redmargin
+
+echo "==> Uploading DMG..."
+gh release upload "v$VERSION" "$DMG_NAME" --repo redmargin/redmargin
+
 echo ""
-echo "     git tag v$VERSION && git push public v$VERSION"
-echo ""
-echo "  3. Upload DMG to the release:"
-echo ""
-echo "     gh release upload v$VERSION \"$DMG_NAME\" --repo redmargin/redmargin"
+echo "Released: https://github.com/redmargin/redmargin/releases/tag/v$VERSION"
