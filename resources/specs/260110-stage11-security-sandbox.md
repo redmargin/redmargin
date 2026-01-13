@@ -1,7 +1,7 @@
 # Security & Sandbox
 
 ## Meta
-- Status: Partial (sandbox blocked, security features complete)
+- Status: Complete (sandbox deferred - not needed for direct distribution)
 - Branch: feature/security-sandbox
 - Dependencies: 260110-stage2-webview-renderer.md, 260110-stage9-preferences.md
 
@@ -10,10 +10,10 @@
 ## Business
 
 ### Problem
-Markdown files can contain inline HTML, which could execute malicious scripts. Remote images can leak user activity. The app needs proper sandboxing for App Store distribution. File access must be properly scoped.
+Markdown files can contain inline HTML, which could execute malicious scripts. Remote images can leak user activity. File access must be properly scoped.
 
 ### Solution
-Sanitize HTML content, block remote loads by default, configure WKWebView security settings, implement security-scoped bookmarks for file access, and prepare for sandbox entitlements.
+Sanitize HTML content, block remote loads by default, configure WKWebView security settings, and implement security-scoped bookmarks for file access.
 
 ### Behaviors
 - **Script blocking:** No JavaScript from Markdown content executes
@@ -49,8 +49,8 @@ Sanitize HTML content, block remote loads by default, configure WKWebView securi
 - Store in UserDefaults or a dedicated bookmarks file
 - On app relaunch, use bookmark to regain access for "Open Recent"
 
-**Sandbox Entitlements:**
-- com.apple.security.app-sandbox = true
+**Entitlements (for direct distribution):**
+- com.apple.security.app-sandbox = false (not required outside App Store)
 - com.apple.security.files.user-selected.read-write = true
 - com.apple.security.files.bookmarks.app-scope = true
 
@@ -87,8 +87,8 @@ Sanitize HTML content, block remote loads by default, configure WKWebView securi
 - Use BookmarkManager when opening files
 - Call startAccessingSecurityScopedResource / stopAccessing
 
-**RedMargin.entitlements** (create)
-- App sandbox entitlements for distribution
+**RedMargin.entitlements** (exists)
+- File access and bookmark entitlements (sandbox=false for direct distribution)
 
 ### Risks
 
@@ -126,11 +126,28 @@ Sanitize HTML content, block remote loads by default, configure WKWebView securi
 - [x] Resolve bookmarks on launch for recent files
 - [x] Integrate with AppDelegate (document opening flow)
 
-**Phase 5: Sandbox Entitlements**
+**Phase 5: Sandbox Entitlements** (DEFERRED)
 - [x] Create `RedMargin.entitlements` file (already existed)
 - [x] Add file access entitlements
 - [x] Add bookmark entitlements
-- [ ] Enable app-sandbox (BLOCKED: WKWebView can't load local files with sandbox; needs custom URL scheme handler)
+- [~] Enable app-sandbox - DEFERRED (see Sandbox Decision below)
+
+### Sandbox Decision
+
+**Conclusion: App sandbox is not required for direct distribution.**
+
+Research conducted 2026-01-13 found that sandbox is only mandatory for Mac App Store distribution. For apps distributed directly (download, Homebrew, etc.), only these are required:
+
+1. **Code signing** with Developer ID certificate
+2. **Notarization** via Apple (which requires hardened runtime)
+
+With proper signing + notarization, users see no Gatekeeper warnings - the app opens normally.
+
+**Industry practice:** Major IDEs and editors (VS Code, Zed, Sublime Text, Ghostty) are all non-sandboxed. They need full filesystem access which sandbox makes impractical.
+
+**Technical blocker if sandbox were needed:** WKWebView cannot load local `file://` URLs when sandboxed. Would require implementing a custom `WKURLSchemeHandler` to serve local files via a custom URL scheme (e.g., `redmargin://`).
+
+**Recommendation:** If Mac App Store distribution is desired in the future, revisit sandbox as a separate stage. The current entitlements file is prepared with bookmark support for that scenario.
 
 ---
 
@@ -182,5 +199,5 @@ Create `Tests/Scripts/test-security.sh` to automate:
 ### Manual Verification (visual confirmation)
 
 - [x] **Safe HTML renders:** Inline HTML table displays correctly
-- [ ] **Remote images blocked:** Remote image URL shows nothing or placeholder
-- [ ] **Local images work:** Relative image path displays image
+- [x] **Remote images blocked:** Remote image URL shows nothing or placeholder
+- [x] **Local images work:** Relative image path displays image
