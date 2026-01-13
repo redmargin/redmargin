@@ -9,6 +9,7 @@
 - Fixed: Package.swift warning for unhandled test script
 
 ## 260113 File Dialog Improvements
+- Fixed: File open dialog now opens instantly (reuse panel, pre-initialize at launch)
 - Changed: File open dialog now uses async presentation for better responsiveness
 - Changed: Dialog opens as sheet when a window is active, standalone otherwise
 - Changed: Default window size increased to 950x1100 to fit content width

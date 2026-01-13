@@ -29,6 +29,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     // Cache UTType to avoid repeated LaunchServices lookups
     private static let markdownType = UTType(filenameExtension: "md")!
 
+    // Reuse panel to avoid slow NSOpenPanel initialization
+    private lazy var openPanel: NSOpenPanel = {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [Self.markdownType, .plainText]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.styleMask.insert(.resizable)
+        return panel
+    }()
+
     private let savedURLsKey = "RedMargin.OpenDocumentURLs"
     private let recentURLsKey = "RedMargin.RecentDocumentURLs"
     private let windowOrderKey = "RedMargin.WindowOrder"
@@ -48,6 +58,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMainMenu(target: self)
         BookmarkManager.shared.cleanupStaleBookmarks()
+        _ = openPanel  // Pre-initialize to avoid delay on first open
 
         if launchedWithFiles { return }
 
@@ -154,12 +165,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     // MARK: - Document Management
 
     @objc func showOpenPanel() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [Self.markdownType, .plainText]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.styleMask.insert(.resizable)
-
+        let panel = openPanel
         let keyWindow = NSApp.keyWindow
         if let keyWindow,
            let activeURL = documentWindows.first(where: { $0.value === keyWindow })?.key {
