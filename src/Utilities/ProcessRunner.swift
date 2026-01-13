@@ -10,6 +10,12 @@ struct ProcessResult {
 /// Async wrapper around Process for running shell commands
 enum ProcessRunner {
 
+    /// Known executable paths for security hardening
+    /// Prefer absolute paths to prevent PATH manipulation attacks
+    private static let knownPaths: [String: String] = [
+        "git": "/usr/bin/git"
+    ]
+
     /// Runs an executable with arguments and returns the result
     /// - Parameters:
     ///   - executable: Path to the executable (e.g., "/usr/bin/git" or just "git")
@@ -24,18 +30,20 @@ enum ProcessRunner {
     ) async throws -> ProcessResult {
         let process = Process()
 
-        // Find executable in PATH if not an absolute path
+        // Resolve executable path
         if executable.hasPrefix("/") {
+            // Already absolute
             process.executableURL = URL(fileURLWithPath: executable)
+            process.arguments = arguments
+        } else if let knownPath = knownPaths[executable],
+                  FileManager.default.fileExists(atPath: knownPath) {
+            // Use known absolute path for security
+            process.executableURL = URL(fileURLWithPath: knownPath)
+            process.arguments = arguments
         } else {
+            // Fall back to PATH resolution via env
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             process.arguments = [executable] + arguments
-        }
-
-        if !executable.hasPrefix("/") {
-            // Arguments already set above with env
-        } else {
-            process.arguments = arguments
         }
 
         if let workingDirectory {

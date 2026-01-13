@@ -45,12 +45,6 @@
         );
     }
 
-    function filterRemoteImages(html) {
-        return html.replace(
-            /<img[^>]+src=["']https?:\/\/[^"']+["'][^>]*>/gi,
-            '<span class="blocked-image">[Remote image blocked]</span>'
-        );
-    }
 
     function setGutterVisible(visible) {
         const gutterContainer = document.getElementById('gutter-container');
@@ -61,7 +55,7 @@
 
     function render(payload) {
         const { markdown, options = {}, changes = null } = payload;
-        const { theme = 'light', basePath = '', inlineCodeColor = 'warm', allowRemoteImages = false, showGutter = true } = options;
+        const { theme = 'light', basePath = '', inlineCodeColor = 'warm', showGutter = true } = options;
 
         currentBasePath = basePath;
         setTheme(theme);
@@ -81,10 +75,11 @@
             lastRenderedMarkdown = markdown;
 
             let html = md.render(markdown || '');
-            html = resolveImagePaths(html, basePath);
-            if (!allowRemoteImages) {
-                html = filterRemoteImages(html);
+            // Sanitize HTML to prevent XSS from inline HTML in Markdown
+            if (window.Sanitizer && window.Sanitizer.sanitize) {
+                html = window.Sanitizer.sanitize(html);
             }
+            html = resolveImagePaths(html, basePath);
 
             const container = document.getElementById('content-container');
             if (container) {

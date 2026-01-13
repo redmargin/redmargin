@@ -1,8 +1,8 @@
 # Redmargin
 
-A native macOS Markdown viewer with live rendering.
+Markdown viewer for macOS with Git diff gutter.
 
-> **Note:** This is a personal project I built for my own use. I'm sharing it because good macOS Markdown viewers are rare. I'm not actively seeking contributions and may be slow to respond to issues. Feel free to fork if you want to take it in a different direction.
+> **Note:** This is a personal project I built because I couldn't find a Markdown viewer that fit my needs. I'm not actively seeking contributions and may be slow to respond to issues. Feel free to fork if you want to take it in a different direction.
 
 ## Features
 
@@ -17,6 +17,17 @@ A native macOS Markdown viewer with live rendering.
 - **Local images** - Relative image paths work correctly
 - **Per-document state** - Remembers scroll position and line number visibility per file
 - **Native macOS** - SwiftUI shell with WKWebView rendering
+
+## Security
+
+Markdown files can contain inline HTML which creates XSS risks. Redmargin applies multiple layers of protection:
+
+- **HTML sanitization** - Allowlist-based sanitizer strips scripts, event handlers, and dangerous tags
+- **URL scheme allowlist** - Only http/https/mailto allowed in links; file:// and other schemes blocked
+- **Navigation policy** - External links open in system browser; file:// navigation blocked
+- **Remote loading blocked** - External resources blocked by default via WKContentRuleList (images configurable in Preferences)
+- **Safe data URIs only** - Only raster image formats (PNG, JPEG, GIF, WebP) allowed; SVG blocked (can contain scripts)
+- **Local images** - Images can be loaded from any path readable by the user (not restricted to document directory)
 
 ## Requirements
 
@@ -76,7 +87,7 @@ redmargin/
 
 ## Status
 
-Stage 10 in progress - Print support with Cmd+P, configuration sheet for gutter/line number visibility. See `resources/specs/` for design documents.
+Stage 11 - Security hardening with HTML sanitization and content blocking. See `resources/specs/` for design documents.
 
 ## License
 

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import RedmarginLib
 
 extension Notification.Name {
@@ -25,6 +26,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private var documentWindows: [URL: NSWindow] = [:]
     private var launchedWithFiles = false
 
+    // Cache UTType to avoid repeated LaunchServices lookups
+    private static let markdownType = UTType(filenameExtension: "md")!
+
     private let savedURLsKey = "RedMargin.OpenDocumentURLs"
     private let recentURLsKey = "RedMargin.RecentDocumentURLs"
     private let windowOrderKey = "RedMargin.WindowOrder"
@@ -43,6 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMainMenu(target: self)
+        BookmarkManager.shared.cleanupStaleBookmarks()
 
         if launchedWithFiles { return }
 
@@ -73,6 +78,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
                 documentWindows.first { $0.value === window }?.key
             }
         UserDefaults.standard.set(orderedURLs.map { $0.path }, forKey: windowOrderKey)
+
+        BookmarkManager.shared.stopAccessingAll()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -102,8 +109,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     private func restoreSavedURLs() -> [URL] {
         guard let paths = UserDefaults.standard.stringArray(forKey: savedURLsKey) else { return [] }
-        return paths.compactMap { path in
-            FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
+        return paths.compactMap { path -> URL? in
+            let url = URL(fileURLWithPath: path)
+
+            // Try to resolve bookmark first for sandboxed access
+            if let resolvedURL = BookmarkManager.shared.resolveBookmark(for: url) {
+                if BookmarkManager.shared.startAccessing(resolvedURL) {
+                    return resolvedURL
+                }
+            }
+
+            // Fall back to direct file access (works when not sandboxed)
+            guard FileManager.default.fileExists(atPath: path) else { return nil }
+            return url
         }
     }
 
@@ -120,8 +138,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     private func loadRecentDocuments() -> [URL] {
         guard let paths = UserDefaults.standard.stringArray(forKey: recentURLsKey) else { return [] }
-        return paths.compactMap { path in
-            FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
+        return paths.compactMap { path -> URL? in
+            let url = URL(fileURLWithPath: path)
+            // Check if file exists (bookmark will be resolved when opening)
+            guard FileManager.default.fileExists(atPath: path) else { return nil }
+            return url
         }
     }
 
@@ -134,23 +155,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     @objc func showOpenPanel() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "md")!, .plainText]
+        panel.allowedContentTypes = [Self.markdownType, .plainText]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
+        panel.styleMask.insert(.resizable)
 
-        if let keyWindow = NSApp.keyWindow,
+        let keyWindow = NSApp.keyWindow
+        if let keyWindow,
            let activeURL = documentWindows.first(where: { $0.value === keyWindow })?.key {
             panel.directoryURL = activeURL.deletingLastPathComponent()
         }
 
         NSApp.activate(ignoringOtherApps: true)
-        if panel.runModal() == .OK, let url = panel.url {
-            openDocument(url)
+
+        let completionHandler: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            if response == .OK, let url = panel.url {
+                self?.openDocument(url)
+            }
+        }
+
+        if let keyWindow {
+            panel.beginSheetModal(for: keyWindow, completionHandler: completionHandler)
+        } else {
+            panel.begin(completionHandler: completionHandler)
         }
     }
 
     func openDocument(_ url: URL) {
         addToRecentDocuments(url)
+
+        // Create security-scoped bookmark for sandboxed access
+        BookmarkManager.shared.createBookmark(for: url)
 
         if let existingWindow = documentWindows[url] {
             existingWindow.makeKeyAndOrderFront(nil)
@@ -189,7 +224,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         window.setFrameAutosaveName(autosaveName)
 
         if !hasSavedFrame {
-            let size = NSSize(width: 750, height: 1000)
+            let size = NSSize(width: 950, height: 1100)
             if let screen = NSScreen.main {
                 let origin = NSPoint(
                     x: screen.visibleFrame.midX - size.width / 2,
@@ -245,7 +280,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     @objc func showAbout(_ sender: Any?) {
         let credits = NSAttributedString(
-            string: "A clean, fast Markdown viewer for macOS.",
+            string: "Markdown viewer with Git diff gutter.",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: NSColor.secondaryLabelColor
