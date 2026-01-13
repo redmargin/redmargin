@@ -10,7 +10,7 @@ global.DOMParser = dom.window.DOMParser;
 global.Node = dom.window.Node;
 
 // Load sanitizer
-const { sanitize, isSafeUrl } = require('../src/sanitizer.js');
+const { sanitize, isSafeHref, isSafeSrc, getUrlScheme } = require('../src/sanitizer.js');
 
 // Test utilities
 let passed = 0;
@@ -338,21 +338,99 @@ test('testHandlesNestedMaliciousContent', () => {
     assertContains(output, 'nested', 'Content should be preserved');
 });
 
-// === isSafeUrl function tests ===
-test('testIsSafeUrlValidUrls', () => {
-    assertEqual(isSafeUrl('https://example.com'), true, 'https should be safe');
-    assertEqual(isSafeUrl('http://example.com'), true, 'http should be safe');
-    assertEqual(isSafeUrl('./relative.html'), true, 'Relative should be safe');
-    assertEqual(isSafeUrl('/absolute/path'), true, 'Absolute path should be safe');
-    assertEqual(isSafeUrl('#anchor'), true, 'Anchor should be safe');
+// === URL scheme extraction tests ===
+test('testGetUrlScheme', () => {
+    assertEqual(getUrlScheme('https://example.com'), 'https:', 'Should extract https:');
+    assertEqual(getUrlScheme('http://example.com'), 'http:', 'Should extract http:');
+    assertEqual(getUrlScheme('mailto:test@example.com'), 'mailto:', 'Should extract mailto:');
+    assertEqual(getUrlScheme('file:///path/to/file'), 'file:', 'Should extract file:');
+    assertEqual(getUrlScheme('javascript:alert(1)'), 'javascript:', 'Should extract javascript:');
+    assertEqual(getUrlScheme('ftp://server.com'), 'ftp:', 'Should extract ftp:');
 });
 
-test('testIsSafeUrlDangerousUrls', () => {
-    assertEqual(isSafeUrl('javascript:alert(1)'), false, 'javascript: should be unsafe');
-    assertEqual(isSafeUrl('JAVASCRIPT:alert(1)'), false, 'JAVASCRIPT: should be unsafe');
-    assertEqual(isSafeUrl('vbscript:msgbox(1)'), false, 'vbscript: should be unsafe');
-    // data: URLs are handled separately by isSafeDataUrl
-    assertEqual(isSafeUrl('data:text/html,<script>'), true, 'data: passes isSafeUrl (checked separately)');
+test('testGetUrlSchemeRelativeUrls', () => {
+    assertEqual(getUrlScheme('./relative.html'), null, 'Relative ./ should return null');
+    assertEqual(getUrlScheme('../parent.html'), null, 'Relative ../ should return null');
+    assertEqual(getUrlScheme('/absolute/path'), null, 'Absolute path should return null');
+    assertEqual(getUrlScheme('#anchor'), null, 'Anchor should return null');
+    assertEqual(getUrlScheme('?query=1'), null, 'Query should return null');
+    assertEqual(getUrlScheme('page.html'), null, 'Simple filename should return null');
+});
+
+// === isSafeHref function tests (explicit allowlist) ===
+test('testIsSafeHrefAllowedSchemes', () => {
+    assertEqual(isSafeHref('https://example.com'), true, 'https should be safe for href');
+    assertEqual(isSafeHref('http://example.com'), true, 'http should be safe for href');
+    assertEqual(isSafeHref('mailto:test@example.com'), true, 'mailto should be safe for href');
+});
+
+test('testIsSafeHrefRelativeUrls', () => {
+    assertEqual(isSafeHref('./relative.html'), true, 'Relative ./ should be safe');
+    assertEqual(isSafeHref('../parent.html'), true, 'Relative ../ should be safe');
+    assertEqual(isSafeHref('/absolute/path'), true, 'Absolute path should be safe');
+    assertEqual(isSafeHref('#anchor'), true, 'Anchor should be safe');
+    assertEqual(isSafeHref('page.html'), true, 'Simple filename should be safe');
+});
+
+test('testIsSafeHrefBlockedSchemes', () => {
+    assertEqual(isSafeHref('javascript:alert(1)'), false, 'javascript: should be blocked');
+    assertEqual(isSafeHref('JAVASCRIPT:alert(1)'), false, 'JAVASCRIPT: should be blocked');
+    assertEqual(isSafeHref('vbscript:msgbox(1)'), false, 'vbscript: should be blocked');
+    assertEqual(isSafeHref('file:///etc/passwd'), false, 'file: should be blocked in href');
+    assertEqual(isSafeHref('ftp://server.com/file'), false, 'ftp: should be blocked');
+    assertEqual(isSafeHref('smb://server/share'), false, 'smb: should be blocked');
+    assertEqual(isSafeHref('data:text/html,<script>'), false, 'data: should be blocked in href');
+});
+
+// === isSafeSrc function tests (explicit allowlist) ===
+test('testIsSafeSrcAllowedSchemes', () => {
+    assertEqual(isSafeSrc('https://example.com/img.png'), true, 'https should be safe for src');
+    assertEqual(isSafeSrc('http://example.com/img.png'), true, 'http should be safe for src');
+    assertEqual(isSafeSrc('file:///path/to/image.png'), true, 'file: should be safe for src');
+});
+
+test('testIsSafeSrcRelativeUrls', () => {
+    assertEqual(isSafeSrc('./image.png'), true, 'Relative ./ should be safe');
+    assertEqual(isSafeSrc('../images/photo.jpg'), true, 'Relative ../ should be safe');
+    assertEqual(isSafeSrc('/absolute/path/img.gif'), true, 'Absolute path should be safe');
+    assertEqual(isSafeSrc('image.png'), true, 'Simple filename should be safe');
+});
+
+test('testIsSafeSrcDataUrls', () => {
+    // data: URLs are allowed through isSafeSrc but validated separately by isSafeDataUrl
+    assertEqual(isSafeSrc('data:image/png;base64,abc'), true, 'data: should pass isSafeSrc (validated separately)');
+});
+
+test('testIsSafeSrcBlockedSchemes', () => {
+    assertEqual(isSafeSrc('javascript:alert(1)'), false, 'javascript: should be blocked');
+    assertEqual(isSafeSrc('ftp://server.com/img.png'), false, 'ftp: should be blocked');
+    assertEqual(isSafeSrc('smb://server/share/img.png'), false, 'smb: should be blocked');
+});
+
+// === Integration: sanitize with scheme allowlist ===
+test('testSanitizeBlocksFileHref', () => {
+    const input = '<a href="file:///etc/passwd">local file</a>';
+    const output = sanitize(input);
+    assertNotMatch(output, /href\s*=/, 'file: href should be removed');
+    assertContains(output, 'local file', 'Link text should be preserved');
+});
+
+test('testSanitizeAllowsFileSrc', () => {
+    const input = '<img src="file:///path/to/image.png" alt="local">';
+    const output = sanitize(input);
+    assertContains(output, 'file:///path/to/image.png', 'file: src should be preserved');
+});
+
+test('testSanitizeBlocksFtpHref', () => {
+    const input = '<a href="ftp://server.com/file">ftp link</a>';
+    const output = sanitize(input);
+    assertNotMatch(output, /href\s*=/, 'ftp: href should be removed');
+});
+
+test('testSanitizeBlocksSmbHref', () => {
+    const input = '<a href="smb://server/share">network share</a>';
+    const output = sanitize(input);
+    assertNotMatch(output, /href\s*=/, 'smb: href should be removed');
 });
 
 // Summary

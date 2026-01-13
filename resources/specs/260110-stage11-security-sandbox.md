@@ -19,7 +19,8 @@ Sanitize HTML content, block remote loads by default, configure WKWebView securi
 - **Script blocking:** No JavaScript from Markdown content executes
 - **Remote blocking:** External URLs don't load by default (images, iframes, etc.)
 - **Inline HTML:** Safe HTML tags render; dangerous ones stripped
-- **File access:** Only files in opened document's directory accessible
+- **Link navigation:** External links open in system browser; file:// links blocked
+- **Local images:** Can load images from any user-readable path (not restricted to document directory)
 - **Reopen after restart:** Previously opened files re-openable via security-scoped bookmarks
 
 ---
@@ -36,9 +37,15 @@ Sanitize HTML content, block remote loads by default, configure WKWebView securi
 
 **WKWebView Configuration:**
 - Disable JavaScript execution from content (only allow bundled app JS)
-- Set `WKPreferences.javaScriptEnabled = true` but use `WKContentRuleList` to block inline scripts from content
-- Use `WKWebViewConfiguration.limitsNavigationsToAppBoundDomains = true`
+- Set `WKPreferences.javaScriptEnabled = true` but use sanitizer to strip scripts from content
 - Set `allowsLinkPreview = false`
+- Use non-persistent data store to reduce tracking state
+
+**Navigation Policy:**
+- External links (http/https) open in system browser via NSWorkspace
+- mailto: links handled by system mail client
+- file:// navigation blocked (security)
+- Unknown schemes blocked
 
 **Remote Loading:**
 - Use `WKContentRuleList` to block all remote URLs by default
@@ -60,7 +67,8 @@ Sanitize HTML content, block remote loads by default, configure WKWebView securi
 - HTML sanitizer using allowlist approach
 - Allowed tags: p, h1-h6, ul, ol, li, a, img, table, tr, td, th, thead, tbody, code, pre, blockquote, em, strong, del, input (checkbox only), label, div, span, br, hr, etc.
 - Strip all attributes except: href (on a), src/alt (on img), data-sourcepos, type/checked/disabled (on input), for (on label)
-- Block javascript: and vbscript: URLs from href/src
+- URL scheme allowlist for href: http, https, mailto (and relative URLs)
+- URL scheme allowlist for src: http, https, file (and relative URLs)
 - Allow data: URIs only for img src, and only safe raster MIME types: image/png, image/jpeg, image/gif, image/webp (NOT svg+xml - can contain scripts)
 
 **WebRenderer/src/index.js** (modify)

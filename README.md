@@ -20,12 +20,14 @@ Markdown viewer for macOS with Git diff gutter.
 
 ## Security
 
-Markdown files can contain inline HTML which creates XSS risks. Redmargin sanitizes content:
+Markdown files can contain inline HTML which creates XSS risks. Redmargin applies multiple layers of protection:
 
 - **HTML sanitization** - Allowlist-based sanitizer strips scripts, event handlers, and dangerous tags
-- **Remote loading blocked** - External URLs blocked by default (configurable for images in Preferences)
+- **URL scheme allowlist** - Only http/https/mailto allowed in links; file:// and other schemes blocked
+- **Navigation policy** - External links open in system browser; file:// navigation blocked
+- **Remote loading blocked** - External resources blocked by default via WKContentRuleList (images configurable in Preferences)
 - **Safe data URIs only** - Only raster image formats (PNG, JPEG, GIF, WebP) allowed; SVG blocked (can contain scripts)
-- **JavaScript restricted** - Content scripts blocked via WKContentRuleList
+- **Local images** - Images can be loaded from any path readable by the user (not restricted to document directory)
 
 ## Requirements
 
