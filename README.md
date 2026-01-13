@@ -2,12 +2,12 @@
 
 Markdown viewer for macOS with Git diff gutter.
 
-> **Note:** This is a personal project I built because I couldn't find a Markdown viewer that fit my needs. I'm not actively seeking contributions and may be slow to respond to issues. Feel free to fork if you want to take it in a different direction.
+> I built this for myself after trying various Markdown viewers and not finding one that fit how I work. Putting it out there in case it clicks for someone else too. Happy to hear feedback or accept contributions, though responses may be slow. Fork away if you'd like to take it somewhere new.
 
 ## Features
 
 - **Git gutter** - Shows changed/added/deleted lines compared to HEAD
-- **Live Markdown rendering** - View Markdown files as beautifully formatted HTML
+- **Live Markdown rendering** - View Markdown files as rendered HTML
 - **Find in page** - Search text with match count and navigation (Cmd+F)
 - **Interactive checkboxes** - Click to toggle task list items, saves immediately
 - **Preferences** - Theme (light/dark/system), inline code colors, gutter visibility, remote images
