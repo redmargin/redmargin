@@ -1,5 +1,8 @@
 # Changelog
 
+## 260114 Command-Line File Focus
+- Fixed: File passed via command line now appears on top of restored documents
+
 ## 260113 Document Restoration Fix
 - Fixed: `open -a Redmargin file.md` now restores previously open documents instead of forgetting them
 

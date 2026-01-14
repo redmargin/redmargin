@@ -25,6 +25,7 @@ extension URL {
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     private var documentWindows: [URL: NSWindow] = [:]
     private var launchedWithFiles = false
+    private var launchURLs: [URL] = []
 
     // Cache UTType to avoid repeated LaunchServices lookups
     private static let markdownType = UTType(filenameExtension: "md")!
@@ -78,6 +79,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         } else if !launchedWithFiles {
             showOpenPanel()
         }
+
+        // Bring command-line files to front after restoring other documents
+        for url in launchURLs {
+            documentWindows[url]?.makeKeyAndOrderFront(nil)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -104,11 +110,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     func application(_ application: NSApplication, open urls: [URL]) {
         launchedWithFiles = true
+        launchURLs = urls
         urls.forEach { openDocument($0) }
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
-        openDocument(URL(fileURLWithPath: filename))
+        let url = URL(fileURLWithPath: filename)
+        launchedWithFiles = true
+        launchURLs = [url]
+        openDocument(url)
         return true
     }
 
