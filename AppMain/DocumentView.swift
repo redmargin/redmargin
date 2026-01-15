@@ -133,6 +133,11 @@ struct DocumentWindowContent: View {
         .onChange(of: findController.searchText) { _, newValue in
             findController.find(newValue)
         }
+        .onKeyPress(.escape) {
+            guard showFindBar else { return .ignored }
+            dismissFindBar()
+            return .handled
+        }
     }
 
     private var isKeyWindow: Bool {
