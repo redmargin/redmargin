@@ -2,6 +2,7 @@ import Foundation
 import RedmarginLib
 import RedmarginCore
 
+@MainActor
 class DocumentState: ObservableObject {
     @Published var content: String
     @Published var gitChanges: GitChangeResult?
@@ -21,20 +22,27 @@ class DocumentState: ObservableObject {
         self.content = content
         self.fileURL = fileURL
         self.fileProvider = fileProvider
-        setupFileWatcher()
-        detectGitChanges()
+        Task {
+            await setupFileWatcher()
+            await detectGitChanges()
+        }
     }
     
     deinit {
-        if let token = fileWatchToken { fileProvider.unwatch(token) }
-        if let token = gitWatchToken { fileProvider.unwatch(token) }
+        let provider = fileProvider
+        let fToken = fileWatchToken
+        let gToken = gitWatchToken
+        Task {
+            if let token = fToken { await provider.unwatch(token) }
+            if let token = gToken { await provider.unwatch(token) }
+        }
     }
 
-    private func setupFileWatcher() {
+    private func setupFileWatcher() async {
         // Unwatch old if any
-        if let token = fileWatchToken { fileProvider.unwatch(token) }
+        if let token = fileWatchToken { await fileProvider.unwatch(token) }
         
-        fileWatchToken = fileProvider.watchFile(at: fileURL.path) { [weak self] in
+        fileWatchToken = await fileProvider.watchFile(at: fileURL.path) { [weak self] in
             Task { @MainActor in
                 self?.reloadContent()
             }
@@ -54,7 +62,9 @@ class DocumentState: ObservableObject {
                     }
                     print("[DocumentState] Content changed, updating (\(newContent.count) chars)")
                     content = newContent
-                    detectGitChanges()
+                    Task {
+                        await detectGitChanges()
+                    }
                 }
             } catch {
                 print("[DocumentState] Failed to read file: \(error)")
@@ -70,7 +80,7 @@ class DocumentState: ObservableObject {
                     content = newContent
                 }
             }
-            detectGitChanges()
+            await detectGitChanges()
             
             try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s
             await MainActor.run {
@@ -79,7 +89,7 @@ class DocumentState: ObservableObject {
         }
     }
 
-    private func detectGitChanges() {
+    private func detectGitChanges() async {
         print("[Gutter] detectGitChanges called for \(fileURL.lastPathComponent)")
 
         gitChangeTask?.cancel()
@@ -93,7 +103,7 @@ class DocumentState: ObservableObject {
                     print("[Gutter] Detected repo root: \(repoRoot ?? "nil")")
                     
                     if let root = repoRoot {
-                        setupGitWatcher(root: root)
+                        await setupGitWatcher(root: root)
                     }
                 }
 
@@ -120,12 +130,13 @@ class DocumentState: ObservableObject {
         }
     }
     
-    private func setupGitWatcher(root: String) {
-        if let token = gitWatchToken { fileProvider.unwatch(token) }
+    private func setupGitWatcher(root: String) async {
+        if let token = gitWatchToken { await fileProvider.unwatch(token) }
         
-        gitWatchToken = fileProvider.watchGitRepo(at: root) { [weak self] in
+        gitWatchToken = await fileProvider.watchGitRepo(at: root) { [weak self] in
             Task { @MainActor in
-                self?.detectGitChanges()
+                guard let self = self else { return }
+                await self.detectGitChanges()
             }
         }
     }

@@ -1,14 +1,14 @@
 import Foundation
 
 /// Result of running a process
-struct ProcessResult {
-    let stdout: String
-    let stderr: String
-    let exitCode: Int32
+public struct ProcessResult {
+    public let stdout: String
+    public let stderr: String
+    public let exitCode: Int32
 }
 
 /// Async wrapper around Process for running shell commands
-enum ProcessRunner {
+public enum ProcessRunner {
 
     /// Known executable paths for security hardening
     /// Prefer absolute paths to prevent PATH manipulation attacks
