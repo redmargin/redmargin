@@ -39,7 +39,7 @@ Deploy a headless server binary to the remote host that handles file operations,
 - Checkbox toggle: Same as local — modify content, save
 
 **File watching:**
-- Server watches file using platform-native events (inotify/FSEvents)
+- Server watches file using platform-native events (inotify on Linux, DispatchSource on macOS)
 - Pushes `FileChanged` event to client
 - Client reloads content (same as local file watching)
 
@@ -50,7 +50,7 @@ Deploy a headless server binary to the remote host that handles file operations,
 
 **Reconnection:**
 - If connection drops, client shows "Reconnecting..." status
-- Daemon keeps running; reconnects within seconds
+- Daemon keeps running; proxy reconnects within seconds
 - Unsaved changes cached locally, restored on reconnect
 
 **UI indicators:**
@@ -63,7 +63,12 @@ Deploy a headless server binary to the remote host that handles file operations,
 
 ### Approach
 
-The implementation follows Zed's proven architecture: a headless server binary runs on the remote host, communicating with the local client over SSH stdin/stdout using a length-prefixed binary protocol.
+The implementation follows Zed's proven architecture with a **daemon + proxy** model:
+
+1. **Daemon mode (`run`)**: Forks to background, creates Unix domain sockets, handles RPC requests
+2. **Proxy mode (`proxy`)**: Runs in SSH foreground, bridges SSH stdin/stdout to daemon sockets
+
+This separation allows the daemon to survive connection drops while the proxy handles the SSH transport.
 
 **Why this approach over SCP hack:**
 1. Real-time file watching (not polling)
@@ -74,7 +79,7 @@ The implementation follows Zed's proven architecture: a headless server binary r
 
 **Protocol choice:** Length-prefixed JSON over stdin/stdout. Simpler than protobuf for this scope, human-debuggable, sufficient performance for Markdown files.
 
-**Server binary:** Built from same Swift Package as a separate executable target. Statically linked where possible. Falls back to dynamic linking on macOS remotes.
+**Cross-compilation:** Use Swift's official Static Linux SDK to build statically-linked musl binaries from macOS. No Docker or Linux CI required.
 
 ### Architecture Diagram
 
@@ -100,49 +105,126 @@ The implementation follows Zed's proven architecture: a headless server binary r
 │                                                    └──────────┬────────┘│
 └───────────────────────────────────────────────────────────────┼─────────┘
                                                                 │
-                                              SSH (stdin/stdout RPC)
+                                              SSH stdin/stdout (to proxy)
                                                                 │
 ┌───────────────────────────────────────────────────────────────┼─────────┐
 │                           REMOTE (Linux/macOS)                │         │
 ├───────────────────────────────────────────────────────────────┼─────────┤
 │                                                    ┌──────────▼────────┐│
-│                                                    │ redmargin-server  ││
-│                                                    │ (daemon)          ││
-│                                                    └──────────┬────────┘│
-│                              ┌────────────────┬───────────────┼─────────┤
-│                              ▼                ▼               ▼         │
-│                     ┌─────────────┐   ┌─────────────┐  ┌─────────────┐  │
-│                     │ FileOps     │   │ GitOps      │  │ FileWatcher │  │
-│                     │ read/write  │   │ diff/detect │  │ inotify/FS  │  │
-│                     └─────────────┘   └─────────────┘  └─────────────┘  │
+│  ┌────────────────────────────────────────────────►│ redmargin-server  ││
+│  │         Unix Domain Sockets                     │ proxy (foreground)││
+│  │         ~/.redmargin-server/*.sock              └──────────┬────────┘│
+│  │                                                            │         │
+│  │  ┌─────────────────────────────────────────────────────────┘         │
+│  │  │                                                                   │
+│  │  ▼                                                                   │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │
+│  └──│ redmargin-server daemon (background)                            │ │
+│     │ - Listens on Unix sockets (stdin.sock, stdout.sock, stderr.sock)│ │
+│     │ - Survives connection drops                                     │ │
+│     │ - PID file: ~/.redmargin-server/daemon.pid                      │ │
+│     └──────────────────────────┬──────────────────────────────────────┘ │
+│                                │                                        │
+│         ┌──────────────────────┼──────────────────────┐                 │
+│         ▼                      ▼                      ▼                 │
+│  ┌─────────────┐       ┌─────────────┐        ┌─────────────┐          │
+│  │ FileOps     │       │ GitOps      │        │ FileWatcher │          │
+│  │ read/write  │       │ diff/detect │        │ inotify/FS  │          │
+│  └─────────────┘       └─────────────┘        └─────────────┘          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Daemon/Proxy Architecture (Zed Model)
+
+**Based on research of Zed's `remote_server` crate:**
+
+The server binary supports two commands:
+
+```bash
+# Daemon mode: forks to background, creates Unix sockets
+redmargin-server run \
+  --pid-file ~/.redmargin-server/daemon.pid \
+  --stdin-socket ~/.redmargin-server/stdin.sock \
+  --stdout-socket ~/.redmargin-server/stdout.sock \
+  --stderr-socket ~/.redmargin-server/stderr.sock
+
+# Proxy mode: bridges SSH stdio to daemon sockets
+redmargin-server proxy --reconnect
+```
+
+**Flow:**
+
+1. Client spawns SSH: `ssh host "~/.redmargin-server/redmargin-server-1.0.0 proxy --reconnect"`
+2. Proxy checks if daemon running (PID file exists, process alive)
+3. If not running, proxy spawns daemon with `run` command
+4. Daemon forks: parent exits, child redirects stdio to `/dev/null`, creates sockets
+5. Proxy connects to Unix sockets, bridges SSH stdin/stdout to daemon
+6. RPC messages flow: Client ↔ SSH ↔ Proxy ↔ Unix Socket ↔ Daemon
+7. If SSH disconnects, proxy dies but daemon keeps running
+8. New SSH connection, new proxy attaches to existing daemon
+
+**Daemon responsibilities:**
+- Create and listen on Unix domain sockets
+- Handle RPC requests (ReadFile, WriteFile, GitDiff, etc.)
+- Manage file watchers, push events to connected proxy
+- Write PID file for lifecycle management
+
+**Proxy responsibilities:**
+- Run in SSH foreground (keeps SSH session alive)
+- Start daemon if not running
+- Connect to daemon's Unix sockets
+- Bridge SSH stdin → daemon stdin socket
+- Bridge daemon stdout socket → SSH stdout
+- Forward daemon stderr socket → SSH stderr (for logging)
+
 ### RPC Protocol
 
-**Transport:** SSH connection with ControlMaster. Server reads from stdin, writes to stdout. Each message is length-prefixed:
+**Transport:** Length-prefixed JSON over stdin/stdout (proxy↔client) and Unix sockets (proxy↔daemon).
 
 ```
 [4 bytes: message length (big-endian uint32)][JSON payload]
 ```
 
-**Message format:**
+**Handshake (first message from client):**
+
+```json
+{
+  "type": "Hello",
+  "payload": {
+    "clientVersion": "1.0.0",
+    "protocolVersion": 1
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "type": "HelloResponse",
+  "payload": {
+    "serverVersion": "1.0.0",
+    "protocolVersion": 1,
+    "accepted": true
+  }
+}
+```
+
+**Request/Response format:**
 
 ```json
 {
   "id": 1,
   "type": "ReadFile",
-  "payload": { ... }
+  "payload": { "path": "/home/user/docs/file.md" }
 }
 ```
-
-**Response format:**
 
 ```json
 {
   "id": 1,
   "type": "ReadFileResponse",
-  "payload": { ... }
+  "payload": { "content": "# Hello\n...", "error": null }
 }
 ```
 
@@ -159,12 +241,14 @@ The implementation follows Zed's proven architecture: a headless server binary r
 
 | Request | Response | Description |
 |---------|----------|-------------|
+| `Hello` | `HelloResponse` | Version handshake |
 | `ReadFile` | `ReadFileResponse` | Read file contents |
 | `WriteFile` | `WriteFileResponse` | Write file atomically |
 | `WatchFile` | `WatchFileResponse` | Start watching a file |
 | `UnwatchFile` | `UnwatchFileResponse` | Stop watching |
 | `GitDetectRepo` | `GitDetectRepoResponse` | Find repo root for path |
 | `GitDiff` | `GitDiffResponse` | Get diff for file vs HEAD |
+| `WatchGitRepo` | `WatchGitRepoResponse` | Watch .git/index and HEAD |
 | `Ping` | `Pong` | Keepalive |
 
 | Push Event | Description |
@@ -172,211 +256,375 @@ The implementation follows Zed's proven architecture: a headless server binary r
 | `FileChanged` | Watched file modified |
 | `FileDeleted` | Watched file deleted |
 | `FileRenamed` | Watched file renamed |
-| `GitChanged` | Git index/HEAD changed |
+| `GitChanged` | Git index/HEAD changed for watched repo |
+
+### SSH ControlMaster Management
+
+**Configuration used by SSHConnection:**
+
+```
+ssh -o ControlMaster=auto \
+    -o ControlPath=~/.ssh/redmargin-%r@%h:%p \
+    -o ControlPersist=60 \
+    user@host "~/.redmargin-server/redmargin-server-X.X.X proxy --reconnect"
+```
+
+**Lifecycle:**
+
+1. First connection creates ControlMaster, subsequent connections multiplex
+2. `ControlPersist=60` keeps master alive 60s after last connection closes
+3. Check master status: `ssh -o ControlPath=... -O check host`
+4. Graceful shutdown: `ssh -o ControlPath=... -O stop host` (no new connections, existing continue)
+5. Immediate shutdown: `ssh -o ControlPath=... -O exit host` (terminates all)
+6. Socket auto-removed when master exits
+
+**SSHConnectionManager responsibilities:**
+- Track ControlMaster sockets per host
+- Reuse existing masters when opening additional files on same host
+- Clean up masters on app quit (`-O exit`)
+- Handle master death (remove stale socket, reconnect)
+
+### Cross-Compilation (Swift Static Linux SDK)
+
+**Prerequisites:**
+1. Install open-source Swift toolchain from swift.org (NOT Xcode's)
+2. Install matching Static Linux SDK
+
+**Installation (example for Swift 6.2):**
+
+```bash
+# Install SDK (version must match toolchain)
+swift sdk install https://download.swift.org/swift-6.2.3-release/static-sdk/swift-6.2.3-RELEASE/swift-6.2.3-RELEASE_static-linux-0.0.1.artifactbundle.tar.gz
+
+# List installed SDKs
+swift sdk list
+```
+
+**Build commands:**
+
+```bash
+# Build for x86-64 Linux (statically linked)
+xcrun --toolchain swift swift build \
+  --swift-sdk x86_64-swift-linux-musl \
+  --product redmargin-server \
+  -c release
+
+# Build for ARM64 Linux (statically linked)
+xcrun --toolchain swift swift build \
+  --swift-sdk aarch64-swift-linux-musl \
+  --product redmargin-server \
+  -c release
+```
+
+**Code adjustments for Musl:**
+
+In any file that imports Glibc (for inotify, etc.):
+
+```swift
+#if canImport(Musl)
+import Musl
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
+```
+
+**Output:** Fully statically linked ELF binary, runs on any Linux without dependencies.
+
+### Linux File Watching (inotify)
+
+**Problem:** DispatchSource file system monitoring does NOT work on Linux. It uses kqueue/kevent on macOS, but there's no equivalent in GCD on Linux.
+
+**Solution:** Use inotify directly via Musl's C wrappers.
+
+**Implementation in `Server/LinuxFileWatcher.swift`:**
+
+```swift
+#if canImport(Musl) || canImport(Glibc)
+
+#if canImport(Musl)
+import Musl
+#else
+import Glibc
+#endif
+
+class LinuxFileWatcher {
+    private var inotifyFd: Int32 = -1
+    private var watchDescriptors: [Int32: String] = [:]  // wd -> path
+    private var running = false
+
+    init() throws {
+        inotifyFd = inotify_init1(Int32(IN_NONBLOCK | IN_CLOEXEC))
+        guard inotifyFd >= 0 else {
+            throw FileWatcherError.initFailed(errno)
+        }
+    }
+
+    func watch(path: String, events: UInt32 = UInt32(IN_MODIFY | IN_DELETE_SELF | IN_MOVE_SELF)) throws -> Int32 {
+        let wd = inotify_add_watch(inotifyFd, path, events)
+        guard wd >= 0 else {
+            throw FileWatcherError.watchFailed(path, errno)
+        }
+        watchDescriptors[wd] = path
+        return wd
+    }
+
+    func unwatch(_ wd: Int32) {
+        inotify_rm_watch(inotifyFd, wd)
+        watchDescriptors.removeValue(forKey: wd)
+    }
+
+    // Poll for events (call from run loop)
+    func pollEvents() -> [FileEvent] {
+        // Use select() or poll() on inotifyFd
+        // Read events with read(inotifyFd, buffer, size)
+        // Parse inotify_event structs from buffer
+        // Return FileEvent array
+    }
+
+    deinit {
+        if inotifyFd >= 0 {
+            close(inotifyFd)
+        }
+    }
+}
+
+#endif
+```
+
+**Events to watch:**
+- `IN_MODIFY`: File modified
+- `IN_DELETE_SELF`: File deleted
+- `IN_MOVE_SELF`: File renamed/moved
+- `IN_ATTRIB`: Attributes changed (optional)
+
+**For Git watching (index, HEAD):**
+- Watch `.git/index` for staging changes
+- Watch `.git/HEAD` for branch switches
+- Parse HEAD to find branch ref, watch `.git/refs/heads/<branch>`
 
 ### File Changes
 
-**New package target in `Package.swift`:**
-- Add `redmargin-server` executable target
-- Depends on shared protocol types from RedmarginLib
-
-**src/Remote/Protocol/** (create directory)
+**Package.swift** (modify)
+- Add `redmargin-server` executable target in `Server/` directory
+- Shared protocol types stay in `RedmarginLib`
 
 **src/Remote/Protocol/RPCMessage.swift** (create)
-- `RPCMessage` struct: id, type, payload (Codable)
-- `RPCRequest` enum with associated payloads for each request type
-- `RPCResponse` enum with associated payloads for each response type
-- `RPCEvent` enum for push events
-- Length-prefix encoding/decoding helpers
+- `RPCMessage` struct: id (optional), type, payload (Codable)
+- Length-prefix encoding: `encode() -> Data`, `decode(from: Data) -> RPCMessage`
+- Stream reader: handle partial reads, buffer management
 
-**src/Remote/Protocol/FileMessages.swift** (create)
-- `ReadFileRequest`: path
-- `ReadFileResponse`: content (String), error (optional)
-- `WriteFileRequest`: path, content
-- `WriteFileResponse`: success, error (optional)
-- `WatchFileRequest`: path
-- `WatchFileResponse`: success, error (optional)
-- `FileChangedEvent`: path
-
-**src/Remote/Protocol/GitMessages.swift** (create)
-- `GitDetectRepoRequest`: path
-- `GitDetectRepoResponse`: repoRoot (optional), error (optional)
-- `GitDiffRequest`: path, repoRoot
-- `GitDiffResponse`: changes (GitChangeResult JSON), error (optional)
-- `GitChangedEvent`: repoRoot
+**src/Remote/Protocol/Messages.swift** (create)
+- All request/response/event payload types
+- `HelloPayload`, `HelloResponsePayload`
+- `ReadFileRequest`, `ReadFileResponse`
+- `WriteFileRequest`, `WriteFileResponse`
+- `WatchFileRequest`, `WatchFileResponse`
+- `GitDetectRepoRequest`, `GitDetectRepoResponse`
+- `GitDiffRequest`, `GitDiffResponse`
+- `FileChangedEvent`, `FileDeletedEvent`, `GitChangedEvent`
 
 **src/Remote/Client/SSHConnection.swift** (create)
-- `SSHConnection` class
-- `init(host: String)` — host from ssh config or user@host format
-- Uses ProcessRunner to spawn `ssh -o ControlMaster=auto -o ControlPath=~/.ssh/redmargin-%r@%h:%p`
-- Manages stdin/stdout pipes to remote server process
+- `SSHConnection` actor (thread-safe)
+- `init(host: String)` parses `user@host` or uses ssh config alias
+- Spawns: `ssh -o ControlMaster=auto -o ControlPath=~/.ssh/redmargin-%r@%h:%p ...`
 - `func send(_ request: RPCRequest) async throws -> RPCResponse`
-- `var events: AsyncStream<RPCEvent>` — push events from server
-- Reconnection logic with exponential backoff
+- `var events: AsyncStream<RPCEvent>` for push events
+- Internal: manages Process stdin/stdout pipes, message framing
+- Reconnection with exponential backoff (1s, 2s, 4s, max 30s)
 
 **src/Remote/Client/SSHConnectionManager.swift** (create)
-- Singleton managing active connections
-- Connection pooling per host
+- Singleton `shared` instance
 - `func connection(for host: String) async throws -> SSHConnection`
-- Handles ControlMaster lifecycle
+- Tracks active connections, reuses for same host
+- `func disconnectAll()` for app quit
+- `func checkConnection(_ host: String) -> Bool`
 
 **src/Remote/Client/RemoteFileProvider.swift** (create)
-- Implements `FileProvider` protocol
-- `func readFile(at path: String) async throws -> String`
-- `func writeFile(at path: String, content: String) async throws`
-- `func watchFile(at path: String, onChange: @escaping () -> Void) -> WatchToken`
-- `func unwatchFile(_ token: WatchToken)`
-- `func detectGitRepo(for path: String) async throws -> String?`
-- `func gitDiff(for path: String, repoRoot: String) async throws -> GitChangeResult`
+- Conforms to `FileProvider` protocol
+- Holds `SSHConnection` reference
+- All methods delegate to RPC calls
+- Subscribes to push events, calls registered callbacks
 
 **src/Remote/Client/ServerDeployer.swift** (create)
-- `func ensureServerDeployed(on connection: SSHConnection) async throws`
-- Checks `~/.redmargin-server/redmargin-server-{version}` exists
-- If not, uploads via `scp` from app bundle or downloads from release URL
-- Marks executable with `chmod +x`
+- `func ensureServerDeployed(host: String, connection: SSHConnection) async throws`
+- Check: `ssh host "test -x ~/.redmargin-server/redmargin-server-{version}"`
+- If missing: `scp server-binary host:~/.redmargin-server/`
+- Set executable: `ssh host "chmod +x ~/.redmargin-server/redmargin-server-{version}"`
+- Server binaries bundled in app at `Contents/Resources/Servers/`
 
 **src/FileProvider/FileProvider.swift** (create)
-- Protocol abstracting file operations
-- `protocol FileProvider`
-- Methods: readFile, writeFile, watchFile, unwatchFile, detectGitRepo, gitDiff
-- Both local and remote providers conform
+- Protocol definition:
+
+```swift
+protocol FileProvider {
+    func readFile(at path: String) async throws -> String
+    func writeFile(at path: String, content: String) async throws
+    func watchFile(at path: String, onChange: @escaping () -> Void) -> WatchToken
+    func unwatchFile(_ token: WatchToken)
+    func detectGitRepo(for path: String) async throws -> String?
+    func gitDiff(for path: String, repoRoot: String) async throws -> GitChangeResult
+    func watchGitRepo(at repoRoot: String, onChange: @escaping () -> Void) -> WatchToken
+}
+```
 
 **src/FileProvider/LocalFileProvider.swift** (create)
-- Implements `FileProvider` for local filesystem
-- Wraps existing `String(contentsOf:)`, `String.write(to:)` calls
-- Wraps existing `FileWatcher`, `GitDiffParser`, `GitRepoDetector`
+- Wraps existing file I/O, FileWatcher, GitDiffParser, GitRepoDetector
+- Returns existing objects adapted to protocol
 
 **AppMain/DocumentState.swift** (modify)
-- Add `fileProvider: FileProvider` property
-- Replace direct file I/O with fileProvider calls
-- Replace direct GitDiffParser/GitRepoDetector calls with fileProvider calls
-- Keep FileWatcher integration but route through fileProvider.watchFile
+- Add `fileProvider: FileProvider` property (injected at init)
+- Replace `String(contentsOf:)` with `fileProvider.readFile()`
+- Replace `String.write(to:)` with `fileProvider.writeFile()`
+- Replace `GitDiffParser.parseChanges()` with `fileProvider.gitDiff()`
+- Replace `GitRepoDetector.detectRepoRoot()` with `fileProvider.detectGitRepo()`
+- File watchers via `fileProvider.watchFile()` / `watchGitRepo()`
 
-**Server binary (new executable target):**
+**Server/main.swift** (create)
+- Entry point, argument parsing
+- Commands: `run`, `proxy`, `version`
+- `run`: call `Daemon.start(pidFile:stdinSocket:stdoutSocket:stderrSocket:)`
+- `proxy`: call `Proxy.start(reconnect:)`
 
-**Server/main.swift** (create in new Server/ directory)
-- Entry point for redmargin-server
-- Parses command-line args (--daemon, --version)
-- Creates RPCServer instance
-- Runs event loop
+**Server/Daemon.swift** (create)
+- `static func start(...)`
+- Fork to background (Unix `fork()`)
+- Redirect stdio to `/dev/null`
+- Write PID file
+- Create Unix socket listeners
+- Run event loop: accept connections, handle RPC, push events
 
-**Server/RPCServer.swift** (create)
-- Reads length-prefixed messages from stdin
-- Dispatches to handlers
-- Writes responses to stdout
-- Manages file watchers, pushes events
+**Server/Proxy.swift** (create)
+- `static func start(reconnect: Bool)`
+- Check if daemon running (PID file, kill -0)
+- If not, spawn daemon with `run` command
+- Connect to daemon Unix sockets
+- Bridge: SSH stdin → daemon stdin socket, daemon stdout socket → SSH stdout
+- Loop until SSH closes or daemon dies
+
+**Server/RPCHandler.swift** (create)
+- Message dispatch: `func handle(_ message: RPCMessage) async -> RPCMessage?`
+- Route to FileOperations, GitOperations based on type
 
 **Server/FileOperations.swift** (create)
-- `func handleReadFile(_ request: ReadFileRequest) -> ReadFileResponse`
-- `func handleWriteFile(_ request: WriteFileRequest) -> WriteFileResponse`
-- Atomic writes using temp file + rename
+- `handleReadFile`, `handleWriteFile`
+- Atomic write: write to temp, rename
 
 **Server/GitOperations.swift** (create)
-- `func handleGitDetectRepo(_ request: GitDetectRepoRequest) -> GitDetectRepoResponse`
-- `func handleGitDiff(_ request: GitDiffRequest) -> GitDiffResponse`
-- Reuses GitDiffParser and GitRepoDetector logic (shared via RedmarginLib)
+- `handleGitDetectRepo`, `handleGitDiff`
+- Reuse `GitDiffParser`, `GitRepoDetector` from RedmarginLib
 
-**Server/ServerFileWatcher.swift** (create)
-- Cross-platform file watching
-- Linux: inotify via DispatchSource or direct syscalls
-- macOS: existing DispatchSource approach
-- Emits FileChanged/FileDeleted/FileRenamed events
+**Server/FileWatcher.swift** (create)
+- Platform abstraction over DispatchSource (macOS) and inotify (Linux)
+- `#if os(Linux)` for LinuxFileWatcher, `#else` for DarwinFileWatcher
+- Unified callback interface
+
+**Server/LinuxFileWatcher.swift** (create)
+- inotify implementation as described above
+
+**Server/DarwinFileWatcher.swift** (create)
+- DispatchSource implementation (copy pattern from existing FileWatcher)
 
 **AppMain/OpenRemoteSheet.swift** (create)
-- SwiftUI sheet for "Connect to Server"
-- Text field for `user@host:/path/to/file.md`
-- Recent connections list (stored in UserDefaults)
-- Connect button triggers connection + file open
+- SwiftUI sheet view
+- TextField for `user@host:/path/to/file.md`
+- Recent connections list (from UserDefaults)
+- Connect button
+- Error display
 
 **AppMain/AppDelegate.swift** (modify)
-- Add "Open Remote..." menu item (Cmd+Shift+O)
-- Handle opening remote URLs
+- Add "Open Remote..." menu item
+- Keyboard shortcut: Cmd+Shift+O
+- Opens OpenRemoteSheet
 
 **AppMain/RemoteDocumentView.swift** (create)
-- Wrapper around DocumentView for remote files
-- Shows connection status indicator
-- Handles reconnection UI
+- Wrapper view for remote documents
+- Connection status indicator (green dot / yellow spinner / red X)
+- Reconnecting overlay when disconnected
 
 ### Risks
 
 | Risk | Mitigation |
 |------|------------|
-| Server binary compatibility across Linux distros | Build with static linking where possible; provide multiple builds (glibc, musl) |
-| SSH connection drops frequently | ControlMaster with keepalive; daemon mode survives drops; auto-reconnect |
-| Large file transfers slow | Stream content in chunks; show progress for large files |
-| Git operations slow over high-latency connections | Cache repo root detection; batch operations where possible |
-| Server deployment fails (permissions, disk space) | Clear error messages; manual deployment instructions as fallback |
-| File watching overwhelmed on busy repos | Debounce events server-side; rate-limit push events |
-| Protocol versioning | Include version in handshake; server refuses incompatible clients |
-| Security: malicious server binary execution | Server only runs in user's home dir; requires explicit user action to connect |
+| Swift Static SDK bugs (linking errors in 6.1/6.2) | Pin to known-working SDK version; fallback: build in Docker |
+| Unix socket permissions | Create sockets in user's home dir with 0600 perms |
+| Daemon orphaned (never cleaned up) | PID file + stale check; `proxy` kills stale daemons |
+| SSH connection drops frequently | ControlPersist keeps master; proxy auto-reconnects to daemon |
+| Large file transfers slow | Stream in chunks; show progress indicator |
+| inotify queue overflow | Debounce server-side; limit watch count |
+| Protocol version mismatch | Hello handshake rejects incompatible versions |
+| Musl vs Glibc differences | Conditional imports; test on both |
 
 ### Implementation Plan
 
-**Phase 1: Protocol Definition**
-- [ ] Create `src/Remote/Protocol/` directory structure
-- [ ] Implement `RPCMessage.swift` with encoding/decoding
-- [ ] Implement `FileMessages.swift` request/response types
-- [ ] Implement `GitMessages.swift` request/response types
-- [ ] Write unit tests for message serialization
+**Phase 1: Protocol & Abstraction**
+- [ ] Create `src/Remote/Protocol/RPCMessage.swift` with encoding/decoding
+- [ ] Create `src/Remote/Protocol/Messages.swift` with all types
+- [ ] Create `FileProvider` protocol
+- [ ] Create `LocalFileProvider` wrapping existing code
+- [ ] Modify `DocumentState` to use `FileProvider`
+- [ ] Verify all existing tests pass with LocalFileProvider
+- [ ] Write protocol serialization tests
 
-**Phase 2: FileProvider Abstraction**
-- [ ] Create `FileProvider` protocol in `src/FileProvider/FileProvider.swift`
-- [ ] Create `LocalFileProvider` wrapping existing file operations
-- [ ] Modify `DocumentState` to use `FileProvider` instead of direct I/O
-- [ ] Verify all existing functionality works with LocalFileProvider
-- [ ] Write tests for LocalFileProvider
-
-**Phase 3: Server Binary - Core**
+**Phase 2: Server Binary - Core**
 - [ ] Add `redmargin-server` target to Package.swift
-- [ ] Create `Server/main.swift` entry point
-- [ ] Create `Server/RPCServer.swift` with message loop
-- [ ] Implement `Server/FileOperations.swift` (read/write)
-- [ ] Write integration tests for server file operations
+- [ ] Create `Server/main.swift` with argument parsing
+- [ ] Create `Server/Daemon.swift` with fork, sockets, PID file
+- [ ] Create `Server/Proxy.swift` with daemon spawn and socket bridge
+- [ ] Create `Server/RPCHandler.swift` message dispatch
+- [ ] Create `Server/FileOperations.swift`
+- [ ] Test locally: run daemon, connect with netcat, send JSON
 
-**Phase 4: Server Binary - Git**
-- [ ] Implement `Server/GitOperations.swift`
-- [ ] Reuse GitDiffParser and GitRepoDetector from RedmarginLib
-- [ ] Write integration tests for server git operations
+**Phase 3: Server Binary - Git & Watching**
+- [ ] Create `Server/GitOperations.swift`
+- [ ] Create `Server/DarwinFileWatcher.swift`
+- [ ] Create `Server/LinuxFileWatcher.swift` (inotify)
+- [ ] Create platform abstraction `Server/FileWatcher.swift`
+- [ ] Implement git repo watching (index, HEAD, branch ref)
+- [ ] Test file/git watching triggers events
 
-**Phase 5: Server Binary - File Watching**
-- [ ] Implement `Server/ServerFileWatcher.swift`
-- [ ] Linux inotify support
-- [ ] macOS DispatchSource support (reuse existing pattern)
-- [ ] Push events to client
-- [ ] Write tests for file watching
+**Phase 4: Cross-Compilation**
+- [ ] Install Swift open-source toolchain
+- [ ] Install Static Linux SDK
+- [ ] Build x86_64-swift-linux-musl target
+- [ ] Build aarch64-swift-linux-musl target
+- [ ] Test binaries on Linux VM/container
+- [ ] Add build script for release binaries
 
-**Phase 6: SSH Connection Layer**
-- [ ] Implement `SSHConnection.swift` with ControlMaster
-- [ ] Implement `SSHConnectionManager.swift` for connection pooling
-- [ ] Handle connection lifecycle (connect, disconnect, reconnect)
-- [ ] Write tests for connection management
+**Phase 5: SSH Connection Layer**
+- [ ] Implement `SSHConnection.swift`
+- [ ] Implement `SSHConnectionManager.swift`
+- [ ] Implement ControlMaster management
+- [ ] Handle reconnection with backoff
+- [ ] Test against localhost SSH
 
-**Phase 7: Server Deployment**
+**Phase 6: Server Deployment**
 - [ ] Implement `ServerDeployer.swift`
-- [ ] Build server binary for macOS (arm64, x86_64)
-- [ ] Build server binary for Linux (glibc, musl)
-- [ ] Include binaries in app bundle or set up download mechanism
-- [ ] Test deployment to various remote hosts
+- [ ] Bundle server binaries in app
+- [ ] Test deployment to Linux server
+- [ ] Test deployment to macOS server
+- [ ] Handle version upgrades
 
-**Phase 8: Remote FileProvider**
+**Phase 7: Remote FileProvider**
 - [ ] Implement `RemoteFileProvider.swift`
-- [ ] Wire up to SSHConnection for RPC calls
-- [ ] Handle push events (FileChanged, GitChanged)
-- [ ] Write integration tests with real SSH connections
+- [ ] Wire to SSHConnection
+- [ ] Handle push events
+- [ ] Integration test: open remote file, verify content
 
-**Phase 9: UI Integration**
+**Phase 8: UI Integration**
 - [ ] Create `OpenRemoteSheet.swift`
-- [ ] Add menu item and keyboard shortcut
-- [ ] Create `RemoteDocumentView.swift` with status indicator
-- [ ] Store recent connections in UserDefaults
-- [ ] Handle reconnection UI states
+- [ ] Add menu item and shortcut
+- [ ] Create `RemoteDocumentView.swift`
+- [ ] Recent connections in UserDefaults
+- [ ] Connection status UI
 
-**Phase 10: Polish & Edge Cases**
-- [ ] Handle connection errors gracefully
-- [ ] Implement unsaved changes caching for reconnection
-- [ ] Add connection timeout handling
-- [ ] Test with various SSH configurations (jump hosts, keys, etc.)
-- [ ] Performance testing with large files and high-latency connections
+**Phase 9: Polish**
+- [ ] Unsaved changes caching for reconnection
+- [ ] Graceful error messages
+- [ ] Timeout handling
+- [ ] Test with jump hosts (`-J`)
+- [ ] Performance test large files
 
 ---
 
@@ -385,43 +633,49 @@ The implementation follows Zed's proven architecture: a headless server binary r
 ### Automated Tests
 
 **Protocol tests** in `Tests/RemoteProtocolTests.swift`:
-- [ ] `testRPCMessageEncode` - Encode message, verify length prefix and JSON
+- [ ] `testRPCMessageEncode` - Encode message, verify length prefix
 - [ ] `testRPCMessageDecode` - Decode valid message
-- [ ] `testRPCMessageDecodeInvalid` - Handle malformed input
-- [ ] `testReadFileRequestRoundtrip` - Encode/decode ReadFileRequest
-- [ ] `testWriteFileRequestRoundtrip` - Encode/decode WriteFileRequest
-- [ ] `testGitDiffResponseRoundtrip` - Encode/decode GitDiffResponse with GitChangeResult
-- [ ] `testFileChangedEventRoundtrip` - Encode/decode push event
+- [ ] `testRPCMessageDecodePartial` - Handle incomplete reads
+- [ ] `testRPCMessageDecodeInvalid` - Handle malformed JSON
+- [ ] `testHelloHandshake` - Version negotiation
+- [ ] `testAllMessageTypesRoundtrip` - Every message type encodes/decodes
 
 **LocalFileProvider tests** in `Tests/LocalFileProviderTests.swift`:
 - [ ] `testReadFile` - Read existing file
 - [ ] `testReadFileMissing` - Handle missing file
 - [ ] `testWriteFile` - Write and verify content
-- [ ] `testWriteFileAtomic` - Verify atomic write (temp + rename)
-- [ ] `testWatchFile` - Watch file, modify, verify callback
-- [ ] `testDetectGitRepo` - Detect repo root
-- [ ] `testGitDiff` - Get diff for modified file
+- [ ] `testWriteFileAtomic` - Verify atomic write
+- [ ] `testWatchFile` - Watch, modify, verify callback
+- [ ] `testGitOperations` - Detect repo, get diff
 
-**Server tests** in `Tests/ServerTests.swift` (requires server binary):
-- [ ] `testServerStartup` - Server starts and responds to Ping
-- [ ] `testServerReadFile` - Read file via RPC
-- [ ] `testServerWriteFile` - Write file via RPC
-- [ ] `testServerGitDiff` - Git diff via RPC
-- [ ] `testServerFileWatch` - Watch file, modify, receive event
-- [ ] `testServerMultipleClients` - Handle concurrent requests
+**Server tests** in `Tests/ServerTests.swift`:
+- [ ] `testDaemonStartStop` - Daemon creates sockets, responds to shutdown
+- [ ] `testProxyConnectsToDaemon` - Proxy bridges to daemon
+- [ ] `testReadFileViaRPC` - Full RPC roundtrip
+- [ ] `testWriteFileViaRPC` - Write via RPC, verify on disk
+- [ ] `testFileWatchPushEvent` - Modify file, receive event
+- [ ] `testGitDiffViaRPC` - Git operations via RPC
+- [ ] `testDaemonSurvivesProxyDisconnect` - Kill proxy, daemon stays
 
 **SSHConnection tests** in `Tests/SSHConnectionTests.swift`:
-- [ ] `testConnectToLocalhost` - Connect to localhost (requires SSH setup)
-- [ ] `testSendReceive` - Send request, receive response
-- [ ] `testPushEvents` - Receive push events
-- [ ] `testReconnect` - Handle connection drop and reconnect
+- [ ] `testConnectLocalhost` - Connect to localhost SSH
+- [ ] `testRPCOverSSH` - Send request, receive response
+- [ ] `testPushEvents` - Receive push events via SSH
+- [ ] `testReconnect` - Simulate disconnect, verify reconnection
+- [ ] `testControlMasterReuse` - Multiple files same host share master
+
+**Linux-specific tests** in `Tests/LinuxFileWatcherTests.swift`:
+- [ ] `testInotifyInit` - Create inotify instance
+- [ ] `testWatchFile` - Add watch, receive events
+- [ ] `testWatchDirectory` - Directory watching
+- [ ] `testUnwatch` - Remove watch
 
 **Integration tests** in `Tests/RemoteIntegrationTests.swift`:
-- [ ] `testOpenRemoteFile` - Full flow: connect, open, read content
-- [ ] `testEditRemoteFile` - Edit and save remote file
-- [ ] `testRemoteGitGutter` - Verify git gutter works for remote file
-- [ ] `testRemoteFileWatch` - Modify remote file externally, verify reload
-- [ ] `testCheckboxToggleRemote` - Toggle checkbox on remote file
+- [ ] `testFullFlow` - Open remote, edit, save, close
+- [ ] `testGitGutterRemote` - Verify gutter works
+- [ ] `testFileWatchRemote` - External edit triggers reload
+- [ ] `testCheckboxToggle` - Toggle checkbox, verify persisted
+- [ ] `testReconnectionRestoresState` - Disconnect/reconnect preserves file
 
 ### Test Log
 
@@ -429,28 +683,57 @@ The implementation follows Zed's proven architecture: a headless server binary r
 |------|--------|-------|
 | — | — | No tests run yet |
 
-### Test Environment Setup
+### Test Environment
 
-Testing requires SSH access to a remote host. Options:
-1. **localhost:** Enable SSH in System Preferences, test against self
-2. **Docker container:** Spin up Linux container with SSH
-3. **VM:** Use Vagrant or similar for Linux testing
+**Option 1: localhost SSH**
+- Enable Remote Login in System Preferences > Sharing
+- Test against self: `ssh localhost`
 
-Create `Tests/Fixtures/remote-test-setup.sh` script that:
-- Creates test directory structure on remote
-- Initializes test git repo
-- Creates test markdown files
+**Option 2: Docker container**
+```bash
+docker run -d --name redmargin-test \
+  -p 2222:22 \
+  ubuntu:22.04 \
+  /bin/bash -c "apt-get update && apt-get install -y openssh-server && service ssh start && tail -f /dev/null"
+```
+
+**Option 3: Linux VM**
+- Vagrant, UTM, or Parallels with Ubuntu
+
+**Setup script** `Tests/Fixtures/remote-test-setup.sh`:
+```bash
+#!/bin/bash
+# Run on remote to set up test environment
+mkdir -p ~/redmargin-test
+cd ~/redmargin-test
+git init
+echo "# Test File" > test.md
+git add test.md
+git commit -m "Initial"
+echo "# Modified" >> test.md
+```
 
 ### User Verification
 
-After implementation, Marco verifies:
+After implementation:
 
-- [ ] **Open remote file:** File → Open Remote, enter `host:/path/file.md`, content displays
-- [ ] **Git gutter works:** Open file in git repo, make local changes, gutter shows diff
-- [ ] **File watching:** Edit file on remote (via separate SSH session), Redmargin reloads
-- [ ] **Checkbox toggle:** Click checkbox, file saves to remote, change persists
-- [ ] **Reconnection:** Disconnect network briefly, verify "Reconnecting..." appears, then reconnects
-- [ ] **Recent connections:** Previously opened remote files appear in recent list
-- [ ] **SSH config inheritance:** Hosts defined in `~/.ssh/config` work without extra configuration
-- [ ] **Error handling:** Invalid host shows clear error message
-- [ ] **Large file:** Open 10k line markdown file over SSH, verify reasonable performance
+- [ ] **Open remote file:** File → Open Remote, enter `host:/path/file.md`
+- [ ] **Git gutter:** Open file in git repo, verify gutter shows changes
+- [ ] **File watching:** Edit file via separate SSH, Redmargin reloads
+- [ ] **Checkbox toggle:** Click checkbox, verify change persisted
+- [ ] **Reconnection:** Kill SSH, verify "Reconnecting...", then reconnects
+- [ ] **Daemon persistence:** Close file, reopen same host, instant connect
+- [ ] **Recent connections:** Previous remotes appear in list
+- [ ] **SSH config:** Host aliases from `~/.ssh/config` work
+- [ ] **Error handling:** Invalid host shows clear error
+- [ ] **Performance:** 10k line file opens in reasonable time
+
+---
+
+## References
+
+- [Zed Remote Development Docs](https://zed.dev/docs/remote-development)
+- [Zed Blog: SSH Remoting](https://zed.dev/blog/remote-development)
+- [Swift Static Linux SDK](https://www.swift.org/documentation/articles/static-linux-getting-started.html)
+- [inotify(7) man page](https://man7.org/linux/man-pages/man7/inotify.7.html)
+- [SSH ControlMaster](https://en.wikibooks.org/wiki/OpenSSH/Cookbook/Multiplexing)
