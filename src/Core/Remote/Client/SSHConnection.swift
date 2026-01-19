@@ -26,6 +26,9 @@ public actor SSHConnection {
     private var isIntentionallyDisconnected = false
     private var reconnectAttempts = 0
     private let maxReconnectDelay: TimeInterval = 30.0
+    private var remoteBinaryPath: String?
+    
+    private let deployer = ServerDeployer()
     
     public init(host: String) {
         self.host = host
@@ -42,6 +45,11 @@ public actor SSHConnection {
         isIntentionallyDisconnected = false
         
         do {
+            // 1. Ensure server is deployed
+            let path = try await deployer.ensureServerDeployed(host: host)
+            self.remoteBinaryPath = path
+            
+            // 2. Establish connection
             try await establishConnection()
             state = .connected
             reconnectAttempts = 0
@@ -53,14 +61,19 @@ public actor SSHConnection {
     }
     
     private func establishConnection() async throws {
+        guard let remoteBinaryPath = remoteBinaryPath else {
+            throw RPCError.incompleteData
+        }
+        
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         
         process.arguments = [
+            "-q",
             "-o", "ControlMaster=auto",
             "-o", "ControlPath=~/.ssh/redmargin-%r@%h:%p",
             host,
-            "~/.redmargin-server/redmargin-server proxy --reconnect"
+            "\(remoteBinaryPath) proxy --reconnect"
         ]
         
         let inPipe = Pipe()

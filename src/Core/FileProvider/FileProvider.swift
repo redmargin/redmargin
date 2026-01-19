@@ -8,13 +8,13 @@ public protocol FileProvider {
     
     /// Starts watching a file for changes.
     /// Returns a token that must be used to stop watching.
-    func watchFile(at path: String, onChange: @escaping () -> Void) -> WatchToken
+    func watchFile(at path: String, onChange: @escaping () -> Void) async -> WatchToken
     
     /// Stops watching a file or git repo using the provided token.
-    func unwatch(_ token: WatchToken)
+    func unwatch(_ token: WatchToken) async
     
     func detectGitRepo(for path: String) async throws -> String?
     func gitDiff(for path: String, repoRoot: String) async throws -> GitChangeResult
     
-    func watchGitRepo(at repoRoot: String, onChange: @escaping () -> Void) -> WatchToken
+    func watchGitRepo(at repoRoot: String, onChange: @escaping () -> Void) async -> WatchToken
 }

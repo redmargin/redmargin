@@ -18,7 +18,7 @@ public class LocalFileProvider: FileProvider {
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
     
-    public func watchFile(at path: String, onChange: @escaping () -> Void) -> WatchToken {
+    public func watchFile(at path: String, onChange: @escaping () -> Void) async -> WatchToken {
         let token = UUID()
         let url = URL(fileURLWithPath: path)
         
@@ -32,7 +32,7 @@ public class LocalFileProvider: FileProvider {
         return token
     }
     
-    public func unwatch(_ token: WatchToken) {
+    public func unwatch(_ token: WatchToken) async {
         watchers.removeValue(forKey: token)
     }
     
@@ -48,7 +48,7 @@ public class LocalFileProvider: FileProvider {
         return try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: rootURL)
     }
     
-    public func watchGitRepo(at repoRoot: String, onChange: @escaping () -> Void) -> WatchToken {
+    public func watchGitRepo(at repoRoot: String, onChange: @escaping () -> Void) async -> WatchToken {
         let token = UUID()
         let watcher = GitRepoWatcher(repoRoot: repoRoot, onChange: onChange)
         watchers[token] = watcher

@@ -1,5 +1,15 @@
 # Changelog
 
+## 260119 Phase 6: Remote File Provider and Server Deployment
+- Added: RemoteFileProvider for reading/writing files over SSH connections
+- Added: ServerDeployer for uploading daemon binary to remote hosts
+- Added: Linux build scripts (build-linux.sh, build-remote.sh) for cross-compilation
+- Added: FileProvider protocol abstraction for local vs remote file operations
+- Added: SSHConnectionManager tests for connection multiplexing
+- Changed: DocumentState now supports remote file providers
+- Changed: ProcessRunner improved for remote command execution
+- Changed: Build script updated for multi-platform support
+
 ## 260114 Command-Line File Focus
 - Fixed: File passed via command line now appears on top of restored documents
 

@@ -63,10 +63,12 @@ enum Daemon {
             
             print("Accepted connection")
             
-            // Handle connection in a loop (blocking for single client for now)
-            handleClient(fd: clientFD, rpcHandler: rpcHandler, streamHandler: streamHandler)
-            
-            _ = system_close(clientFD)
+            // Handle connection concurrently
+            DispatchQueue.global().async {
+                handleClient(fd: clientFD, rpcHandler: rpcHandler, streamHandler: streamHandler)
+                _ = system_close(clientFD)
+                print("Connection closed")
+            }
         }
     }
     

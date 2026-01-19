@@ -1,5 +1,6 @@
 import XCTest
 @testable import RedmarginLib
+import RedmarginCore
 
 final class GutterIntegrationTests: XCTestCase {
     var gitHelper: GitTestHelper!

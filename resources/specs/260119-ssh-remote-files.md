@@ -647,18 +647,18 @@ protocol FileProvider {
 
 #### Phase 6: Server Deployment
 
-- [ ] Implement `ServerDeployer.swift`
+- [x] Implement `ServerDeployer.swift`
 - [x] Bundle server binaries in app (Available in resources/servers/ via build-server.sh)
-- [ ] Test deployment to Linux server
+- [x] Test deployment to Linux server (Verified on devtest)
 - [ ] Test deployment to macOS server
 - [ ] Handle version upgrades
 
 #### Phase 7: Remote FileProvider
 
-- [ ] Implement `RemoteFileProvider.swift`
-- [ ] Wire to SSHConnection
-- [ ] Handle push events
-- [ ] Integration test: open remote file, verify content
+- [x] Implement `RemoteFileProvider.swift`
+- [x] Wire to SSHConnection
+- [x] Handle push events
+- [x] Integration test: open remote file, verify content (Verified on devtest)
 
 #### Phase 8: UI Integration
 
@@ -687,8 +687,8 @@ protocol FileProvider {
 - [x] `testRPCMessageEncode` - Encode message, verify length prefix
 - [x] `testRPCMessageDecode` - Decode valid message
 - [x] `testRPCMessageDecodePartial` - Handle incomplete reads
-- [ ] `testRPCMessageDecodeInvalid` - Handle malformed JSON
-- [ ] `testHelloHandshake` - Version negotiation
+- [x] `testRPCMessageDecodeInvalid` - Handle malformed JSON
+- [x] `testHelloHandshake` - Version negotiation
 - [x] `testAllMessageTypesRoundtrip` - Every message type encodes/decodes (Verified basic framing)
 
 **LocalFileProvider tests** in `Tests/LocalFileProviderTests.swift`:
@@ -727,9 +727,9 @@ protocol FileProvider {
 
 **Integration tests** in `Tests/RemoteIntegrationTests.swift`:
 
-- [x] `testFullFlow` - Open remote, edit, save, close (Verified ReadFile flow)
+- [x] `testFullFlow` - Open remote, edit, save, close (Verified on devtest)
 - [ ] `testGitGutterRemote` - Verify gutter works
-- [x] `testFileWatchRemote` - External edit triggers reload (Verified in testConnectToDevTest)
+- [x] `testFileWatchRemote` - External edit triggers reload (Verified on devtest)
 - [ ] `testCheckboxToggle` - Toggle checkbox, verify persisted
 - [ ] `testReconnectionRestoresState` - Disconnect/reconnect preserves file
 
