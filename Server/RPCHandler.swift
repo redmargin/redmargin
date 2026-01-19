@@ -3,7 +3,7 @@ import RedmarginCore
 
 class RPCHandler {
     let fileOperations = FileOperations()
-    private let gitOperations = GitOperations()
+    let gitOperations = GitOperations()
     
     func handle(_ data: Data) async -> Data? {
         // 1. Decode Header

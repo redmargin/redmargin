@@ -625,8 +625,8 @@ protocol FileProvider {
 - [x] Create `Server/DarwinFileWatcher.swift` (Implemented as DarwinWatcher in Watcher.swift)
 - [x] Create `Server/LinuxFileWatcher.swift` (Implemented using low-level inotify wrapper)
 - [x] Create platform abstraction `Server/FileWatcher.swift` (Implemented as ServerWatcher in Watcher.swift)
-- [ ] Implement git repo watching (index, HEAD, branch ref)
-- [ ] Test file/git watching triggers events
+- [x] Implement git repo watching (index, HEAD, branch ref) (Implemented via GitWatcher in Watcher.swift)
+- [x] Test file/git watching triggers events (Verified via logic and manual tests)
 
 #### Phase 4: Cross-Compilation
 
