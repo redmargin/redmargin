@@ -46,7 +46,13 @@ class UnixSocketListener {
         // Remove existing socket file
         _ = system_unlink(path)
         
-        fd = system_socket(AF_UNIX, SOCK_STREAM, 0)
+        #if os(Linux)
+        let socketType = Int32(SOCK_STREAM.rawValue)
+        #else
+        let socketType = SOCK_STREAM
+        #endif
+        
+        fd = system_socket(AF_UNIX, socketType, 0)
         guard fd >= 0 else {
             throw NSError(domain: "UnixSocket", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create socket"])
         }
@@ -115,7 +121,13 @@ class UnixSocketListener {
 
 class UnixSocketClient {
     static func connect(path: String) -> Int32 {
-        let fd = system_socket(AF_UNIX, SOCK_STREAM, 0)
+        #if os(Linux)
+        let socketType = Int32(SOCK_STREAM.rawValue)
+        #else
+        let socketType = SOCK_STREAM
+        #endif
+        
+        let fd = system_socket(AF_UNIX, socketType, 0)
         guard fd >= 0 else { return -1 }
         
         var addr = sockaddr_un()

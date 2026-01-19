@@ -1,5 +1,6 @@
 import Foundation
 
+#if os(macOS)
 public class LocalFileProvider: FileProvider {
     
     // Keep track of active watchers to keep them alive
@@ -104,3 +105,5 @@ class GitRepoWatcher {
         }
     }
 }
+#endif
+

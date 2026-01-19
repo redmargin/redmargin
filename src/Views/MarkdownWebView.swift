@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import WebKit
+import RedmarginCore
 
 public struct MarkdownWebView: NSViewRepresentable {
     public let markdown: String

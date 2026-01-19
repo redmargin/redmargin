@@ -1,5 +1,6 @@
 import Foundation
 
+#if os(macOS)
 public class FileWatcher {
     private var source: DispatchSourceFileSystemObject?
     private var fileDescriptor: Int32 = -1
@@ -79,3 +80,5 @@ public class FileWatcher {
         }
     }
 }
+#endif
+

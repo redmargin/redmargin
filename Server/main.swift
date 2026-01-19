@@ -1,5 +1,5 @@
 import Foundation
-import RedmarginLib
+import RedmarginCore
 
 func printUsage() {
     print("""

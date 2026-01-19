@@ -1,5 +1,7 @@
 import Foundation
 
+#if os(macOS)
+
 /// Manages security-scoped bookmarks for sandboxed file access
 public class BookmarkManager {
     public static let shared = BookmarkManager()
@@ -137,3 +139,4 @@ public class BookmarkManager {
         }
     }
 }
+#endif

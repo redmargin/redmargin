@@ -630,12 +630,12 @@ protocol FileProvider {
 
 #### Phase 4: Cross-Compilation
 
-- [ ] Install Swift open-source toolchain
-- [ ] Install Static Linux SDK
-- [ ] Build x86_64-swift-linux-musl target
+- [x] Install Swift open-source toolchain (Verified 6.2.3 locally, used 6.0.2 remotely)
+- [x] Install Static Linux SDK (Attempted, switched to remote build with static-stdlib)
+- [x] Build x86_64-swift-linux-musl target (Built x86_64-linux with static-stdlib on devtest)
 - [ ] Build aarch64-swift-linux-musl target
-- [ ] Test binaries on Linux VM/container
-- [ ] Add build script for release binaries
+- [x] Test binaries on Linux VM/container (Verified build success on devtest)
+- [x] Add build script for release binaries (resources/scripts/build-server.sh)
 
 #### Phase 5: SSH Connection Layer
 

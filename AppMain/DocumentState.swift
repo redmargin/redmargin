@@ -1,5 +1,6 @@
 import Foundation
 import RedmarginLib
+import RedmarginCore
 
 class DocumentState: ObservableObject {
     @Published var content: String
