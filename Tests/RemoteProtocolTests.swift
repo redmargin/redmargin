@@ -1,5 +1,6 @@
 import XCTest
 @testable import RedmarginLib
+import RedmarginCore
 
 final class RemoteProtocolTests: XCTestCase {
     
@@ -57,5 +58,49 @@ final class RemoteProtocolTests: XCTestCase {
         
         let decoded = try JSONDecoder().decode(RPCMessage<String>.self, from: result2[0])
         XCTAssertEqual(decoded.payload, "Full Message")
+    }
+    
+    func testRPCMessageDecodeInvalid() throws {
+        // 1. Invalid JSON inside valid frame
+        var data = Data()
+        let invalidJson = "{ invalid }".data(using: .utf8)!
+        let length = UInt32(invalidJson.count).bigEndian
+        data.append(withUnsafeBytes(of: length) { Data($0) })
+        data.append(invalidJson)
+        
+        let handler = RPCStreamHandler()
+        let messages = handler.receive(data: data)
+        XCTAssertEqual(messages.count, 1)
+        
+        // Decoding should fail
+        XCTAssertThrowsError(try JSONDecoder().decode(RPCMessage<String>.self, from: messages[0]))
+    }
+    
+    func testHelloHandshake() throws {
+        let payload = HelloPayload(clientVersion: "1.0.0", protocolVersion: 1)
+        let data = try RPCStreamHandler.encode(id: 1, type: RPCMessageType.hello.rawValue, payload: payload)
+        
+        let handler = RPCStreamHandler()
+        let messages = handler.receive(data: data)
+        XCTAssertEqual(messages.count, 1)
+        
+        let message = try JSONDecoder().decode(RPCMessage<HelloPayload>.self, from: messages[0])
+        XCTAssertEqual(message.type, "Hello")
+        XCTAssertEqual(message.payload.clientVersion, "1.0.0")
+        XCTAssertEqual(message.payload.protocolVersion, 1)
+    }
+    
+    func testAllMessageTypesRoundtrip() throws {
+        // Verify we can encode/decode a complex payload like GitChangedPayload
+        let payload = GitChangedPayload(repoRoot: "/tmp/repo")
+        let data = try RPCStreamHandler.encode(id: nil, type: "GitChanged", payload: payload)
+        
+        let handler = RPCStreamHandler()
+        let messages = handler.receive(data: data)
+        XCTAssertEqual(messages.count, 1)
+        
+        let message = try JSONDecoder().decode(RPCMessage<GitChangedPayload>.self, from: messages[0])
+        XCTAssertEqual(message.type, "GitChanged")
+        XCTAssertEqual(message.payload.repoRoot, "/tmp/repo")
     }
 }
