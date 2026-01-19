@@ -68,3 +68,59 @@ class LinuxWatcher: ServerWatcher {
     }
 }
 #endif
+
+class GitWatcher {
+    private let repoRoot: URL
+    private let onChange: () -> Void
+    private var indexWatcher: ServerWatcher?
+    private var headWatcher: ServerWatcher?
+    private var refWatcher: ServerWatcher?
+    
+    init(repoRoot: String, onChange: @escaping () -> Void) {
+        self.repoRoot = URL(fileURLWithPath: repoRoot)
+        self.onChange = onChange
+        setupWatchers()
+    }
+    
+    private func setupWatchers() {
+        let gitDir = repoRoot.appendingPathComponent(".git")
+        let indexURL = gitDir.appendingPathComponent("index")
+        let headURL = gitDir.appendingPathComponent("HEAD")
+        
+        // Watch index
+        indexWatcher = PlatformWatcher(path: indexURL.path, onChange: onChange)
+        
+        // Watch HEAD
+        headWatcher = PlatformWatcher(path: headURL.path) { [weak self] in
+            // HEAD changed (branch switch)
+            self?.onChange()
+            self?.updateRefWatcher()
+        }
+        
+        updateRefWatcher()
+    }
+    
+    private func updateRefWatcher() {
+        let headURL = repoRoot.appendingPathComponent(".git/HEAD")
+        guard let headContent = try? String(contentsOf: headURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return
+        }
+        
+        if headContent.hasPrefix("ref: ") {
+            let refPath = String(headContent.dropFirst(5))
+            let branchRefURL = repoRoot.appendingPathComponent(".git").appendingPathComponent(refPath)
+            
+            // Watch the branch ref file (e.g., refs/heads/main)
+            refWatcher = PlatformWatcher(path: branchRefURL.path, onChange: onChange)
+        } else {
+            // Detached HEAD, no specific ref to watch
+            refWatcher = nil
+        }
+    }
+    
+    func stop() {
+        indexWatcher?.stop()
+        headWatcher?.stop()
+        refWatcher?.stop()
+    }
+}

@@ -84,9 +84,10 @@ enum Daemon {
             }
         }
         
-        // Setup event handler
+        // Setup event handlers
         Task {
             await rpcHandler.fileOperations.setEventHandler(sendData)
+            await rpcHandler.gitOperations.setEventHandler(sendData)
         }
         
         let bufferSize = 4096
