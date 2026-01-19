@@ -25,7 +25,9 @@ let package = Package(
         ),
         .executableTarget(
             name: "redmargin-server",
-            dependencies: ["RedmarginCore"],
+            dependencies: [
+                "RedmarginCore"
+            ],
             path: "Server"
         ),
         .testTarget(

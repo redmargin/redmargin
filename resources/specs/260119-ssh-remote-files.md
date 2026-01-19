@@ -623,7 +623,7 @@ protocol FileProvider {
 
 - [x] Create `Server/GitOperations.swift`
 - [x] Create `Server/DarwinFileWatcher.swift` (Implemented as DarwinWatcher in Watcher.swift)
-- [ ] Create `Server/LinuxFileWatcher.swift` (inotify)
+- [x] Create `Server/LinuxFileWatcher.swift` (Implemented using low-level inotify wrapper)
 - [x] Create platform abstraction `Server/FileWatcher.swift` (Implemented as ServerWatcher in Watcher.swift)
 - [ ] Implement git repo watching (index, HEAD, branch ref)
 - [ ] Test file/git watching triggers events
