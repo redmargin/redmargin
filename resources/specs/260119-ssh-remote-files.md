@@ -22,11 +22,13 @@ Deploy a headless server binary to the remote host that handles file operations,
 
 ### Behaviors
 
-**Connection:**
+**Connection (Happy Path Only):**
 - User opens "Connect to Server" dialog (Cmd+Shift+O or File menu)
 - Enters `user@host:/path/to/file.md` or selects from recent connections
 - App uses SSH ControlMaster for connection multiplexing
-- Inherits `~/.ssh/config` settings (no custom credential UI)
+- **Auth Constraint:** Supports only non-interactive authentication (SSH keys, ssh-agent, or ControlMaster).
+- Does **NOT** support password prompts or interactive MFA (no terminal UI). Users must configure `~/.ssh/config` or keys beforehand.
+- **Error Handling:** If `ssh` prompts for input or fails to connect, the app must display an informative error popup to the user (e.g., "SSH connection failed: Authentication required but not configured for non-interactive use").
 
 **Server deployment:**
 - On first connect, checks for `~/.redmargin-server/redmargin-server-{version}`
@@ -36,7 +38,7 @@ Deploy a headless server binary to the remote host that handles file operations,
 **File operations:**
 - Open: Server reads file, streams content to client
 - Save: Client sends content, server writes atomically
-- Checkbox toggle: Same as local — modify content, save
+- Checkbox toggle: **Optimistic UI** — toggle updates locally immediately, then sends RPC. Reverts if RPC fails.
 
 **File watching:**
 - Server watches file using platform-native events (inotify on Linux, DispatchSource on macOS)
@@ -52,10 +54,38 @@ Deploy a headless server binary to the remote host that handles file operations,
 - If connection drops, client shows "Reconnecting..." status
 - Daemon keeps running; proxy reconnects within seconds
 - Unsaved changes cached locally, restored on reconnect
+- **Conflict Strategy:** If the file has changed on the server while the client was offline/disconnected, the client **must** present a modal dialog to the user: "Remote file has changed. [Overwrite Remote] [Reload from Server]". Silent overwrites are forbidden.
 
 **UI indicators:**
 - Title bar shows `[remote] filename.md` or `host:path/filename.md`
 - Status indicator shows connection state (connected/reconnecting/error)
+
+---
+
+## Feasibility & Risks
+
+### Critical Risks
+
+1.  **SSH Authentication Limitations (The "Happy Path" Trap):**
+    *   **Risk:** `ssh` often requires interaction (passwords, MFA).
+    *   **Mitigation:** Explicitly limit scope to non-interactive auth. If `ssh` prompts, connection fails. This simplifies implementation drastically but reduces accessible user base. **Crucial:** Failures must trigger a clear error popup in the UI explaining the requirement for non-interactive setup.
+
+2.  **Concurrency & State Desync:**
+    *   **Risk:** User edits offline; server file changes.
+    *   **Mitigation:** Detect conflict via content hash or modification time. Present a mandatory "Overwrite vs Reload" modal dialog to the user upon reconnection.
+
+3.  **Cross-Compilation Toolchain Fragility:**
+    *   **Risk:** Relying on specific Swift Static Linux SDK versions creates build pipeline dependency.
+    *   **Mitigation:** Document exact SDK version in `RELEASE_NOTES.md`.
+
+4.  **Binary Bloat:**
+    *   **Risk:** Bundling static binaries (x86_64, arm64) increases app size significantly.
+    *   **Impact:** Estimated **+15MB per architecture** (~30MB total) for stripped static binaries including the Swift runtime and Foundation. This effectively triples the current app bundle size.
+    *   **Mitigation:** Acceptable trade-off for zero-dependency remote experience. Future optimization: download on demand (not for MVP).
+
+5.  **Latency:**
+    *   **Risk:** UI feels sluggish if waiting for RPC roundtrips.
+    *   **Mitigation:** Use Optimistic UI for toggles/typing.
 
 ---
 
@@ -65,8 +95,8 @@ Deploy a headless server binary to the remote host that handles file operations,
 
 The implementation follows Zed's proven architecture with a **daemon + proxy** model:
 
-1. **Daemon mode (`run`)**: Forks to background, creates Unix domain sockets, handles RPC requests
-2. **Proxy mode (`proxy`)**: Runs in SSH foreground, bridges SSH stdin/stdout to daemon sockets
+1.  **Daemon mode (`run`)**: Forks to background, creates Unix domain sockets, handles RPC requests
+2.  **Proxy mode (`proxy`)**: Runs in SSH foreground, bridges SSH stdin/stdout to daemon sockets
 
 This separation allows the daemon to survive connection drops while the proxy handles the SSH transport.
 
@@ -85,14 +115,14 @@ This separation allows the daemon to survive connection drops while the proxy ha
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           LOCAL (macOS)                                  │
+│                           LOCAL (macOS)                                 │
 ├─────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐    ┌──────────────────┐    ┌─────────────────────┐    │
-│  │ SwiftUI     │◄──►│ DocumentState    │◄──►│ FileProvider        │    │
-│  │ (unchanged) │    │ (unchanged API)  │    │ (new abstraction)   │    │
-│  └─────────────┘    └──────────────────┘    └──────────┬──────────┘    │
-│                                                         │               │
-│                              ┌──────────────────────────┴───────┐       │
+│  ┌─────────────┐    ┌──────────────────┐    ┌─────────────────────┐     │
+│  │ SwiftUI     │◄──►│ DocumentState    │◄──►│ FileProvider        │     │
+│  │ (unchanged) │    │ (unchanged API)  │    │ (new abstraction)   │     │
+│  └─────────────┘    └──────────────────┘    └──────────┬──────────┘     │
+│                                                        │                │
+│                              ┌─────────────────────────┴────────┐       │
 │                              ▼                                  ▼       │
 │                     ┌─────────────────┐              ┌─────────────────┐│
 │                     │ LocalProvider   │              │ RemoteProvider  ││
@@ -127,10 +157,10 @@ This separation allows the daemon to survive connection drops while the proxy ha
 │                                │                                        │
 │         ┌──────────────────────┼──────────────────────┐                 │
 │         ▼                      ▼                      ▼                 │
-│  ┌─────────────┐       ┌─────────────┐        ┌─────────────┐          │
-│  │ FileOps     │       │ GitOps      │        │ FileWatcher │          │
-│  │ read/write  │       │ diff/detect │        │ inotify/FS  │          │
-│  └─────────────┘       └─────────────┘        └─────────────┘          │
+│  ┌─────────────┐       ┌─────────────┐        ┌─────────────┐           │
+│  │ FileOps     │       │ GitOps      │        │ FileWatcher │           │
+│  │ read/write  │       │ diff/detect │        │ inotify/FS  │           │
+│  └─────────────┘       └─────────────┘        └─────────────┘           │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -336,60 +366,45 @@ import Darwin
 
 **Problem:** DispatchSource file system monitoring does NOT work on Linux. It uses kqueue/kevent on macOS, but there's no equivalent in GCD on Linux.
 
-**Solution:** Use inotify directly via Musl's C wrappers.
+**Solution:** Use a battle-tested Swift library for inotify instead of raw C-interop.
+
+**Recommendation:** `Ponyboy47/inotify` (MIT)
+
+**Package.swift integration:**
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/Ponyboy47/inotify.git", from: "1.0.0")
+],
+targets: [
+    .executableTarget(
+        name: "redmargin-server",
+        dependencies: [
+            .product(name: "Inotify", package: "inotify", condition: .when(platforms: [.linux]))
+        ]
+    )
+]
+```
 
 **Implementation in `Server/LinuxFileWatcher.swift`:**
 
 ```swift
-#if canImport(Musl) || canImport(Glibc)
-
-#if canImport(Musl)
-import Musl
-#else
-import Glibc
-#endif
+#if canImport(Inotify)
+import Inotify
 
 class LinuxFileWatcher {
-    private var inotifyFd: Int32 = -1
-    private var watchDescriptors: [Int32: String] = [:]  // wd -> path
-    private var running = false
-
+    private var inotify: Inotify? 
+    
     init() throws {
-        inotifyFd = inotify_init1(Int32(IN_NONBLOCK | IN_CLOEXEC))
-        guard inotifyFd >= 0 else {
-            throw FileWatcherError.initFailed(errno)
-        }
+        self.inotify = try Inotify()
     }
 
-    func watch(path: String, events: UInt32 = UInt32(IN_MODIFY | IN_DELETE_SELF | IN_MOVE_SELF)) throws -> Int32 {
-        let wd = inotify_add_watch(inotifyFd, path, events)
-        guard wd >= 0 else {
-            throw FileWatcherError.watchFailed(path, errno)
-        }
-        watchDescriptors[wd] = path
-        return wd
-    }
-
-    func unwatch(_ wd: Int32) {
-        inotify_rm_watch(inotifyFd, wd)
-        watchDescriptors.removeValue(forKey: wd)
-    }
-
-    // Poll for events (call from run loop)
-    func pollEvents() -> [FileEvent] {
-        // Use select() or poll() on inotifyFd
-        // Read events with read(inotifyFd, buffer, size)
-        // Parse inotify_event structs from buffer
-        // Return FileEvent array
-    }
-
-    deinit {
-        if inotifyFd >= 0 {
-            close(inotifyFd)
-        }
+    func watch(path: String) throws {
+         try inotify?.watch(path: path, for: [.modify, .deleteSelf, .moveSelf], action: { event in
+             // Handle event
+         })
     }
 }
-
 #endif
 ```
 
@@ -397,7 +412,6 @@ class LinuxFileWatcher {
 - `IN_MODIFY`: File modified
 - `IN_DELETE_SELF`: File deleted
 - `IN_MOVE_SELF`: File renamed/moved
-- `IN_ATTRIB`: Attributes changed (optional)
 
 **For Git watching (index, HEAD):**
 - Watch `.git/index` for staging changes
@@ -542,19 +556,6 @@ protocol FileProvider {
 - Wrapper view for remote documents
 - Connection status indicator (green dot / yellow spinner / red X)
 - Reconnecting overlay when disconnected
-
-### Risks
-
-| Risk | Mitigation |
-|------|------------|
-| Swift Static SDK bugs (linking errors in 6.1/6.2) | Pin to known-working SDK version; fallback: build in Docker |
-| Unix socket permissions | Create sockets in user's home dir with 0600 perms |
-| Daemon orphaned (never cleaned up) | PID file + stale check; `proxy` kills stale daemons |
-| SSH connection drops frequently | ControlPersist keeps master; proxy auto-reconnects to daemon |
-| Large file transfers slow | Stream in chunks; show progress indicator |
-| inotify queue overflow | Debounce server-side; limit watch count |
-| Protocol version mismatch | Hello handshake rejects incompatible versions |
-| Musl vs Glibc differences | Conditional imports; test on both |
 
 ### Implementation Plan
 
