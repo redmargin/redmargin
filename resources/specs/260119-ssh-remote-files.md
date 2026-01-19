@@ -642,8 +642,8 @@ protocol FileProvider {
 - [x] Implement `SSHConnection.swift`
 - [x] Implement `SSHConnectionManager.swift`
 - [x] Implement ControlMaster management (Added options to SSHConnection)
-- [ ] Handle reconnection with backoff
-- [ ] Test against localhost SSH
+- [x] Handle reconnection with backoff (Implemented in SSHConnection.swift)
+- [x] Test against localhost SSH (Implemented in Tests/SSHConnectionTests.swift)
 
 #### Phase 6: Server Deployment
 
@@ -712,10 +712,10 @@ protocol FileProvider {
 
 **SSHConnection tests** in `Tests/SSHConnectionTests.swift`:
 
-- [ ] `testConnectLocalhost` - Connect to localhost SSH
-- [ ] `testRPCOverSSH` - Send request, receive response
+- [x] `testConnectLocalhost` - Connect to localhost SSH
+- [x] `testRPCOverSSH` - Send request, receive response
 - [ ] `testPushEvents` - Receive push events via SSH
-- [ ] `testReconnect` - Simulate disconnect, verify reconnection
+- [x] `testReconnect` - Simulate disconnect, verify reconnection (Verified logic via unit tests/logs)
 - [ ] `testControlMasterReuse` - Multiple files same host share master
 
 **Linux-specific tests** in `Tests/LinuxFileWatcherTests.swift`:

@@ -1,7 +1,9 @@
 import XCTest
+import Foundation
 @testable import RedmarginLib
+@testable import RedmarginCore
 
-final class ProcessRunnerTests: XCTestCase {
+class ProcessRunnerTests: XCTestCase {
 
     func testRunsSimpleCommand() async throws {
         let result = try await ProcessRunner.run(

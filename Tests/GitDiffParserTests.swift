@@ -1,5 +1,7 @@
 import XCTest
+import Foundation
 @testable import RedmarginLib
+@testable import RedmarginCore
 
 final class GitDiffParserTests: XCTestCase {
 
