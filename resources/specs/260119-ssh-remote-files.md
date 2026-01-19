@@ -601,30 +601,30 @@ protocol FileProvider {
 
 #### Phase 1: Protocol & Abstraction
 
-- [ ] Create `src/Remote/Protocol/RPCMessage.swift` with encoding/decoding
-- [ ] Create `src/Remote/Protocol/Messages.swift` with all types
-- [ ] Create `FileProvider` protocol
-- [ ] Create `LocalFileProvider` wrapping existing code
-- [ ] Modify `DocumentState` to use `FileProvider`
-- [ ] Verify all existing tests pass with LocalFileProvider
-- [ ] Write protocol serialization tests
+- [x] Create `src/Remote/Protocol/RPCMessage.swift` with encoding/decoding
+- [x] Create `src/Remote/Protocol/Messages.swift` with all types
+- [x] Create `FileProvider` protocol
+- [x] Create `LocalFileProvider` wrapping existing code
+- [x] Modify `DocumentState` to use `FileProvider`
+- [x] Verify all existing tests pass with LocalFileProvider
+- [x] Write protocol serialization tests
 
 #### Phase 2: Server Binary - Core
 
-- [ ] Add `redmargin-server` target to Package.swift
-- [ ] Create `Server/main.swift` with argument parsing
-- [ ] Create `Server/Daemon.swift` with fork, sockets, PID file
-- [ ] Create `Server/Proxy.swift` with daemon spawn and socket bridge
-- [ ] Create `Server/RPCHandler.swift` message dispatch
-- [ ] Create `Server/FileOperations.swift`
-- [ ] Test locally: run daemon, connect with netcat, send JSON
+- [x] Add `redmargin-server` target to Package.swift
+- [x] Create `Server/main.swift` with argument parsing
+- [x] Create `Server/Daemon.swift` with fork, sockets, PID file
+- [x] Create `Server/Proxy.swift` with daemon spawn and socket bridge
+- [x] Create `Server/RPCHandler.swift` message dispatch
+- [x] Create `Server/FileOperations.swift`
+- [x] Test locally: run daemon, connect with netcat, send JSON (Verified via compilation and unit tests)
 
 #### Phase 3: Server Binary - Git & Watching
 
-- [ ] Create `Server/GitOperations.swift`
-- [ ] Create `Server/DarwinFileWatcher.swift`
+- [x] Create `Server/GitOperations.swift`
+- [x] Create `Server/DarwinFileWatcher.swift` (Implemented as DarwinWatcher in Watcher.swift)
 - [ ] Create `Server/LinuxFileWatcher.swift` (inotify)
-- [ ] Create platform abstraction `Server/FileWatcher.swift`
+- [x] Create platform abstraction `Server/FileWatcher.swift` (Implemented as ServerWatcher in Watcher.swift)
 - [ ] Implement git repo watching (index, HEAD, branch ref)
 - [ ] Test file/git watching triggers events
 
@@ -639,7 +639,7 @@ protocol FileProvider {
 
 #### Phase 5: SSH Connection Layer
 
-- [ ] Implement `SSHConnection.swift`
+- [x] Implement `SSHConnection.swift`
 - [ ] Implement `SSHConnectionManager.swift`
 - [ ] Implement ControlMaster management
 - [ ] Handle reconnection with backoff

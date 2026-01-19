@@ -17,6 +17,11 @@ let package = Package(
             dependencies: ["RedmarginLib"],
             path: "AppMain"
         ),
+        .executableTarget(
+            name: "redmargin-server",
+            dependencies: ["RedmarginLib"],
+            path: "Server"
+        ),
         .testTarget(
             name: "RedmarginTests",
             dependencies: ["RedmarginLib"],
