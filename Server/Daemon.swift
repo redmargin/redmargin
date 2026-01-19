@@ -1,5 +1,5 @@
 import Foundation
-import RedmarginLib
+import RedmarginCore
 
 #if canImport(Glibc)
 import Glibc

@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import RedmarginLib
+import RedmarginCore
 
 struct DocumentWindowContent: View {
     @StateObject private var state: DocumentState

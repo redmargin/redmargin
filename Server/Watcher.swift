@@ -1,5 +1,5 @@
 import Foundation
-import RedmarginLib
+import RedmarginCore
 
 protocol ServerWatcher {
     init?(path: String, onChange: @escaping () -> Void)
@@ -8,16 +8,13 @@ protocol ServerWatcher {
 
 #if os(macOS)
 typealias PlatformWatcher = DarwinWatcher
-#elseif os(Linux)
-typealias PlatformWatcher = LinuxWatcher
-#endif
 
 class DarwinWatcher: ServerWatcher {
-    private var internalWatcher: RedmarginLib.FileWatcher?
+    private var internalWatcher: FileWatcher?
     
     required init?(path: String, onChange: @escaping () -> Void) {
         let url = URL(fileURLWithPath: path)
-        self.internalWatcher = RedmarginLib.FileWatcher(url: url, onChange: onChange)
+        self.internalWatcher = FileWatcher(url: url, onChange: onChange)
         if self.internalWatcher == nil { return nil }
     }
     
@@ -27,6 +24,9 @@ class DarwinWatcher: ServerWatcher {
         internalWatcher = nil
     }
 }
+#elseif os(Linux)
+typealias PlatformWatcher = LinuxWatcher
+#endif
 
 class LinuxWatcher: ServerWatcher {
     required init?(path: String, onChange: @escaping () -> Void) {
