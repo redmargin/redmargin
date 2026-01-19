@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 import RedmarginLib
+import RedmarginCore
 
 extension Notification.Name {
     static let toggleLineNumbers = Notification.Name("RedMargin.toggleLineNumbers")
@@ -97,6 +98,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         UserDefaults.standard.set(orderedURLs.map { $0.path }, forKey: windowOrderKey)
 
         BookmarkManager.shared.stopAccessingAll()
+        
+        Task {
+            await SSHConnectionManager.shared.disconnectAll()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

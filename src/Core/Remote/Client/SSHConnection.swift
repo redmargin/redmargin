@@ -24,7 +24,7 @@ public actor SSHConnection {
         self.eventContinuation = continuation
     }
     
-    public func connect() throws {
+    public func connect() async throws {
         // TODO: Use ControlMaster
         // For now, direct connection
         let process = Process()
@@ -61,6 +61,15 @@ public actor SSHConnection {
         
         // Start reading loop
         startReading()
+        
+        // Handshake
+        let hello = HelloPayload(clientVersion: "1.0.0", protocolVersion: 1)
+        let responseData = try await send(type: RPCMessageType.hello.rawValue, payload: hello)
+        let response = try JSONDecoder().decode(RPCMessage<HelloResponsePayload>.self, from: responseData)
+        
+        guard response.payload.accepted else {
+            throw RPCError.incompleteData // Todo: HandshakeError
+        }
     }
     
     public func send(type: String, payload: some Codable) async throws -> Data {
