@@ -15,7 +15,6 @@ public struct RemoteLocation: Hashable, Codable, Sendable {
     }
 
     public var displayTitle: String {
-        let filename = (path as NSString).lastPathComponent
-        return "[remote] \(filename)"
+        "[\(host)] \(path)"
     }
 }

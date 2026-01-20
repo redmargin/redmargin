@@ -12,7 +12,7 @@ enum Daemon {
     static func c_fork() -> Int32
 
     static func start(pidFile: String, stdinSocket: String, stdoutSocket: String, stderrSocket: String) {
-        print("Starting daemon...")
+        fputs("Starting daemon...\n", stderr)
 
         // 1. Fork to background
         // Note: In a real deployment, we might skip this if managed by systemd,
@@ -35,7 +35,7 @@ enum Daemon {
             let currentPid = String(ProcessInfo.processInfo.processIdentifier)
             try currentPid.write(toFile: pidFile, atomically: true, encoding: .utf8)
         } catch {
-            print("Failed to write PID file: \(error)")
+            fputs("Failed to write PID file: \(error)\n", stderr)
             exit(1)
         }
 
@@ -45,11 +45,11 @@ enum Daemon {
         do {
             try listener.start()
         } catch {
-            print("Failed to start listener: \(error)")
+            fputs("Failed to start listener: \(error)\n", stderr)
             exit(1)
         }
 
-        print("Daemon listening on \(stdinSocket)")
+        fputs("Daemon listening on \(stdinSocket)\n", stderr)
 
         let rpcHandler = RPCHandler()
 
@@ -60,19 +60,23 @@ enum Daemon {
                 continue
             }
 
-            print("Accepted connection")
+            fputs("Accepted connection\n", stderr)
 
             // Handle connection concurrently - each connection gets its own stream handler
             DispatchQueue.global().async {
                 let streamHandler = RPCStreamHandler()
-                handleClient(fd: clientFD, rpcHandler: rpcHandler, streamHandler: streamHandler)
+                handleClient(clientFD: clientFD, rpcHandler: rpcHandler, streamHandler: streamHandler)
                 _ = system_close(clientFD)
-                print("Connection closed")
+                fputs("Connection closed\n", stderr)
             }
         }
     }
 
-    static func handleClient(fd: Int32, rpcHandler: RPCHandler, streamHandler: RPCStreamHandler) {
+    static func handleClient(
+        clientFD: Int32,
+        rpcHandler: RPCHandler,
+        streamHandler: RPCStreamHandler
+    ) {
         let writeQueue = DispatchQueue(label: "com.redmargin.server.write")
 
         // Helper to write data safely
@@ -80,7 +84,7 @@ enum Daemon {
             writeQueue.async {
                 data.withUnsafeBytes { ptr in
                     if let baseAddress = ptr.baseAddress {
-                        _ = socket_write(fd: fd, buffer: baseAddress, count: data.count)
+                        _ = socket_write(fd: clientFD, buffer: baseAddress, count: data.count)
                     }
                 }
             }
@@ -97,10 +101,8 @@ enum Daemon {
         defer { buffer.deallocate() }
 
         while true {
-            let readCount = socket_read(fd: fd, buffer: buffer, count: bufferSize)
-            if readCount <= 0 {
-                break // EOF or Error
-            }
+            let readCount = socket_read(fd: clientFD, buffer: buffer, count: bufferSize)
+            if readCount <= 0 { break }
 
             let data = Data(bytes: buffer, count: readCount)
             let messages = streamHandler.receive(data: data)

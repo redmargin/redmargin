@@ -97,7 +97,7 @@ public actor SSHConnection {
         return home
     }
 
-    public func connect() async throws {
+    public func connect(onProgress: (@Sendable (String) -> Void)? = nil) async throws {
         print("[SSHConnection] connect() called for \(host), current state: \(state)")
         if state == .connected {
             print("[SSHConnection] Already connected, returning")
@@ -107,14 +107,41 @@ public actor SSHConnection {
         isIntentionallyDisconnected = false
 
         do {
+            try await connectInternal(onProgress: onProgress, isRetry: false)
+        } catch let error as SSHConnectionError {
+            // Retry on handshake/server issues - the binary might be stale or corrupted
+            if case .handshakeTimeout = error {
+                print("[SSHConnection] Handshake failed, removing server and retrying...")
+                onProgress?("Server not responding, redeploying...")
+                await deployer.removeDeployedServer(host: host)
+                try await connectInternal(onProgress: onProgress, isRetry: true)
+            } else if case .serverNotResponding = error {
+                print("[SSHConnection] Server not responding, removing server and retrying...")
+                onProgress?("Server not responding, redeploying...")
+                await deployer.removeDeployedServer(host: host)
+                try await connectInternal(onProgress: onProgress, isRetry: true)
+            } else {
+                state = .disconnected
+                throw error
+            }
+        } catch {
+            print("[SSHConnection] Connection failed: \(error)")
+            state = .disconnected
+            throw error
+        }
+    }
+
+    private func connectInternal(onProgress: (@Sendable (String) -> Void)?, isRetry: Bool) async throws {
+        do {
             // 1. Ensure server is deployed
-            print("[SSHConnection] Deploying server...")
-            let path = try await deployer.ensureServerDeployed(host: host)
+            print("[SSHConnection] Deploying server... (retry: \(isRetry))")
+            let path = try await deployer.ensureServerDeployed(host: host, onProgress: onProgress)
             self.remoteBinaryPath = path
             print("[SSHConnection] Server deployed at \(path)")
 
             // 2. Establish connection
             print("[SSHConnection] Establishing connection...")
+            onProgress?("Connecting...")
             try await establishConnection()
             state = .connected
             reconnectAttempts = 0
@@ -162,14 +189,11 @@ public actor SSHConnection {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
 
-        // Use /tmp for ControlPath (~ doesn't expand reliably)
         // Add keepalive options to detect dead connections
+        // Note: ControlMaster disabled - stale control sockets cause "Session open refused" errors
         let args = [
             "-o", "BatchMode=yes",
             "-o", "ConnectTimeout=10",
-            "-o", "ControlMaster=auto",
-            "-o", "ControlPath=/tmp/ssh-redmargin-%r@%h:%p",
-            "-o", "ControlPersist=60",
             "-o", "ServerAliveInterval=15",
             "-o", "ServerAliveCountMax=3",
             host,

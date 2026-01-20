@@ -22,30 +22,33 @@ struct OpenRemoteSheet: View {
     // Step 1: Server selection
     @State private var serverName: String = ""
     @State private var isConnecting = false
+    @State private var connectionStatus: String = "Connecting..."
     @State private var errorMessage: String?
     @FocusState private var isServerFieldFocused: Bool
 
     // Step 2: File browsing
     @State private var connection: SSHConnection?
     @State private var currentPath: String = ""
+    @State private var pathInput: String = ""
     @State private var entries: [DirectoryEntry] = []
     @State private var isLoadingDirectory = false
     @State private var pathHistory: [String] = []
     @State private var usePathEntry = false
     @State private var manualPath: String = ""
+    @FocusState private var isPathFieldFocused: Bool
 
-    let recentServers: [String]
+    @Binding var recentServers: [String]
     let onServerConnected: (String) -> Void
     let onFileSelected: (SSHConnection, String) async throws -> Void
     let onDismiss: () -> Void
 
     init(
-        recentServers: [String],
+        recentServers: Binding<[String]>,
         onServerConnected: @escaping (String) -> Void,
         onFileSelected: @escaping (SSHConnection, String) async throws -> Void,
         onDismiss: @escaping () -> Void
     ) {
-        self.recentServers = recentServers
+        self._recentServers = recentServers
         self.onServerConnected = onServerConnected
         self.onFileSelected = onFileSelected
         self.onDismiss = onDismiss
@@ -97,29 +100,44 @@ struct OpenRemoteSheet: View {
 
     private var serverSelectionView: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Server:")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+            if isConnecting {
+                Spacer()
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                    Text(connectionStatus)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Text(serverName)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                Spacer()
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Server:")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
 
-                TextField("hostname (from ~/.ssh/config)", text: $serverName)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(.body, design: .monospaced))
-                    .disabled(isConnecting)
-                    .focused($isServerFieldFocused)
-                    .onSubmit { connectToServer() }
-                    .onAppear { isServerFieldFocused = true }
+                    TextField("hostname (from ~/.ssh/config)", text: $serverName)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                        .focused($isServerFieldFocused)
+                        .onSubmit { connectToServer() }
+                        .onAppear { isServerFieldFocused = true }
+                }
+
+                if let error = errorMessage {
+                    errorView(error)
+                }
+
+                if !recentServers.isEmpty {
+                    recentServersView
+                }
+
+                Spacer()
             }
-
-            if let error = errorMessage {
-                errorView(error)
-            }
-
-            if !recentServers.isEmpty {
-                recentServersView
-            }
-
-            Spacer()
         }
         .padding()
     }
@@ -133,25 +151,33 @@ struct OpenRemoteSheet: View {
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(recentServers, id: \.self) { server in
-                        Button(action: {
-                            serverName = server
-                            connectToServer()
-                        }) {
-                            HStack {
-                                Image(systemName: "server.rack")
-                                    .foregroundColor(.secondary)
-                                Text(server)
-                                    .font(.system(.body, design: .monospaced))
-                                Spacer()
-                                Image(systemName: "arrow.right.circle")
-                                    .foregroundColor(.accentColor)
+                        HStack {
+                            Button(action: {
+                                serverName = server
+                                connectToServer()
+                            }) {
+                                HStack {
+                                    Image(systemName: "server.rack")
+                                        .foregroundColor(.secondary)
+                                    Text(server)
+                                        .font(.system(.body, design: .monospaced))
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .contentShape(Rectangle())
                             }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(Color.clear)
-                            .cornerRadius(4)
+                            .buttonStyle(.plain)
+
+                            Button(action: {
+                                recentServers.removeAll { $0 == server }
+                            }) {
+                                Image(systemName: "minus.circle")
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.trailing, 8)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -163,14 +189,17 @@ struct OpenRemoteSheet: View {
 
     private var fileBrowserView: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Current path breadcrumb
-            HStack {
-                Text(currentPath.isEmpty ? "~" : currentPath)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                Spacer()
+            // Path input field
+            HStack(spacing: 8) {
+                TextField("Path", text: $pathInput)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+                    .focused($isPathFieldFocused)
+                    .onSubmit { navigateToPath(pathInput) }
+                Button("Go") {
+                    navigateToPath(pathInput)
+                }
+                .disabled(pathInput.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
@@ -322,17 +351,10 @@ struct OpenRemoteSheet: View {
             }
             .keyboardShortcut(.cancelAction)
 
-            if connection == nil {
-                Button(action: connectToServer) {
-                    if isConnecting {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Text("Connect")
-                    }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(serverName.trimmingCharacters(in: .whitespaces).isEmpty || isConnecting)
+            if connection == nil && !isConnecting {
+                Button("Connect", action: connectToServer)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(serverName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding()
@@ -362,6 +384,7 @@ struct OpenRemoteSheet: View {
         guard !host.isEmpty else { return }
 
         isConnecting = true
+        connectionStatus = "Connecting..."
         errorMessage = nil
 
         Task {
@@ -375,7 +398,11 @@ struct OpenRemoteSheet: View {
                 }
 
                 print("[OpenRemoteSheet] Calling connect()...")
-                try await conn.connect()
+                try await conn.connect(onProgress: { status in
+                    Task { @MainActor in
+                        self.connectionStatus = status
+                    }
+                })
                 print("[OpenRemoteSheet] Connected!")
 
                 print("[OpenRemoteSheet] Getting home directory...")
@@ -399,10 +426,12 @@ struct OpenRemoteSheet: View {
                 await MainActor.run {
                     self.connection = conn
                     self.currentPath = homeDir
+                    self.pathInput = homeDir
                     self.entries = dirEntries
                     self.pathHistory = []
                     self.isConnecting = false
                     self.usePathEntry = useFallback
+                    self.isPathFieldFocused = true
                 }
             } catch {
                 print("[OpenRemoteSheet] ERROR: \(error)")
@@ -450,6 +479,7 @@ struct OpenRemoteSheet: View {
                 let dirEntries = try await conn.listDirectory(path: path)
                 await MainActor.run {
                     self.currentPath = path
+                    self.pathInput = path
                     self.entries = dirEntries
                     self.isLoadingDirectory = false
                 }
@@ -460,6 +490,15 @@ struct OpenRemoteSheet: View {
                 }
             }
         }
+    }
+
+    private func navigateToPath(_ path: String) {
+        let trimmed = path.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+
+        // Clear history when jumping to a new path
+        pathHistory = [currentPath]
+        loadDirectory(trimmed)
     }
 
     private func openFile(_ name: String) {
@@ -493,6 +532,7 @@ struct OpenRemoteSheet: View {
         connection = nil
         entries = []
         currentPath = ""
+        pathInput = ""
         pathHistory = []
         errorMessage = nil
     }
