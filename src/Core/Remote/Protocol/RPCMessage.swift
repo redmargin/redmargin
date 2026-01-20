@@ -20,6 +20,7 @@ public struct RPCMessage<T: Codable>: Codable {
 public enum RPCError: Error {
     case incompleteData
     case invalidEncoding
+    case serverError(String)
 }
 
 public class RPCStreamHandler {

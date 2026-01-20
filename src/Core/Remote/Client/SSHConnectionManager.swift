@@ -11,11 +11,15 @@ public actor SSHConnectionManager {
         if let existing = connections[host] {
             return existing
         }
-        
+
         let connection = SSHConnection(host: host)
         try await connection.connect()
         connections[host] = connection
         return connection
+    }
+
+    public func registerConnection(_ connection: SSHConnection, for host: String) {
+        connections[host] = connection
     }
     
     public func disconnectAll() async {

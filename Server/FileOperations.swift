@@ -9,6 +9,35 @@ actor FileOperations {
         self.eventHandler = handler
     }
     
+    func listDirectory(path: String) -> ListDirectoryResponsePayload {
+        do {
+            let expandedPath = NSString(string: path).expandingTildeInPath
+            let url = URL(fileURLWithPath: expandedPath)
+            let contents = try FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
+                options: [.skipsHiddenFiles]
+            )
+
+            let entries: [DirectoryEntry] = contents.compactMap { itemURL in
+                let resourceValues = try? itemURL.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+                let isDirectory = resourceValues?.isDirectory ?? false
+                let size = resourceValues?.fileSize.map { Int64($0) }
+                return DirectoryEntry(name: itemURL.lastPathComponent, isDirectory: isDirectory, size: size)
+            }.sorted { lhs, rhs in
+                // Directories first, then alphabetically
+                if lhs.isDirectory != rhs.isDirectory {
+                    return lhs.isDirectory
+                }
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+
+            return ListDirectoryResponsePayload(entries: entries, error: nil)
+        } catch {
+            return ListDirectoryResponsePayload(entries: nil, error: error.localizedDescription)
+        }
+    }
+
     func readFile(path: String) -> ReadFileResponsePayload {
         do {
             let url = URL(fileURLWithPath: path)

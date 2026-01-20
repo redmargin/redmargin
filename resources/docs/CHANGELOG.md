@@ -1,5 +1,15 @@
 # Changelog
 
+## 260120 SSH Connection Timeout & Error Handling
+- Added: SSHConnectionError enum with user-friendly error messages
+- Added: Timeout on all SSH operations (30s overall connection, 15s handshake, 30s operations)
+- Added: Stderr monitoring to detect and report SSH failures (auth, refused, unreachable)
+- Added: Early failure detection (200ms check after SSH process starts)
+- Changed: ControlPath moved to /tmp for reliable path expansion
+- Changed: SSH options now include ServerAliveInterval/ServerAliveCountMax for keepalives
+- Changed: ControlPersist=60 for connection reuse
+- Fixed: SSH connections no longer hang indefinitely on failure
+
 ## 260120 Phase 8: Remote File UI Integration
 - Added: "Open Remote..." menu item (Cmd+Shift+O) for connecting to SSH servers
 - Added: OpenRemoteSheet for entering connection strings (user@host:/path format)
