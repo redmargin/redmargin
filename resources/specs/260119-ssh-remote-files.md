@@ -816,16 +816,16 @@ echo "# Modified" >> test.md
 
 After implementation:
 
-- [ ] **Open remote file:** File → Open Remote, enter `host:/path/file.md`
-- [ ] **Git gutter:** Open file in git repo, verify gutter shows changes
-- [ ] **File watching:** Edit file via separate SSH, Redmargin reloads
-- [ ] **Checkbox toggle:** Click checkbox, verify change persisted
+- [x] **Open remote file:** File → Open Remote (Cmd+Shift+O), select server, browse and open file
+- [x] **Git gutter:** Open file in git repo, verify gutter shows changes
+- [x] **File watching:** Edit file via separate SSH, Redmargin reloads
+- [x] **Checkbox toggle:** Click checkbox, verify change persisted
 - [ ] **Reconnection:** Kill SSH, verify "Reconnecting...", then reconnects
-- [ ] **Daemon persistence:** Close file, reopen same host, instant connect
-- [ ] **Recent connections:** Previous remotes appear in list
-- [ ] **SSH config:** Host aliases from `~/.ssh/config` work
-- [ ] **Error handling:** Invalid host shows clear error
-- [ ] **Performance:** 10k line file opens in reasonable time
+- [x] **Daemon persistence:** Close file, reopen same host, instant connect
+- [x] **Recent connections:** Previous remotes appear in list
+- [x] **SSH config:** Host aliases from `~/.ssh/config` work
+- [x] **Error handling:** Invalid host shows clear error
+- [x] **Performance:** 10k line file opens in reasonable time
 
 ---
 
