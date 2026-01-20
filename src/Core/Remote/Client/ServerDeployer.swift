@@ -1,7 +1,7 @@
 import Foundation
 
 public actor ServerDeployer {
-    private let version = "0.42.3" // Match current app version
+    private let version = "0.42.10" // Match current app version
     private let sshTimeout: TimeInterval = 15 // seconds
     private let scpTimeout: TimeInterval = 60 // seconds for upload
 
@@ -17,7 +17,7 @@ public actor ServerDeployer {
         onProgress: (@Sendable (String) -> Void)? = nil
     ) async throws -> String {
         // 1. Detect remote OS and architecture
-        onProgress?("Checking remote server...")
+        onProgress?("Checking")
         let (osName, arch) = try await detectRemotePlatform(host: host)
         let remoteBinaryPath = "~/.redmargin-server/redmargin-server-\(version)"
 
@@ -38,7 +38,7 @@ public actor ServerDeployer {
         }
 
         print("[ServerDeployer] Deploying \(localBinaryURL.lastPathComponent) to \(host)...")
-        onProgress?("Deploying server binary (first connect takes longer)...")
+        onProgress?("Deploying to")
 
         // 4. Create directory and upload
         _ = try await ProcessRunner.run(

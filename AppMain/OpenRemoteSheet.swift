@@ -105,11 +105,8 @@ struct OpenRemoteSheet: View {
                 VStack(spacing: 12) {
                     ProgressView()
                         .scaleEffect(1.2)
-                    Text(connectionStatus)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Text(serverName)
-                        .font(.system(.caption, design: .monospaced))
+                    Text("\(connectionStatus) \(serverName)...")
+                        .font(.body)
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -384,7 +381,7 @@ struct OpenRemoteSheet: View {
         guard !host.isEmpty else { return }
 
         isConnecting = true
-        connectionStatus = "Connecting..."
+        connectionStatus = "Connecting to"
         errorMessage = nil
 
         Task {

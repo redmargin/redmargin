@@ -52,6 +52,9 @@ public actor SSHConnection {
     private let streamHandler = RPCStreamHandler()
     private var nextRequestId = 1
 
+    // Sync marker that server outputs after shell initialization - we discard everything before this
+    private static let syncMarker = "REDMARGIN_SYNC_7f3d9a\n"
+
     // Event stream
     private var eventContinuation: AsyncStream<Data>.Continuation?
     public nonisolated let events: AsyncStream<Data>
@@ -106,21 +109,16 @@ public actor SSHConnection {
         state = .connecting
         isIntentionallyDisconnected = false
 
+        // First attempt
         do {
             try await connectInternal(onProgress: onProgress, isRetry: false)
+            return
         } catch let error as SSHConnectionError {
-            // Retry on handshake/server issues - the binary might be stale or corrupted
-            if case .handshakeTimeout = error {
-                print("[SSHConnection] Handshake failed, removing server and retrying...")
-                onProgress?("Server not responding, redeploying...")
-                await deployer.removeDeployedServer(host: host)
-                try await connectInternal(onProgress: onProgress, isRetry: true)
-            } else if case .serverNotResponding = error {
-                print("[SSHConnection] Server not responding, removing server and retrying...")
-                onProgress?("Server not responding, redeploying...")
-                await deployer.removeDeployedServer(host: host)
-                try await connectInternal(onProgress: onProgress, isRetry: true)
-            } else {
+            // Only retry on handshake/timing issues
+            switch error {
+            case .handshakeTimeout, .serverNotResponding, .connectionTimeout:
+                print("[SSHConnection] First attempt failed (\(error)), will retry...")
+            default:
                 state = .disconnected
                 throw error
             }
@@ -129,6 +127,24 @@ public actor SSHConnection {
             state = .disconnected
             throw error
         }
+
+        // Quick retry - daemon is likely running, just connect again
+        print("[SSHConnection] Quick retry (daemon should be running)...")
+        try await Task.sleep(nanoseconds: 500_000_000) // 500ms
+        do {
+            try await establishConnection()
+            state = .connected
+            print("[SSHConnection] Quick retry succeeded")
+            return
+        } catch {
+            print("[SSHConnection] Quick retry failed: \(error)")
+        }
+
+        // Final attempt - full redeploy
+        print("[SSHConnection] Full redeploy and retry...")
+        onProgress?("Redeploying to")
+        await deployer.removeDeployedServer(host: host)
+        try await connectInternal(onProgress: onProgress, isRetry: true)
     }
 
     private func connectInternal(onProgress: (@Sendable (String) -> Void)?, isRetry: Bool) async throws {
@@ -141,7 +157,7 @@ public actor SSHConnection {
 
             // 2. Establish connection
             print("[SSHConnection] Establishing connection...")
-            onProgress?("Connecting...")
+            onProgress?("Connecting to")
             try await establishConnection()
             state = .connected
             reconnectAttempts = 0
@@ -191,7 +207,9 @@ public actor SSHConnection {
 
         // Add keepalive options to detect dead connections
         // Note: ControlMaster disabled - stale control sockets cause "Session open refused" errors
+        // -T disables PTY allocation to reduce shell initialization issues
         let args = [
+            "-T",
             "-o", "BatchMode=yes",
             "-o", "ConnectTimeout=10",
             "-o", "ServerAliveInterval=15",
@@ -216,22 +234,6 @@ public actor SSHConnection {
         self.process = process
 
         // Collect stderr for error reporting (thread-safe)
-        final class StderrCollector: @unchecked Sendable {
-            private var data = Data()
-            private let lock = NSLock()
-
-            func append(_ newData: Data) {
-                lock.lock()
-                data.append(newData)
-                lock.unlock()
-            }
-
-            func getString() -> String {
-                lock.lock()
-                defer { lock.unlock() }
-                return String(data: data, encoding: .utf8) ?? "Unknown error"
-            }
-        }
         let stderrCollector = StderrCollector()
 
         errPipe.fileHandleForReading.readabilityHandler = { handle in
@@ -256,6 +258,11 @@ public actor SSHConnection {
             errPipe.fileHandleForReading.readabilityHandler = nil
             throw parseSSHError(stderr: stderrCollector.getString())
         }
+
+        // Wait for sync marker - discard any shell initialization output (.bashrc, etc.)
+        print("[SSHConnection] Waiting for sync marker...")
+        try await waitForSyncMarker(stdout: outPipe.fileHandleForReading, process: process, stderrCollector: stderrCollector, errPipe: errPipe)
+        print("[SSHConnection] Sync marker received, starting protocol")
 
         // Start reading loop
         startReading()
@@ -285,6 +292,118 @@ public actor SSHConnection {
             throw SSHConnectionError.serverNotResponding(host: host)
         }
         print("[SSHConnection] Handshake accepted!")
+    }
+
+    /// Waits for the sync marker from the server, discarding any shell initialization output.
+    /// This handles cases where .bashrc or .profile output garbage before the protocol starts.
+    private func waitForSyncMarker(
+        stdout: FileHandle,
+        process: Process,
+        stderrCollector: StderrCollector,
+        errPipe: Pipe
+    ) async throws {
+        let markerData = Self.syncMarker.data(using: .utf8)!
+        let maxGarbageBytes = 64 * 1024 // Don't read more than 64KB of garbage
+
+        // Use actor to safely accumulate data from callback
+        actor DataAccumulator {
+            var buffer = Data()
+            var foundMarker = false
+            var markerEndIndex: Data.Index?
+
+            func append(_ data: Data, marker: Data) {
+                buffer.append(data)
+                if let range = buffer.range(of: marker) {
+                    foundMarker = true
+                    markerEndIndex = range.upperBound
+                }
+            }
+
+            func getResult() -> (found: Bool, discarded: Data, remaining: Data) {
+                guard foundMarker, let endIndex = markerEndIndex else {
+                    return (false, Data(), Data())
+                }
+                let startIndex = buffer.range(of: Self.syncMarkerData)?.lowerBound ?? buffer.startIndex
+                return (true, buffer.prefix(upTo: startIndex), buffer.suffix(from: endIndex))
+            }
+
+            func getBuffer() -> Data { buffer }
+
+            private static let syncMarkerData = "REDMARGIN_SYNC_7f3d9a\n".data(using: .utf8)!
+        }
+
+        let accumulator = DataAccumulator()
+
+        // Set up non-blocking read handler
+        stdout.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty {
+                Task {
+                    await accumulator.append(data, marker: markerData)
+                }
+            }
+        }
+
+        defer {
+            stdout.readabilityHandler = nil
+        }
+
+        // Poll for marker with timeout
+        let timeoutNanos: UInt64 = 10_000_000_000 // 10 seconds
+        let startTime = DispatchTime.now()
+
+        while true {
+            let elapsed = DispatchTime.now().uptimeNanoseconds - startTime.uptimeNanoseconds
+            if elapsed > timeoutNanos {
+                let bufferPreview = await String(data: accumulator.getBuffer().prefix(500), encoding: .utf8) ?? "<binary>"
+                print("[SSHConnection] Sync marker timeout. Buffer contents: \(bufferPreview)")
+                throw SSHConnectionError.handshakeTimeout(host: host)
+            }
+
+            if !process.isRunning {
+                errPipe.fileHandleForReading.readabilityHandler = nil
+                throw parseSSHError(stderr: stderrCollector.getString())
+            }
+
+            let result = await accumulator.getResult()
+            if result.found {
+                if !result.discarded.isEmpty {
+                    let discardedStr = String(data: result.discarded, encoding: .utf8) ?? "<binary>"
+                    print("[SSHConnection] Discarded shell output before sync marker: \(discardedStr.prefix(200))")
+                }
+                if !result.remaining.isEmpty {
+                    _ = streamHandler.receive(data: result.remaining)
+                }
+                return
+            }
+
+            let bufferSize = await accumulator.getBuffer().count
+            if bufferSize > maxGarbageBytes {
+                let preview = await String(data: accumulator.getBuffer().prefix(500), encoding: .utf8) ?? "<binary>"
+                print("[SSHConnection] Too much data before sync marker: \(preview)")
+                throw SSHConnectionError.serverNotResponding(host: host)
+            }
+
+            try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        }
+    }
+
+    // Helper class for thread-safe stderr collection
+    final class StderrCollector: @unchecked Sendable {
+        private var data = Data()
+        private let lock = NSLock()
+
+        func append(_ newData: Data) {
+            lock.lock()
+            data.append(newData)
+            lock.unlock()
+        }
+
+        func getString() -> String {
+            lock.lock()
+            defer { lock.unlock() }
+            return String(data: data, encoding: .utf8) ?? "Unknown error"
+        }
     }
 
     private func parseSSHError(stderr: String) -> SSHConnectionError {
