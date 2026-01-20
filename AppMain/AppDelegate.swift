@@ -25,6 +25,7 @@ extension URL {
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     private var documentWindows: [URL: NSWindow] = [:]
+    private var remoteDocumentWindows: [RemoteLocation: NSWindow] = [:]
     private var launchedWithFiles = false
     private var launchURLs: [URL] = []
 
@@ -43,16 +44,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     private let savedURLsKey = "RedMargin.OpenDocumentURLs"
     private let recentURLsKey = "RedMargin.RecentDocumentURLs"
+    private let recentRemoteKey = "RedMargin.RecentRemoteConnections"
     private let windowOrderKey = "RedMargin.WindowOrder"
     private let scrollPositionsKey = "RedMargin.ScrollPositions"
     private let lineNumbersKey = "RedMargin.DocumentLineNumbers"
     private let maxRecentDocuments = 10
 
     @Published var recentDocuments: [URL] = []
+    @Published var recentRemoteConnections: [String] = []
 
     override init() {
         super.init()
         recentDocuments = loadRecentDocuments()
+        recentRemoteConnections = loadRecentRemoteConnections()
     }
 
     // MARK: - App Lifecycle
@@ -98,7 +102,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         UserDefaults.standard.set(orderedURLs.map { $0.path }, forKey: windowOrderKey)
 
         BookmarkManager.shared.stopAccessingAll()
-        
+
+        // Close all remote document windows gracefully
+        for (_, window) in remoteDocumentWindows {
+            window.close()
+        }
+        remoteDocumentWindows.removeAll()
+
         Task {
             await SSHConnectionManager.shared.disconnectAll()
         }
@@ -265,6 +275,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         documentWindows = documentWindows.filter { $0.value !== window }
+        remoteDocumentWindows = remoteDocumentWindows.filter { $0.value !== window }
     }
 
     // MARK: - Scroll Position Persistence
@@ -339,5 +350,114 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     @objc func toggleLineNumbers(_ sender: Any?) {
         NotificationCenter.default.post(name: .toggleLineNumbers, object: nil)
+    }
+
+    // MARK: - Remote Connection
+
+    @objc func showOpenRemoteSheet(_ sender: Any?) {
+        let sheet = OpenRemoteSheet(
+            recentConnections: recentRemoteConnections,
+            onConnect: { [weak self] host, path in
+                try await self?.openRemoteDocument(host: host, path: path)
+            }
+        )
+        let hostingController = NSHostingController(rootView: sheet)
+
+        guard let keyWindow = NSApp.keyWindow ?? NSApp.mainWindow else {
+            // No window available, show as standalone window
+            let window = NSWindow(contentViewController: hostingController)
+            window.styleMask = [NSWindow.StyleMask.titled, NSWindow.StyleMask.closable]
+            window.title = "Connect to Server"
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        keyWindow.contentViewController?.presentAsSheet(hostingController)
+    }
+
+    func openRemoteDocument(host: String, path: String) async throws {
+        let location = RemoteLocation(host: host, path: path)
+
+        // Add to recent connections
+        await MainActor.run {
+            addToRecentRemoteConnections(location.displayString)
+        }
+
+        // Check if already open
+        if let existingWindow = remoteDocumentWindows[location] {
+            await MainActor.run {
+                existingWindow.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            return
+        }
+
+        // Get SSH connection
+        let connection = try await SSHConnectionManager.shared.connection(for: host)
+
+        // Create remote file provider
+        let fileProvider = RemoteFileProvider(connection: connection)
+
+        // Read content
+        let content = try await fileProvider.readFile(at: path)
+
+        // Create window on main thread
+        await MainActor.run {
+            let documentView = RemoteDocumentWindowContent(
+                content: content,
+                location: location,
+                fileProvider: fileProvider,
+                appDelegate: self
+            )
+
+            let window = createRemoteWindow(for: location, rootView: documentView)
+            remoteDocumentWindows[location] = window
+            window.delegate = self
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    private func createRemoteWindow(for location: RemoteLocation, rootView: RemoteDocumentWindowContent) -> NSWindow {
+        let window = NSWindow(contentViewController: NSHostingController(rootView: rootView))
+        window.title = location.displayTitle
+        window.styleMask = [NSWindow.StyleMask.titled, .closable, .miniaturizable, .resizable]
+        window.tabbingMode = NSWindow.TabbingMode.disallowed
+        window.minSize = NSSize(width: 500, height: 400)
+
+        let size = NSSize(width: 950, height: 1100)
+        if let screen = NSScreen.main {
+            let origin = NSPoint(
+                x: screen.visibleFrame.midX - size.width / 2,
+                y: screen.visibleFrame.midY - size.height / 2
+            )
+            window.setFrame(NSRect(origin: origin, size: size), display: false)
+        } else {
+            window.setContentSize(size)
+            window.center()
+        }
+        return window
+    }
+
+    // MARK: - Recent Remote Connections
+
+    private func addToRecentRemoteConnections(_ connectionString: String) {
+        recentRemoteConnections.removeAll { $0 == connectionString }
+        recentRemoteConnections.insert(connectionString, at: 0)
+        if recentRemoteConnections.count > maxRecentDocuments {
+            recentRemoteConnections = Array(recentRemoteConnections.prefix(maxRecentDocuments))
+        }
+        UserDefaults.standard.set(recentRemoteConnections, forKey: recentRemoteKey)
+    }
+
+    private func loadRecentRemoteConnections() -> [String] {
+        UserDefaults.standard.stringArray(forKey: recentRemoteKey) ?? []
+    }
+
+    func clearRecentRemoteConnections() {
+        recentRemoteConnections = []
+        UserDefaults.standard.removeObject(forKey: recentRemoteKey)
     }
 }

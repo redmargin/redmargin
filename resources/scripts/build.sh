@@ -56,19 +56,19 @@ cp WebRenderer/src/sanitizer.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/vendor/*.js "$RESOURCES_DIR/WebRenderer/src/vendor/"
 cp WebRenderer/styles/*.css "$RESOURCES_DIR/WebRenderer/styles/"
 
-echo \"Bundling app icon...\"
-cp resources/Redmargin.icns \"$RESOURCES_DIR/\"
+echo "Bundling app icon..."
+cp resources/Redmargin.icns "$RESOURCES_DIR/"
 
-echo \"Bundling server binaries...\"
-mkdir -p \"$RESOURCES_DIR/Servers\"
-if [ -f \"resources/servers/redmargin-server-x86_64-darwin\" ]; then
-    cp resources/servers/redmargin-server-x86_64-darwin \"$RESOURCES_DIR/Servers/\"
+echo "Bundling server binaries..."
+mkdir -p "$RESOURCES_DIR/Servers"
+if [ -f "resources/servers/redmargin-server-x86_64-darwin" ]; then
+    cp resources/servers/redmargin-server-x86_64-darwin "$RESOURCES_DIR/Servers/"
 fi
-if [ -f \"resources/servers/redmargin-server-x86_64-linux\" ]; then
-    cp resources/servers/redmargin-server-x86_64-linux \"$RESOURCES_DIR/Servers/\"
+if [ -f "resources/servers/redmargin-server-x86_64-linux" ]; then
+    cp resources/servers/redmargin-server-x86_64-linux "$RESOURCES_DIR/Servers/"
 fi
 
-/usr/libexec/PlistBuddy -c \"Delete :CFBundleIconFile\" \"build/Redmargin.app/Contents/Info.plist\" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" "build/Redmargin.app/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string Redmargin" "build/Redmargin.app/Contents/Info.plist"
 
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-Detour Dev}"
