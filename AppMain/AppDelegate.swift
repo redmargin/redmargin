@@ -51,12 +51,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private let maxRecentDocuments = 10
 
     @Published var recentDocuments: [URL] = []
-    @Published var recentRemoteConnections: [String] = []
+    @Published var recentRemoteServers: [String] = []
 
     override init() {
         super.init()
         recentDocuments = loadRecentDocuments()
-        recentRemoteConnections = loadRecentRemoteConnections()
+        recentRemoteServers = loadRecentRemoteServers()
     }
 
     // MARK: - App Lifecycle
@@ -355,34 +355,50 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     // MARK: - Remote Connection
 
     @objc func showOpenRemoteSheet(_ sender: Any?) {
+        var sheetWindow: NSWindow?
+        var hostingController: NSHostingController<OpenRemoteSheet>?
+
         let sheet = OpenRemoteSheet(
-            recentConnections: recentRemoteConnections,
-            onConnect: { [weak self] host, path in
-                try await self?.openRemoteDocument(host: host, path: path)
+            recentServers: recentRemoteServers,
+            onServerConnected: { [weak self] server in
+                self?.addToRecentRemoteServers(server)
+            },
+            onFileSelected: { [weak self] connection, path in
+                try await self?.openRemoteDocument(connection: connection, path: path)
+            },
+            onDismiss: {
+                if let window = sheetWindow {
+                    window.close()
+                } else if let hc = hostingController,
+                          let parent = hc.view.window?.sheetParent {
+                    parent.endSheet(hc.view.window!)
+                }
             }
         )
-        let hostingController = NSHostingController(rootView: sheet)
+        hostingController = NSHostingController(rootView: sheet)
 
         guard let keyWindow = NSApp.keyWindow ?? NSApp.mainWindow else {
             // No window available, show as standalone window
-            let window = NSWindow(contentViewController: hostingController)
+            let window = NSWindow(contentViewController: hostingController!)
             window.styleMask = [NSWindow.StyleMask.titled, NSWindow.StyleMask.closable]
-            window.title = "Connect to Server"
+            window.title = "Open Remote"
             window.center()
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            sheetWindow = window
             return
         }
 
-        keyWindow.contentViewController?.presentAsSheet(hostingController)
+        keyWindow.contentViewController?.presentAsSheet(hostingController!)
     }
 
-    func openRemoteDocument(host: String, path: String) async throws {
+    func openRemoteDocument(connection: SSHConnection, path: String) async throws {
+        let host = await connection.getHost()
         let location = RemoteLocation(host: host, path: path)
 
-        // Add to recent connections
+        // Add server to recent list
         await MainActor.run {
-            addToRecentRemoteConnections(location.displayString)
+            addToRecentRemoteServers(host)
         }
 
         // Check if already open
@@ -394,8 +410,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             return
         }
 
-        // Get SSH connection
-        let connection = try await SSHConnectionManager.shared.connection(for: host)
+        // Register connection with manager (for reuse)
+        await SSHConnectionManager.shared.registerConnection(connection, for: host)
 
         // Create remote file provider
         let fileProvider = RemoteFileProvider(connection: connection)
@@ -441,23 +457,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         return window
     }
 
-    // MARK: - Recent Remote Connections
+    // MARK: - Recent Remote Servers
 
-    private func addToRecentRemoteConnections(_ connectionString: String) {
-        recentRemoteConnections.removeAll { $0 == connectionString }
-        recentRemoteConnections.insert(connectionString, at: 0)
-        if recentRemoteConnections.count > maxRecentDocuments {
-            recentRemoteConnections = Array(recentRemoteConnections.prefix(maxRecentDocuments))
+    private func addToRecentRemoteServers(_ server: String) {
+        recentRemoteServers.removeAll { $0 == server }
+        recentRemoteServers.insert(server, at: 0)
+        if recentRemoteServers.count > maxRecentDocuments {
+            recentRemoteServers = Array(recentRemoteServers.prefix(maxRecentDocuments))
         }
-        UserDefaults.standard.set(recentRemoteConnections, forKey: recentRemoteKey)
+        UserDefaults.standard.set(recentRemoteServers, forKey: recentRemoteKey)
     }
 
-    private func loadRecentRemoteConnections() -> [String] {
+    private func loadRecentRemoteServers() -> [String] {
         UserDefaults.standard.stringArray(forKey: recentRemoteKey) ?? []
     }
 
-    func clearRecentRemoteConnections() {
-        recentRemoteConnections = []
+    func clearRecentRemoteServers() {
+        recentRemoteServers = []
         UserDefaults.standard.removeObject(forKey: recentRemoteKey)
     }
 }

@@ -95,10 +95,8 @@ if [[ "$NO_INSTALL" == "false" ]]; then
     rm -rf /Applications/Redmargin.app 2>/dev/null || true
     mv build/Redmargin.app /Applications/
 
-    if [[ "$WAS_RUNNING" == "true" ]]; then
-        echo "Restarting Redmargin..."
-        open -a Redmargin
-    fi
+    echo "Launching Redmargin..."
+    open -a Redmargin
 fi
 
 echo "Done!"

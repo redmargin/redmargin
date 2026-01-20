@@ -3,6 +3,8 @@ import Foundation
 public enum RPCMessageType: String, Codable {
     case hello = "Hello"
     case helloResponse = "HelloResponse"
+    case listDirectory = "ListDirectory"
+    case listDirectoryResponse = "ListDirectoryResponse"
     case readFile = "ReadFile"
     case readFileResponse = "ReadFileResponse"
     case writeFile = "WriteFile"
@@ -42,6 +44,40 @@ public struct HelloResponsePayload: Codable {
         self.serverVersion = serverVersion
         self.protocolVersion = protocolVersion
         self.accepted = accepted
+    }
+}
+
+// MARK: - Directory Listing
+
+public struct ListDirectoryPayload: Codable {
+    public let path: String
+
+    public init(path: String) {
+        self.path = path
+    }
+}
+
+public struct DirectoryEntry: Codable, Identifiable {
+    public let name: String
+    public let isDirectory: Bool
+    public let size: Int64?
+
+    public var id: String { name }
+
+    public init(name: String, isDirectory: Bool, size: Int64? = nil) {
+        self.name = name
+        self.isDirectory = isDirectory
+        self.size = size
+    }
+}
+
+public struct ListDirectoryResponsePayload: Codable {
+    public let entries: [DirectoryEntry]?
+    public let error: String?
+
+    public init(entries: [DirectoryEntry]?, error: String?) {
+        self.entries = entries
+        self.error = error
     }
 }
 

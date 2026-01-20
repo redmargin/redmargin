@@ -28,8 +28,10 @@ Deploy a headless server binary to the remote host that handles file operations,
 
 **Connection (Happy Path Only):**
 
-- User opens "Connect to Server" dialog (Cmd+Shift+O or File menu)
-- Enters `user@host:/path/to/file.md` or selects from recent connections
+- User opens "Open Remote" dialog (Cmd+Shift+O or File menu)
+- Step 1: Enter server name (hostname from ~/.ssh/config, no user@ needed) and connect
+- Step 2: Browse directories on the server, select a file to open
+- Recent servers shown for quick access
 - App uses SSH ControlMaster for connection multiplexing
 - **Auth Constraint:** Supports only non-interactive authentication (SSH keys, ssh-agent, or ControlMaster).
 - Does **NOT** support password prompts or interactive MFA (no terminal UI). Users must configure `~/.ssh/config` or keys beforehand.
@@ -286,6 +288,7 @@ redmargin-server proxy --reconnect
 | Request         | Response               | Description               |
 | --------------- | ---------------------- | ------------------------- |
 | `Hello`         | `HelloResponse`        | Version handshake         |
+| `ListDirectory` | `ListDirectoryResponse`| List files in directory   |
 | `ReadFile`      | `ReadFileResponse`     | Read file contents        |
 | `WriteFile`     | `WriteFileResponse`    | Write file atomically     |
 | `WatchFile`     | `WatchFileResponse`    | Start watching a file     |
@@ -307,11 +310,17 @@ redmargin-server proxy --reconnect
 **Configuration used by SSHConnection:**
 
 ```bash
-ssh -o ControlMaster=auto \
-    -o ControlPath=~/.ssh/redmargin-%r@%h:%p \
+ssh -o BatchMode=yes \
+    -o ConnectTimeout=10 \
+    -o ControlMaster=auto \
+    -o ControlPath=/tmp/ssh-redmargin-%r@%h:%p \
     -o ControlPersist=60 \
+    -o ServerAliveInterval=15 \
+    -o ServerAliveCountMax=3 \
     user@host "~/.redmargin-server/redmargin-server-X.X.X proxy --reconnect"
 ```
+
+**Note:** ControlPath uses `/tmp/` instead of `~/.ssh/` because tilde expansion is unreliable when spawning SSH from Swift Process.
 
 **Lifecycle:**
 
@@ -667,11 +676,22 @@ protocol FileProvider {
 - [x] Recent connections in UserDefaults
 - [x] Connection status UI (Overlay with reconnecting/disconnected states)
 
+#### Phase 8.5: Remote File Browser
+
+- [x] Add `ListDirectory` RPC message type to protocol
+- [x] Implement `ListDirectory` handler on server (FileOperations)
+- [x] Add `listDirectory` to SSHConnection client
+- [x] Rewrite `OpenRemoteSheet` with two-step flow:
+  - Step 1: Server selection (hostname only, from ~/.ssh/config)
+  - Step 2: File browser with directory navigation
+- [x] Fix Cancel button dismissal
+- [x] Recent servers list (not full paths)
+
 #### Phase 9: Polish
 
 - [ ] Unsaved changes caching for reconnection
-- [ ] Graceful error messages
-- [ ] Timeout handling
+- [x] Graceful error messages (SSHConnectionError enum with user-friendly descriptions)
+- [x] Timeout handling (30s overall, 15s handshake, 30s operations)
 - [ ] Test with jump hosts (`-J`)
 - [ ] Performance test large files
 
