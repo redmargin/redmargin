@@ -8,6 +8,7 @@ public struct MarkdownWebView: NSViewRepresentable {
     public let fileURL: URL?
     public var onCheckboxToggle: ((Int, Bool) -> Void)?
     public var onScrollPositionChange: ((Double) -> Void)?
+    public var onFirstRenderComplete: (() -> Void)?
     public var initialScrollPosition: Double
     public var showLineNumbers: Bool
     public var gitChanges: GitChangeResult?
@@ -16,12 +17,14 @@ public struct MarkdownWebView: NSViewRepresentable {
     public var inlineCodeColor: String
     public var allowRemoteImages: Bool
     public var showGutter: Bool
+    public var cacheBust: Int  // Token to bust image cache on refresh
 
     public init(
         markdown: String,
         fileURL: URL?,
         onCheckboxToggle: ((Int, Bool) -> Void)? = nil,
         onScrollPositionChange: ((Double) -> Void)? = nil,
+        onFirstRenderComplete: (() -> Void)? = nil,
         initialScrollPosition: Double = 0,
         showLineNumbers: Bool = true,
         gitChanges: GitChangeResult? = nil,
@@ -29,12 +32,14 @@ public struct MarkdownWebView: NSViewRepresentable {
         theme: String = "light",
         inlineCodeColor: String = "warm",
         allowRemoteImages: Bool = false,
-        showGutter: Bool = true
+        showGutter: Bool = true,
+        cacheBust: Int = 0
     ) {
         self.markdown = markdown
         self.fileURL = fileURL
         self.onCheckboxToggle = onCheckboxToggle
         self.onScrollPositionChange = onScrollPositionChange
+        self.onFirstRenderComplete = onFirstRenderComplete
         self.initialScrollPosition = initialScrollPosition
         self.showLineNumbers = showLineNumbers
         self.gitChanges = gitChanges
@@ -43,6 +48,7 @@ public struct MarkdownWebView: NSViewRepresentable {
         self.inlineCodeColor = inlineCodeColor
         self.allowRemoteImages = allowRemoteImages
         self.showGutter = showGutter
+        self.cacheBust = cacheBust
     }
 
     public func makeNSView(context: Context) -> WKWebView {
@@ -61,6 +67,7 @@ public struct MarkdownWebView: NSViewRepresentable {
 
         context.coordinator.onCheckboxToggle = onCheckboxToggle
         context.coordinator.onScrollPositionChange = onScrollPositionChange
+        context.coordinator.onFirstRenderComplete = onFirstRenderComplete
         context.coordinator.initialScrollPosition = initialScrollPosition
         context.coordinator.lastAllowRemoteImages = allowRemoteImages
 
@@ -101,7 +108,8 @@ public struct MarkdownWebView: NSViewRepresentable {
             scrollPosition: initialScrollPosition,
             gitChanges: gitChanges,
             inlineCodeColor: inlineCodeColor,
-            showGutter: showGutter
+            showGutter: showGutter,
+            cacheBust: cacheBust
         )
 
         if context.coordinator.isLoaded {
@@ -147,14 +155,20 @@ public struct MarkdownWebView: NSViewRepresentable {
         webView.loadFileURL(rendererURL, allowingReadAccessTo: accessURL)
     }
 
-    static func render(webView: WKWebView, params: RenderParams, restoreScroll: Bool = false) {
+    static func render(
+        webView: WKWebView,
+        params: RenderParams,
+        restoreScroll: Bool = false,
+        completion: (() -> Void)? = nil
+    ) {
         var payload: [String: Any] = [
             "markdown": params.markdown,
             "options": [
                 "theme": params.theme,
                 "basePath": params.basePath,
                 "inlineCodeColor": params.inlineCodeColor,
-                "showGutter": params.showGutter
+                "showGutter": params.showGutter,
+                "cacheBust": params.cacheBust
             ]
         ]
 
@@ -167,6 +181,7 @@ public struct MarkdownWebView: NSViewRepresentable {
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
+            completion?()
             return
         }
 
@@ -179,6 +194,7 @@ public struct MarkdownWebView: NSViewRepresentable {
             if let error = error {
                 print("Render error: \(error)")
             }
+            completion?()
         }
 
         // Only restore scroll on initial load, not on content updates
@@ -234,6 +250,7 @@ public struct MarkdownWebView: NSViewRepresentable {
         var gitChanges: GitChangeResult?
         var inlineCodeColor: String = "warm"
         var showGutter: Bool = true
+        var cacheBust: Int = 0
     }
 }
 
@@ -243,12 +260,14 @@ extension MarkdownWebView {
     public class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var isLoaded = false
         var hasRestoredInitialScroll = false
+        var hasFiredFirstRenderComplete = false
         var pendingRender: RenderParams?
         var pendingLineNumbersVisible: Bool = true
         var lastLineNumbersVisible: Bool = true
         var lastAllowRemoteImages: Bool = false
         var onCheckboxToggle: ((Int, Bool) -> Void)?
         var onScrollPositionChange: ((Double) -> Void)?
+        var onFirstRenderComplete: (() -> Void)?
         var initialScrollPosition: Double = 0
 
         public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -256,7 +275,12 @@ extension MarkdownWebView {
 
             if let pending = pendingRender {
                 // Initial render - restore scroll position
-                MarkdownWebView.render(webView: webView, params: pending, restoreScroll: true)
+                MarkdownWebView.render(webView: webView, params: pending, restoreScroll: true) { [weak self] in
+                    // Fire callback after first render completes
+                    guard let self = self, !self.hasFiredFirstRenderComplete else { return }
+                    self.hasFiredFirstRenderComplete = true
+                    self.onFirstRenderComplete?()
+                }
                 hasRestoredInitialScroll = true
                 pendingRender = nil
 

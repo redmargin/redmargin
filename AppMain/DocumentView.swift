@@ -58,6 +58,13 @@ struct DocumentWindowContent: View {
                 fileURL: fileURL,
                 onCheckboxToggle: state.handleCheckboxToggle,
                 onScrollPositionChange: onScrollPositionChange,
+                onFirstRenderComplete: {
+                    NotificationCenter.default.post(
+                        name: .windowContentReady,
+                        object: nil,
+                        userInfo: ["fileURL": fileURL]
+                    )
+                },
                 initialScrollPosition: initialScrollPosition,
                 showLineNumbers: showLineNumbers,
                 gitChanges: state.gitChanges,
@@ -65,7 +72,8 @@ struct DocumentWindowContent: View {
                 theme: effectiveTheme,
                 inlineCodeColor: prefs.inlineCodeColor.rawValue,
                 allowRemoteImages: prefs.allowRemoteImages,
-                showGutter: shouldShowGutter
+                showGutter: shouldShowGutter,
+                cacheBust: state.refreshToken
             )
 
             if state.isRefreshing {
