@@ -31,6 +31,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     let recentRemoteLocationsKey = "RedMargin.RecentRemoteLocations"
     private let windowOrderKey = "RedMargin.WindowOrder"
     private let scrollPositionsKey = "RedMargin.ScrollPositions"
+    private let remoteScrollPositionsKey = "RedMargin.RemoteScrollPositions"
     private let lineNumbersKey = "RedMargin.DocumentLineNumbers"
     let maxRecentDocuments = 10
 
@@ -278,6 +279,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private func loadScrollPosition(for url: URL) -> Double {
         let positions = UserDefaults.standard.dictionary(forKey: scrollPositionsKey) as? [String: Double] ?? [:]
         return positions[url.path] ?? 0
+    }
+
+    func saveScrollPosition(_ position: Double, for location: RemoteLocation) {
+        var positions = UserDefaults.standard.dictionary(
+            forKey: remoteScrollPositionsKey
+        ) as? [String: Double] ?? [:]
+        positions[location.storageKey] = position
+        UserDefaults.standard.set(positions, forKey: remoteScrollPositionsKey)
+    }
+
+    func loadScrollPosition(for location: RemoteLocation) -> Double {
+        let positions = UserDefaults.standard.dictionary(
+            forKey: remoteScrollPositionsKey
+        ) as? [String: Double] ?? [:]
+        return positions[location.storageKey] ?? 0
     }
 
     // MARK: - Per-Document Line Numbers Persistence

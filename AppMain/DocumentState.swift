@@ -14,7 +14,8 @@ class DocumentState: ObservableObject {
     
     private var fileWatchToken: WatchToken?
     private var gitWatchToken: WatchToken?
-    
+    private var isWritingFile = false
+
     private var repoRoot: String?
     private var gitChangeTask: Task<Void, Never>?
 
@@ -50,6 +51,12 @@ class DocumentState: ObservableObject {
     }
 
     private func reloadContent() {
+        // Skip reload if we're writing the file ourselves (prevents race condition)
+        guard !isWritingFile else {
+            print("[DocumentState] Skipping reload during self-initiated write")
+            return
+        }
+
         print("[DocumentState] reloadContent called for \(fileURL.lastPathComponent)")
         Task {
             do {
@@ -142,8 +149,19 @@ class DocumentState: ObservableObject {
     }
 
     func handleCheckboxToggle(line: Int, checked: Bool) {
+        isWritingFile = true
+
         Task {
-            guard let fileContent = try? await fileProvider.readFile(at: fileURL.path) else { return }
+            defer {
+                Task { @MainActor in
+                    self.isWritingFile = false
+                }
+            }
+
+            // Always read from disk first for safety
+            guard let fileContent = try? await fileProvider.readFile(at: fileURL.path) else {
+                return
+            }
 
             var lines = fileContent.components(separatedBy: "\n")
             let index = line - 1
@@ -174,7 +192,12 @@ class DocumentState: ObservableObject {
             let newContent = lines.joined(separator: "\n")
 
             do {
+                // Write to disk FIRST
                 try await fileProvider.writeFile(at: fileURL.path, content: newContent)
+                // Only update in-memory content after successful write
+                await MainActor.run {
+                    self.content = newContent
+                }
             } catch {
                 print("Failed to save file: \(error)")
             }

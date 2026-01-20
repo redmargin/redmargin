@@ -17,4 +17,8 @@ public struct RemoteLocation: Hashable, Codable, Sendable {
     public var displayTitle: String {
         "[\(host)] \(path)"
     }
+
+    public var storageKey: String {
+        "\(host):\(path)"
+    }
 }

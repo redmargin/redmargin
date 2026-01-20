@@ -25,6 +25,7 @@ class RemoteDocumentState: ObservableObject {
 
     private var fileWatchToken: WatchToken?
     private var gitWatchToken: WatchToken?
+    private var isWritingFile = false
 
     private var repoRoot: String?
     private var gitChangeTask: Task<Void, Never>?
@@ -205,6 +206,11 @@ class RemoteDocumentState: ObservableObject {
     }
 
     private func reloadContent() {
+        guard !isWritingFile else {
+            print("[RemoteDocumentState] Skipping reload during self-initiated write")
+            return
+        }
+
         print("[RemoteDocumentState] reloadContent called for \(location.displayString)")
         Task {
             do {
@@ -298,13 +304,19 @@ class RemoteDocumentState: ObservableObject {
     }
 
     func handleCheckboxToggle(line: Int, checked: Bool) {
+        print("[RemoteCheckbox] handleCheckboxToggle called: line=\(line) checked=\(checked)")
+
         // Optimistic UI - update locally first
         var lines = content.components(separatedBy: "\n")
         let index = line - 1
 
-        guard index >= 0 && index < lines.count else { return }
+        guard index >= 0 && index < lines.count else {
+            print("[RemoteCheckbox] ERROR: line \(line) out of bounds (total: \(lines.count))")
+            return
+        }
 
         let currentLine = lines[index]
+        print("[RemoteCheckbox] currentLine[\(line)]: '\(currentLine)'")
         let newLine: String
 
         if checked {
@@ -322,17 +334,31 @@ class RemoteDocumentState: ObservableObject {
                 .replacingOccurrences(of: "+ [X]", with: "+ [ ]")
         }
 
-        guard newLine != currentLine else { return }
+        guard newLine != currentLine else {
+            print("[RemoteCheckbox] No change needed - line already in target state")
+            return
+        }
 
+        print("[RemoteCheckbox] newLine: '\(newLine)'")
         lines[index] = newLine
         let newContent = lines.joined(separator: "\n")
 
         // Update locally immediately (optimistic)
         let oldContent = content
+        print("[RemoteCheckbox] Setting isWritingFile=true BEFORE content update")
+        isWritingFile = true
+        print("[RemoteCheckbox] Updating content (optimistic)")
         content = newContent
 
         // Send to server
         Task {
+            defer {
+                Task { @MainActor in
+                    print("[RemoteCheckbox] Setting isWritingFile=false (in defer)")
+                    self.isWritingFile = false
+                }
+            }
+
             do {
                 try await fileProvider.writeFile(at: location.path, content: newContent)
                 // Success - update last known server content

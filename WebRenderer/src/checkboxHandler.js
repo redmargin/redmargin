@@ -34,12 +34,17 @@
         const line = parseInt(match[1], 10);
         const checked = checkbox.checked;
 
+        console.log('[CheckboxHandler] Toggle: line=' + line + ' checked=' + checked + ' sourcepos=' + sourcepos);
+
         // Send message to Swift
         if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.checkboxToggle) {
             window.webkit.messageHandlers.checkboxToggle.postMessage({
                 line: line,
                 checked: checked
             });
+            console.log('[CheckboxHandler] Message sent to Swift');
+        } else {
+            console.log('[CheckboxHandler] No webkit message handler available');
         }
     }
 

@@ -302,8 +302,29 @@ extension MarkdownWebView {
                     return
 
                 case "file":
-                    // Block navigation to local files (security)
-                    print("[Navigation] Blocked file:// navigation: \(url.path)")
+                    // Handle same-page anchor navigation (fragment links like #section)
+                    if let fragment = url.fragment,
+                       let currentURL = webView.url,
+                       url.path == currentURL.path {
+                        // Use JavaScript to scroll to the anchor instead of allowing navigation
+                        // (allowing navigation would reload the page)
+                        // Escape fragment for safe JavaScript string embedding
+                        let escapedFragment = fragment
+                            .replacingOccurrences(of: "\\", with: "\\\\")
+                            .replacingOccurrences(of: "'", with: "\\'")
+                        let script = """
+                            (function() {
+                                var element = document.getElementById('\(escapedFragment)');
+                                if (element) {
+                                    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }
+                            })();
+                        """
+                        webView.evaluateJavaScript(script, completionHandler: nil)
+                        decisionHandler(.cancel)
+                        return
+                    }
+                    // Block navigation to other local files (security)
                     decisionHandler(.cancel)
                     return
 
