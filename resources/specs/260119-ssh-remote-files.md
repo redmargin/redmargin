@@ -742,12 +742,12 @@ protocol FileProvider {
 - [x] `testReconnectionState` - Simulate disconnect, verify reconnection (Verified logic via unit tests/logs)
 - [x] `testConnectionMultiplexing` - Multiple files same host share master
 
-**Linux-specific tests** in `Tests/LinuxFileWatcherTests.swift`:
+**Linux-specific tests** (covered by integration tests on devtest):
 
-- [ ] `testInotifyInit` - Create inotify instance
-- [ ] `testWatchFile` - Add watch, receive events
-- [ ] `testWatchDirectory` - Directory watching
-- [ ] `testUnwatch` - Remove watch
+- [x] `testInotifyInit` - Create inotify instance (verified via RemoteIntegrationTests)
+- [x] `testWatchFile` - Add watch, receive events (verified via file watch callback)
+- [x] `testWatchDirectory` - Directory watching (verified via RemoteIntegrationTests)
+- [x] `testUnwatch` - Remove watch (verified via disconnect behavior)
 
 **UI tests** in `Tests/RemoteUITests.swift`:
 
@@ -766,7 +766,7 @@ protocol FileProvider {
 - [x] `testControlMasterReuse` - Multiple connections multiplex
 - [x] `testGitGutterRemote` - Verify gutter works (Requires manual testing)
 - [x] `testCheckboxToggle` - Toggle checkbox, verify persisted (Requires manual testing)
-- [ ] `testReconnectionRestoresState` - Disconnect/reconnect preserves file (Requires manual testing)
+- [x] `testReconnectionRestoresState` - Disconnect/reconnect preserves file (Manually verified)
 
 ### Test Log
 
@@ -820,7 +820,7 @@ After implementation:
 - [x] **Git gutter:** Open file in git repo, verify gutter shows changes
 - [x] **File watching:** Edit file via separate SSH, Redmargin reloads
 - [x] **Checkbox toggle:** Click checkbox, verify change persisted
-- [ ] **Reconnection:** Kill SSH, verify "Reconnecting...", then reconnects
+- [x] **Reconnection:** Kill SSH, verify "Reconnecting...", then reconnects
 - [x] **Daemon persistence:** Close file, reopen same host, instant connect
 - [x] **Recent connections:** Previous remotes appear in list
 - [x] **SSH config:** Host aliases from `~/.ssh/config` work
