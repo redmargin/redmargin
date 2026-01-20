@@ -1,0 +1,181 @@
+import Foundation
+
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
+
+enum Proxy {
+    // Magic sync marker that client waits for before starting protocol parsing.
+    // This allows us to discard any garbage from shell initialization (.bashrc, etc.)
+    static let syncMarker = "REDMARGIN_SYNC_7f3d9a\n"
+
+    static func start(reconnect: Bool) {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let serverDir = "\(home)/.redmargin-server"
+        let socketPath = "\(serverDir)/rpc.sock"
+        let pidFile = "\(serverDir)/daemon.pid"
+
+        // 1. Ensure directory exists
+        try? FileManager.default.createDirectory(atPath: serverDir, withIntermediateDirectories: true)
+
+        // 2. Connect to daemon (starting if needed)
+        let socketFD = connectToDaemon(socketPath: socketPath, pidFile: pidFile)
+
+        // 3. Small delay to let daemon accept the connection
+        // This is a workaround for the race between connect() and accept()
+        Thread.sleep(forTimeInterval: 0.1)
+
+        // 4. Output sync marker - client waits for this before sending
+        print(syncMarker, terminator: "")
+        fflush(stdout)
+
+        // 5. Bridge stdin/stdout to socket
+        bridgeStdioToSocket(socketFD: socketFD)
+    }
+
+    private static func connectToDaemon(socketPath: String, pidFile: String) -> Int32 {
+        let lockFile = pidFile + ".lock"
+
+        // Try to connect to existing daemon first
+        var socketFD = UnixSocketClient.connect(path: socketPath)
+        if socketFD >= 0 {
+            return socketFD
+        }
+
+        // Need to start daemon - use lock file to prevent races
+        let lockFD = acquireLock(lockFile: lockFile)
+        defer { releaseLock(fd: lockFD, lockFile: lockFile) }
+
+        // Check again after acquiring lock (another process may have started daemon)
+        socketFD = UnixSocketClient.connect(path: socketPath)
+        if socketFD >= 0 {
+            return socketFD
+        }
+
+        // We have the lock and daemon isn't running - start it
+        fputs("Daemon not running, starting...\n", stderr)
+        startDaemon(pidFile: pidFile, socketPath: socketPath)
+
+        // Wait for socket to be created (max 10 seconds)
+        // Use usleep instead of Thread.sleep to avoid GCD/async issues
+        for _ in 1...100 {
+            usleep(100_000) // 100ms
+            socketFD = UnixSocketClient.connect(path: socketPath)
+            if socketFD >= 0 { return socketFD }
+        }
+
+        fputs("Failed to connect to daemon at \(socketPath)\n", stderr)
+        exit(1)
+    }
+
+    private static func acquireLock(lockFile: String) -> Int32 {
+        #if os(Linux)
+        let flags = O_CREAT | O_RDWR
+        #else
+        let flags = O_CREAT | O_RDWR
+        #endif
+        let fd = open(lockFile, flags, 0o644)
+        if fd < 0 {
+            fputs("Warning: Could not create lock file\n", stderr)
+            return -1
+        }
+
+        // Try to acquire exclusive lock (blocks if another process has it)
+        #if os(Linux)
+        var fl = flock()
+        fl.l_type = Int16(F_WRLCK)
+        fl.l_whence = Int16(SEEK_SET)
+        fl.l_start = 0
+        fl.l_len = 0
+        _ = fcntl(fd, F_SETLKW, &fl)
+        #else
+        _ = flock(fd, LOCK_EX)
+        #endif
+
+        return fd
+    }
+
+    private static func releaseLock(fd: Int32, lockFile: String) {
+        if fd >= 0 {
+            #if os(Linux)
+            var fl = flock()
+            fl.l_type = Int16(F_UNLCK)
+            fl.l_whence = Int16(SEEK_SET)
+            fl.l_start = 0
+            fl.l_len = 0
+            _ = fcntl(fd, F_SETLKW, &fl)
+            #else
+            _ = flock(fd, LOCK_UN)
+            #endif
+            close(fd)
+        }
+    }
+
+    private static func bridgeStdioToSocket(socketFD: Int32) {
+        let group = DispatchGroup()
+        group.enter()
+        group.enter()
+
+        // Stdin -> Socket
+        DispatchQueue.global().async {
+            bridgeFileDescriptors(from: 0, to: socketFD)
+            group.leave()
+        }
+
+        // Socket -> Stdout
+        DispatchQueue.global().async {
+            bridgeFileDescriptors(from: socketFD, to: 1)
+            group.leave()
+        }
+
+        group.wait()
+        _ = system_close(socketFD)
+    }
+
+    private static func bridgeFileDescriptors(from sourceFD: Int32, to destFD: Int32) {
+        let bufferSize = 4096
+        let buffer = UnsafeMutableRawPointer.allocate(byteCount: bufferSize, alignment: 1)
+        defer { buffer.deallocate() }
+
+        while true {
+            let count = socket_read(fd: sourceFD, buffer: buffer, count: bufferSize)
+            if count <= 0 { break }
+            let written = socket_write(fd: destFD, buffer: buffer, count: count)
+            if written < 0 { break }
+        }
+    }
+
+    private static func startDaemon(pidFile: String, socketPath: String) {
+        let binaryPath = CommandLine.arguments[0]
+
+        // Use setsid to start daemon in new session (detached from terminal)
+        // This ensures daemon survives when proxy/SSH exits
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/setsid")
+        process.arguments = [
+            "--fork",  // Fork and exit parent immediately
+            binaryPath,
+            "run",
+            "--pid-file", pidFile,
+            "--stdin-socket", socketPath,
+            "--stdout-socket", socketPath,
+            "--stderr-socket", "/dev/null"
+        ]
+
+        // Redirect stdout/stderr to /dev/null to avoid corrupting RPC protocol
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            // setsid --fork exits immediately after forking
+            // Don't use waitUntilExit() - it can hang with GCD/libdispatch
+            // Just give it a moment to fork
+            usleep(100_000) // 100ms
+        } catch {
+            fputs("Failed to spawn daemon: \(error)\n", stderr)
+        }
+    }
+}

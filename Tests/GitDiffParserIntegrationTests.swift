@@ -1,7 +1,8 @@
 import XCTest
+import Foundation
 @testable import RedmarginLib
+import RedmarginCore
 
-/// Integration tests for GitDiffParser that require real git repos
 final class GitDiffParserIntegrationTests: XCTestCase {
     private var helper: GitTestHelper!
 

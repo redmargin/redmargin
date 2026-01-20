@@ -28,7 +28,7 @@ public struct GitChangeResult: Equatable {
     }
 }
 
-extension GitChangeResult: Encodable {
+extension GitChangeResult: Codable {
     enum CodingKeys: String, CodingKey {
         case addedRanges
         case modifiedRanges
@@ -44,5 +44,25 @@ extension GitChangeResult: Encodable {
         try container.encode(addedArrays, forKey: .addedRanges)
         try container.encode(modifiedArrays, forKey: .modifiedRanges)
         try container.encode(deletedAnchors, forKey: .deletedAnchors)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        let addedArrays = try container.decode([[Int]].self, forKey: .addedRanges)
+        let modifiedArrays = try container.decode([[Int]].self, forKey: .modifiedRanges)
+        let deletedAnchors = try container.decode([Int].self, forKey: .deletedAnchors)
+
+        self.addedRanges = addedArrays.compactMap { arr in
+            guard arr.count == 2 else { return nil }
+            return arr[0]...arr[1]
+        }
+
+        self.modifiedRanges = modifiedArrays.compactMap { arr in
+            guard arr.count == 2 else { return nil }
+            return arr[0]...arr[1]
+        }
+
+        self.deletedAnchors = deletedAnchors
     }
 }

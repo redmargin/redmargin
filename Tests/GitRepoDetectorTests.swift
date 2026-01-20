@@ -1,5 +1,7 @@
 import XCTest
+import Foundation
 @testable import RedmarginLib
+import RedmarginCore
 
 final class GitRepoDetectorTests: XCTestCase {
     private var helper: GitTestHelper!

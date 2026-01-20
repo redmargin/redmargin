@@ -1,206 +1,208 @@
 import Foundation
 import RedmarginLib
+import RedmarginCore
 
+@MainActor
 class DocumentState: ObservableObject {
     @Published var content: String
     @Published var gitChanges: GitChangeResult?
     @Published var isRefreshing: Bool = false
+    @Published var refreshToken: Int = 0  // Incremented on refresh to bust image cache
+
+    // We keep fileURL for now as it might be used by UI or other parts
     let fileURL: URL
-    private var fileWatcher: FileWatcher?
-    private var gitIndexWatcher: FileWatcher?
-    private var gitHeadWatcher: FileWatcher?
-    private var gitBranchRefWatcher: FileWatcher?
-    private var repoRoot: URL?
+    private let fileProvider: FileProvider
+
+    private var fileWatchToken: WatchToken?
+    private var gitWatchToken: WatchToken?
+    private var isWritingFile = false
+
+    private var repoRoot: String?
     private var gitChangeTask: Task<Void, Never>?
 
-    init(content: String, fileURL: URL) {
+    init(content: String, fileURL: URL, fileProvider: FileProvider = LocalFileProvider()) {
         self.content = content
         self.fileURL = fileURL
-        setupFileWatcher()
-        detectGitChanges()
-    }
-
-    private func setupFileWatcher() {
-        fileWatcher = FileWatcher(url: fileURL) { [weak self] in
-            self?.reloadContent()
+        self.fileProvider = fileProvider
+        Task {
+            await setupFileWatcher()
+            await detectGitChanges()
         }
     }
 
-    private func setupGitIndexWatcher() {
-        guard let root = repoRoot else { return }
-        let indexURL = root.appendingPathComponent(".git/index")
-        // writeOnly: true prevents loop where git diff reads index, triggers atime change
-        gitIndexWatcher = FileWatcher(url: indexURL, writeOnly: true) { [weak self] in
-            self?.detectGitChanges()
+    deinit {
+        let provider = fileProvider
+        let fToken = fileWatchToken
+        let gToken = gitWatchToken
+        Task {
+            if let token = fToken { await provider.unwatch(token) }
+            if let token = gToken { await provider.unwatch(token) }
         }
     }
 
-    private func setupGitHeadWatcher() {
-        guard let root = repoRoot else { return }
-        let headURL = root.appendingPathComponent(".git/HEAD")
-        gitHeadWatcher = FileWatcher(url: headURL, writeOnly: true) { [weak self] in
-            print("[GitWatcher] HEAD changed (branch switch)")
-            self?.setupGitBranchRefWatcher() // Re-setup branch watcher for new branch
-            self?.detectGitChanges()
-        }
-    }
+    private func setupFileWatcher() async {
+        // Unwatch old if any
+        if let token = fileWatchToken { await fileProvider.unwatch(token) }
 
-    private func setupGitBranchRefWatcher() {
-        guard let root = repoRoot else { return }
-        let headURL = root.appendingPathComponent(".git/HEAD")
-
-        // Parse HEAD to find current branch
-        guard let headContent = try? String(contentsOf: headURL, encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines) else {
-            print("[GitWatcher] Could not read HEAD")
-            return
-        }
-
-        // HEAD contains "ref: refs/heads/branchname" or a commit hash (detached)
-        guard headContent.hasPrefix("ref: ") else {
-            print("[GitWatcher] Detached HEAD, not watching branch ref")
-            gitBranchRefWatcher = nil
-            return
-        }
-
-        let refPath = String(headContent.dropFirst(5)) // Remove "ref: "
-        let branchRefURL = root.appendingPathComponent(".git").appendingPathComponent(refPath)
-
-        print("[GitWatcher] Watching branch ref: \(refPath)")
-        gitBranchRefWatcher = FileWatcher(url: branchRefURL, writeOnly: true) { [weak self] in
-            print("[GitWatcher] Branch ref changed (commit)")
-            self?.detectGitChanges()
+        fileWatchToken = await fileProvider.watchFile(at: fileURL.path) { [weak self] in
+            Task { @MainActor in
+                self?.reloadContent()
+            }
         }
     }
 
     private func reloadContent() {
+        // Skip reload if we're writing the file ourselves (prevents race condition)
+        guard !isWritingFile else {
+            print("[DocumentState] Skipping reload during self-initiated write")
+            return
+        }
+
         print("[DocumentState] reloadContent called for \(fileURL.lastPathComponent)")
-        guard let newContent = try? String(contentsOf: fileURL, encoding: .utf8) else {
-            print("[DocumentState] Failed to read file")
-            return
+        Task {
+            do {
+                let newContent = try await fileProvider.readFile(at: fileURL.path)
+                // Update on MainActor
+                await MainActor.run {
+                    guard newContent != content else {
+                        print("[DocumentState] Content unchanged, skipping update")
+                        return
+                    }
+                    print("[DocumentState] Content changed, updating (\(newContent.count) chars)")
+                    content = newContent
+                    Task {
+                        await detectGitChanges()
+                    }
+                }
+            } catch {
+                print("[DocumentState] Failed to read file: \(error)")
+            }
         }
-        guard newContent != content else {
-            print("[DocumentState] Content unchanged, skipping update")
-            return
-        }
-        print("[DocumentState] Content changed, updating (\(newContent.count) chars)")
-        content = newContent
-        detectGitChanges()
     }
 
     func refresh() {
         isRefreshing = true
-        // Force reload even if content unchanged
-        if let newContent = try? String(contentsOf: fileURL, encoding: .utf8) {
-            content = newContent
-        }
-        detectGitChanges()
-        // Hide spinner after a brief moment
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.isRefreshing = false
+        refreshToken += 1  // Bust image cache
+        Task {
+            if let newContent = try? await fileProvider.readFile(at: fileURL.path) {
+                await MainActor.run {
+                    content = newContent
+                }
+            }
+            await detectGitChanges()
+
+            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s
+            await MainActor.run {
+                self.isRefreshing = false
+            }
         }
     }
 
-    private func detectGitChanges() {
+    private func detectGitChanges() async {
         print("[Gutter] detectGitChanges called for \(fileURL.lastPathComponent)")
 
-        // Cancel any in-flight task to avoid race conditions
         gitChangeTask?.cancel()
 
         gitChangeTask = Task { @MainActor in
             do {
-                // Check for cancellation early
-                guard !Task.isCancelled else {
-                    print("[Gutter] Task cancelled (early)")
-                    return
-                }
+                guard !Task.isCancelled else { return }
 
-                // Detect repo root (cached after first call)
                 if repoRoot == nil {
-                    repoRoot = try await GitRepoDetector.detectRepoRoot(forFile: fileURL)
-                    print("[Gutter] Detected repo root: \(repoRoot?.path ?? "nil")")
-                    setupGitIndexWatcher()
-                    setupGitHeadWatcher()
-                    setupGitBranchRefWatcher()
+                    repoRoot = try await fileProvider.detectGitRepo(for: fileURL.path)
+                    print("[Gutter] Detected repo root: \(repoRoot ?? "nil")")
+
+                    if let root = repoRoot {
+                        await setupGitWatcher(root: root)
+                    }
                 }
 
                 guard let root = repoRoot else {
-                    print("[Gutter] No repo root, skipping git changes")
                     gitChanges = nil
                     return
                 }
 
-                // Check for cancellation before expensive git operation
-                guard !Task.isCancelled else {
-                    print("[Gutter] Task cancelled (before git)")
-                    return
-                }
+                guard !Task.isCancelled else { return }
 
-                let changes = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: root)
+                let changes = try await fileProvider.gitDiff(for: fileURL.path, repoRoot: root)
 
-                // Check for cancellation before applying result
-                guard !Task.isCancelled else {
-                    print("[Gutter] Task cancelled (after git)")
-                    return
-                }
+                guard !Task.isCancelled else { return }
 
-                print("[Gutter] Got changes for \(fileURL.lastPathComponent): " +
-                      "\(changes.addedRanges.count) added, \(changes.modifiedRanges.count) modified, " +
-                      "\(changes.deletedAnchors.count) deleted")
-
-                // Only update if changed to avoid redundant SwiftUI updates
                 if gitChanges != changes {
                     gitChanges = changes
-                } else {
-                    print("[Gutter] Changes unchanged, skipping update")
                 }
             } catch {
-                // Only set nil if not cancelled
-                guard !Task.isCancelled else {
-                    print("[Gutter] Task cancelled (in catch)")
-                    return
+                if !Task.isCancelled {
+                    print("[Gutter] Error detecting changes: \(error)")
+                    gitChanges = nil
                 }
-                print("[Gutter] Error detecting changes: \(error)")
-                gitChanges = nil
+            }
+        }
+    }
+
+    private func setupGitWatcher(root: String) async {
+        if let token = gitWatchToken { await fileProvider.unwatch(token) }
+
+        gitWatchToken = await fileProvider.watchGitRepo(at: root) { [weak self] in
+            Task { @MainActor in
+                guard let self = self else { return }
+                await self.detectGitChanges()
             }
         }
     }
 
     func handleCheckboxToggle(line: Int, checked: Bool) {
-        guard let fileContent = try? String(contentsOf: fileURL, encoding: .utf8) else { return }
+        isWritingFile = true
 
-        var lines = fileContent.components(separatedBy: "\n")
-        let index = line - 1
+        Task {
+            defer {
+                Task { @MainActor in
+                    self.isWritingFile = false
+                }
+            }
 
-        guard index >= 0 && index < lines.count else { return }
+            // Always read from disk first for safety
+            guard let fileContent = try? await fileProvider.readFile(at: fileURL.path) else {
+                return
+            }
 
-        let currentLine = lines[index]
-        let newLine: String
+            var lines = fileContent.components(separatedBy: "\n")
+            let index = line - 1
 
-        if checked {
-            newLine = currentLine
-                .replacingOccurrences(of: "- [ ]", with: "- [x]")
-                .replacingOccurrences(of: "* [ ]", with: "* [x]")
-                .replacingOccurrences(of: "+ [ ]", with: "+ [x]")
-        } else {
-            newLine = currentLine
-                .replacingOccurrences(of: "- [x]", with: "- [ ]")
-                .replacingOccurrences(of: "- [X]", with: "- [ ]")
-                .replacingOccurrences(of: "* [x]", with: "* [ ]")
-                .replacingOccurrences(of: "* [X]", with: "* [ ]")
-                .replacingOccurrences(of: "+ [x]", with: "+ [ ]")
-                .replacingOccurrences(of: "+ [X]", with: "+ [ ]")
-        }
+            guard index >= 0 && index < lines.count else { return }
 
-        guard newLine != currentLine else { return }
+            let currentLine = lines[index]
+            let newLine: String
 
-        lines[index] = newLine
-        let newContent = lines.joined(separator: "\n")
+            if checked {
+                newLine = currentLine
+                    .replacingOccurrences(of: "- [ ]", with: "- [x]")
+                    .replacingOccurrences(of: "* [ ]", with: "* [x]")
+                    .replacingOccurrences(of: "+ [ ]", with: "+ [x]")
+            } else {
+                newLine = currentLine
+                    .replacingOccurrences(of: "- [x]", with: "- [ ]")
+                    .replacingOccurrences(of: "- [X]", with: "- [ ]")
+                    .replacingOccurrences(of: "* [x]", with: "* [ ]")
+                    .replacingOccurrences(of: "* [X]", with: "* [ ]")
+                    .replacingOccurrences(of: "+ [x]", with: "+ [ ]")
+                    .replacingOccurrences(of: "+ [X]", with: "+ [ ]")
+            }
 
-        do {
-            try newContent.write(to: fileURL, atomically: true, encoding: .utf8)
-        } catch {
-            print("Failed to save file: \(error)")
+            guard newLine != currentLine else { return }
+
+            lines[index] = newLine
+            let newContent = lines.joined(separator: "\n")
+
+            do {
+                // Write to disk FIRST
+                try await fileProvider.writeFile(at: fileURL.path, content: newContent)
+                // Only update in-memory content after successful write
+                await MainActor.run {
+                    self.content = newContent
+                }
+            } catch {
+                print("Failed to save file: \(error)")
+            }
         }
     }
 }

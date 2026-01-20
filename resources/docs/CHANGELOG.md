@@ -1,5 +1,107 @@
 # Changelog
 
+## 260120 Image Refresh and Window Flash Fix
+- Fixed: Image refresh now works with Cmd+R (cache-bust query param on local images)
+- Fixed: White flash when opening documents in dark mode
+- Added: Window fades in after content renders (prevents seeing unthemed content)
+- Added: Theme detection via prefers-color-scheme loads correct stylesheet immediately
+
+## 260120 ServerTests Added
+- Added: Tests/ServerTests.swift with daemon lifecycle tests
+- Added: testDaemonStartStop verifies PID file, socket, RPC handshake
+- Added: testDaemonSurvivesProxyDisconnect verifies reconnection works
+- Changed: testFileWatchPushEvent skipped (requires main run loop on macOS)
+- Updated: Spec test checkboxes marked complete
+
+## 260120 Remote Recents Bug Fixes
+- Fixed: Remote files from Recents now work (was timing out on stale connections)
+- Fixed: Deleted remote files are now removed from Recents menu
+- Added: Quick SSH check before opening remote file for instant feedback
+- Added: Structured error codes (FILE_NOT_FOUND) instead of text matching
+- Changed: SSHConnectionManager validates process health before reusing connections
+
+## 260120 Remote Checkbox and File Safety
+- Fixed: Remote checkbox toggle now works reliably (was reverting due to race condition)
+- Fixed: Server writeFile uses POSIX rename() to prevent file deletion on Linux
+- Fixed: Reload task cancellation prevents stale reads from overwriting checkbox changes
+- Changed: Removed FileManager.replaceItemAt which has known issues on Linux
+
+## 260120 Anchor Links
+- Added: Heading anchor plugin for internal link navigation (headingAnchors.js)
+- Fixed: Anchor links now scroll smoothly to target sections
+- Fixed: Fragment ID escaping in navigation handler
+
+## 260120 Code Quality: Fix Lint Violations
+- Fixed: SSHConnection type body length by extracting types and helpers to separate files
+- Fixed: AppDelegate type body length by extracting extensions to separate file
+- Added: SSHConnectionTypes.swift (state enum, error enum, StderrCollector)
+- Added: SSHConnectionHelpers.swift (SyncMarkerAccumulator, parseSSHStderr)
+- Added: AppDelegateExtensions.swift (Notification.Name, URL extension, remote methods)
+- Changed: swiftlint.yml thresholds adjusted (type_body: 400, file: 600)
+- Improved: Test file now contains 11k lines of proper markdown content
+
+## 260120 Phase 9: Checkbox Caching and Remote Recents
+- Added: Checkbox toggles cached during disconnect, restored on reconnect
+- Added: Conflict resolution dialog when remote file changes during disconnect
+- Added: Remote files now appear in File > Open Recent menu
+- Added: Connection state streaming for real-time UI updates
+- Changed: Spec status updated to Implementation Complete
+
+## 260120 SSH First-Connection Fix (v0.42.10)
+- Fixed: SSH remote connections now work on first attempt (was failing, then working on retry)
+- Fixed: process.waitUntilExit() hanging with GCD on Linux - replaced with usleep()
+- Fixed: Thread.sleep() in connect loop replaced with usleep() to avoid GCD issues
+- Changed: Sync marker output simplified (removed RDY handshake complexity)
+- Changed: UnixSocketListener print() changed to fputs(stderr) to prevent protocol corruption
+
+## 260120 SSH Remote File Improvements
+- Added: Path input field in file browser for navigating to any path (not just home)
+- Added: Delete button (minus icon) to remove servers from recent list
+- Added: Connection status messages during connect (Checking server / Deploying / Connecting)
+- Added: Auto-retry with redeploy when server handshake fails
+- Changed: Window title now shows server name and full path: `[hostname] /path/to/file`
+- Changed: Path field auto-focused when server connects
+- Changed: Server binary stdout/stderr redirected to prevent RPC corruption
+- Changed: SSH ControlMaster disabled to prevent stale socket issues
+- Changed: Build script now force-kills app if graceful quit fails
+- Fixed: "Session open refused by peer" errors from stale SSH control sockets
+- Fixed: Old daemon processes now killed when deploying new server version
+- Fixed: Daemon/Proxy print statements moved to stderr to prevent protocol corruption
+
+## 260120 SSH Connection Timeout & Error Handling
+- Added: SSHConnectionError enum with user-friendly error messages
+- Added: Timeout on all SSH operations (30s overall connection, 15s handshake, 30s operations)
+- Added: Stderr monitoring to detect and report SSH failures (auth, refused, unreachable)
+- Added: Early failure detection (200ms check after SSH process starts)
+- Changed: ControlPath moved to /tmp for reliable path expansion
+- Changed: SSH options now include ServerAliveInterval/ServerAliveCountMax for keepalives
+- Changed: ControlPersist=60 for connection reuse
+- Fixed: SSH connections no longer hang indefinitely on failure
+
+## 260120 Phase 8: Remote File UI Integration
+- Added: "Open Remote..." menu item (Cmd+Shift+O) for connecting to SSH servers
+- Added: OpenRemoteSheet for entering connection strings (user@host:/path format)
+- Added: RemoteDocumentView for viewing remote files with connection status
+- Added: Recent remote connections stored in UserDefaults
+- Added: RemoteConnectionParser for parsing SSH connection strings
+- Added: RemoteLocation type for representing remote file locations
+- Added: LocalFileProviderTests with comprehensive test coverage
+- Added: RemoteUITests for connection string parsing and RemoteLocation
+- Changed: ServerDeployer now supports macOS servers (Darwin detection)
+- Changed: ServerDeployer cleans up old version binaries on upgrade
+- Changed: Build script fixed for proper quoting
+- Updated: CLAUDE.local.md with devtest server info and timeout guidance
+
+## 260119 Phase 6: Remote File Provider and Server Deployment
+- Added: RemoteFileProvider for reading/writing files over SSH connections
+- Added: ServerDeployer for uploading daemon binary to remote hosts
+- Added: Linux build scripts (build-linux.sh, build-remote.sh) for cross-compilation
+- Added: FileProvider protocol abstraction for local vs remote file operations
+- Added: SSHConnectionManager tests for connection multiplexing
+- Changed: DocumentState now supports remote file providers
+- Changed: ProcessRunner improved for remote command execution
+- Changed: Build script updated for multi-platform support
+
 ## 260114 Command-Line File Focus
 - Fixed: File passed via command line now appears on top of restored documents
 

@@ -9,17 +9,30 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "RedmarginCore",
+            path: "src/Core"
+        ),
+        .target(
             name: "RedmarginLib",
-            path: "src"
+            dependencies: ["RedmarginCore"],
+            path: "src",
+            exclude: ["Core"]
         ),
         .executableTarget(
             name: "Redmargin",
-            dependencies: ["RedmarginLib"],
+            dependencies: ["RedmarginLib", "RedmarginCore"],
             path: "AppMain"
+        ),
+        .executableTarget(
+            name: "redmargin-server",
+            dependencies: [
+                "RedmarginCore"
+            ],
+            path: "Server"
         ),
         .testTarget(
             name: "RedmarginTests",
-            dependencies: ["RedmarginLib"],
+            dependencies: ["RedmarginLib", "RedmarginCore"],
             path: "Tests",
             exclude: ["Fixtures", "Scripts", "TEST_LOG.md"]
         )
