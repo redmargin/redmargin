@@ -1,12 +1,15 @@
 # Changelog
 
-## 260120 Anchor Links and Debug Logging
+## 260120 Remote Checkbox and File Safety
+- Fixed: Remote checkbox toggle now works reliably (was reverting due to race condition)
+- Fixed: Server writeFile uses POSIX rename() to prevent file deletion on Linux
+- Fixed: Reload task cancellation prevents stale reads from overwriting checkbox changes
+- Changed: Removed FileManager.replaceItemAt which has known issues on Linux
+
+## 260120 Anchor Links
 - Added: Heading anchor plugin for internal link navigation (headingAnchors.js)
-- Added: Debug logging for remote checkbox toggle flow
 - Fixed: Anchor links now scroll smoothly to target sections
 - Fixed: Fragment ID escaping in navigation handler
-- Changed: isWritingFile flag set before content update to prevent race condition
-- Changed: Large test file regenerated to 2745 lines for proper testing
 
 ## 260120 Code Quality: Fix Lint Violations
 - Fixed: SSHConnection type body length by extracting types and helpers to separate files

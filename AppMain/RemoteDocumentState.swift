@@ -30,6 +30,7 @@ class RemoteDocumentState: ObservableObject {
     private var repoRoot: String?
     private var gitChangeTask: Task<Void, Never>?
     private var stateObserverTask: Task<Void, Never>?
+    private var reloadTask: Task<Void, Never>?
 
     /// Last content that was confirmed on the server (read or successfully written)
     private var lastKnownServerContent: String
@@ -211,10 +212,20 @@ class RemoteDocumentState: ObservableObject {
             return
         }
 
+        // Cancel any pending reload to prevent races
+        reloadTask?.cancel()
+
         print("[RemoteDocumentState] reloadContent called for \(location.displayString)")
-        Task {
+        reloadTask = Task {
             do {
                 let newContent = try await fileProvider.readFile(at: location.path)
+
+                // Check if cancelled (a write started while we were reading)
+                guard !Task.isCancelled else {
+                    print("[RemoteDocumentState] Reload cancelled (write started during read)")
+                    return
+                }
+
                 await MainActor.run {
                     guard newContent != content else {
                         print("[RemoteDocumentState] Content unchanged, skipping update")
@@ -228,7 +239,9 @@ class RemoteDocumentState: ObservableObject {
                     }
                 }
             } catch {
-                print("[RemoteDocumentState] Failed to read file: \(error)")
+                if !Task.isCancelled {
+                    print("[RemoteDocumentState] Failed to read file: \(error)")
+                }
             }
         }
     }
@@ -304,19 +317,13 @@ class RemoteDocumentState: ObservableObject {
     }
 
     func handleCheckboxToggle(line: Int, checked: Bool) {
-        print("[RemoteCheckbox] handleCheckboxToggle called: line=\(line) checked=\(checked)")
-
         // Optimistic UI - update locally first
         var lines = content.components(separatedBy: "\n")
         let index = line - 1
 
-        guard index >= 0 && index < lines.count else {
-            print("[RemoteCheckbox] ERROR: line \(line) out of bounds (total: \(lines.count))")
-            return
-        }
+        guard index >= 0 && index < lines.count else { return }
 
         let currentLine = lines[index]
-        print("[RemoteCheckbox] currentLine[\(line)]: '\(currentLine)'")
         let newLine: String
 
         if checked {
@@ -334,27 +341,24 @@ class RemoteDocumentState: ObservableObject {
                 .replacingOccurrences(of: "+ [X]", with: "+ [ ]")
         }
 
-        guard newLine != currentLine else {
-            print("[RemoteCheckbox] No change needed - line already in target state")
-            return
-        }
+        guard newLine != currentLine else { return }
 
-        print("[RemoteCheckbox] newLine: '\(newLine)'")
         lines[index] = newLine
         let newContent = lines.joined(separator: "\n")
 
+        // Cancel any pending reload - we're about to write
+        reloadTask?.cancel()
+        reloadTask = nil
+
         // Update locally immediately (optimistic)
         let oldContent = content
-        print("[RemoteCheckbox] Setting isWritingFile=true BEFORE content update")
         isWritingFile = true
-        print("[RemoteCheckbox] Updating content (optimistic)")
         content = newContent
 
         // Send to server
         Task {
             defer {
                 Task { @MainActor in
-                    print("[RemoteCheckbox] Setting isWritingFile=false (in defer)")
                     self.isWritingFile = false
                 }
             }
