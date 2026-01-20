@@ -34,6 +34,11 @@ func setupMainMenu(target: AppDelegate) {
     openItem.target = target
     fileMenu.addItem(openItem)
 
+    let openRemoteItem = NSMenuItem(title: "Open Remote...", action: #selector(AppDelegate.showOpenRemoteSheet), keyEquivalent: "O")
+    openRemoteItem.keyEquivalentModifierMask = [.command, .shift]
+    openRemoteItem.target = target
+    fileMenu.addItem(openRemoteItem)
+
     let recentMenu = NSMenu(title: "Open Recent")
     let recentMenuItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
     recentMenuItem.submenu = recentMenu

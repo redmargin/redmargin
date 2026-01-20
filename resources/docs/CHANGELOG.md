@@ -1,5 +1,19 @@
 # Changelog
 
+## 260120 Phase 8: Remote File UI Integration
+- Added: "Open Remote..." menu item (Cmd+Shift+O) for connecting to SSH servers
+- Added: OpenRemoteSheet for entering connection strings (user@host:/path format)
+- Added: RemoteDocumentView for viewing remote files with connection status
+- Added: Recent remote connections stored in UserDefaults
+- Added: RemoteConnectionParser for parsing SSH connection strings
+- Added: RemoteLocation type for representing remote file locations
+- Added: LocalFileProviderTests with comprehensive test coverage
+- Added: RemoteUITests for connection string parsing and RemoteLocation
+- Changed: ServerDeployer now supports macOS servers (Darwin detection)
+- Changed: ServerDeployer cleans up old version binaries on upgrade
+- Changed: Build script fixed for proper quoting
+- Updated: CLAUDE.local.md with devtest server info and timeout guidance
+
 ## 260119 Phase 6: Remote File Provider and Server Deployment
 - Added: RemoteFileProvider for reading/writing files over SSH connections
 - Added: ServerDeployer for uploading daemon binary to remote hosts
