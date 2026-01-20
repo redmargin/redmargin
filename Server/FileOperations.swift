@@ -1,14 +1,20 @@
 import Foundation
 import RedmarginCore
 
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
+
 actor FileOperations {
-    
+
     private var eventHandler: ((Data) -> Void)?
-    
+
     func setEventHandler(_ handler: @escaping (Data) -> Void) {
         self.eventHandler = handler
     }
-    
+
     func listDirectory(path: String) -> ListDirectoryResponsePayload {
         do {
             let expandedPath = NSString(string: path).expandingTildeInPath
@@ -47,50 +53,58 @@ actor FileOperations {
             return ReadFileResponsePayload(content: nil, error: error.localizedDescription)
         }
     }
-    
+
     func writeFile(path: String, content: String) -> WriteFileResponsePayload {
+        let url = URL(fileURLWithPath: path)
+        let directory = url.deletingLastPathComponent()
+
+        // Write to temp file in SAME directory (required for atomic rename)
+        let tempName = ".\(url.lastPathComponent).tmp.\(UUID().uuidString)"
+        let tempPath = directory.appendingPathComponent(tempName).path
+
         do {
-            let url = URL(fileURLWithPath: path)
-            // Atomically write to temp file then rename
-            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            try content.write(to: tempURL, atomically: true, encoding: .utf8)
-            
-            // Move/Replace
-            // This is a simple implementation, might need more robust handling for permissions
-            if FileManager.default.fileExists(atPath: url.path) {
-                _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
-            } else {
-                try FileManager.default.moveItem(at: tempURL, to: url)
-            }
-            
-            return WriteFileResponsePayload(error: nil)
+            // Write content to temp file
+            try content.write(toFile: tempPath, atomically: false, encoding: .utf8)
         } catch {
-            return WriteFileResponsePayload(error: error.localizedDescription)
+            return WriteFileResponsePayload(error: "Failed to write temp file: \(error.localizedDescription)")
         }
+
+        // Use POSIX rename() which atomically overwrites destination
+        // This is the ONLY safe way to do atomic file replacement
+        let result = rename(tempPath, path)
+        if result != 0 {
+            // Clean up temp file on failure
+            unlink(tempPath)
+            let errorMsg = String(cString: strerror(errno))
+            return WriteFileResponsePayload(error: "rename failed: \(errorMsg)")
+        }
+
+        return WriteFileResponsePayload(error: nil)
     }
 
     private var watchers: [String: ServerWatcher] = [:]
-    
+
     func watchFile(path: String) -> String {
         let token = UUID().uuidString
-        
+
         if let watcher = PlatformWatcher(path: path, onChange: { [weak self] in
             Task { [weak self] in
                 guard let self = self else { return }
                 print("File changed: \(path)")
-                
+
                 let payload = FileChangedPayload(path: path, changeType: "modified")
-                if let data = try? RPCStreamHandler.encode(id: nil, type: RPCMessageType.fileChanged.rawValue, payload: payload) {
+                let msgType = RPCMessageType.fileChanged.rawValue
+                if let data = try? RPCStreamHandler.encode(id: nil, type: msgType, payload: payload) {
                     await self.eventHandler?(data)
                 }
             }
         }) {
             watchers[token] = watcher
         }
-        
+
         return token
     }
-    
+
     func unwatchFile(token: String) -> Bool {
         if let watcher = watchers.removeValue(forKey: token) {
             watcher.stop()

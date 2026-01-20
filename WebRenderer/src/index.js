@@ -68,13 +68,11 @@
 
         // Check if content actually changed
         const contentChanged = markdown !== lastRenderedMarkdown;
-        console.log('[Render] contentChanged=' + contentChanged + ' markdown.length=' + (markdown || '').length);
 
         // Save scroll position before any DOM changes
         var savedScrollY = window.scrollY;
 
         if (contentChanged) {
-            console.log('[Render] Re-rendering content');
             lastRenderedMarkdown = markdown;
 
             let html = md.render(markdown || '');
