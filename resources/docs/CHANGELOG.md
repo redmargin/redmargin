@@ -1,5 +1,12 @@
 # Changelog
 
+## 260120 ServerTests Added
+- Added: Tests/ServerTests.swift with daemon lifecycle tests
+- Added: testDaemonStartStop verifies PID file, socket, RPC handshake
+- Added: testDaemonSurvivesProxyDisconnect verifies reconnection works
+- Changed: testFileWatchPushEvent skipped (requires main run loop on macOS)
+- Updated: Spec test checkboxes marked complete
+
 ## 260120 Remote Recents Bug Fixes
 - Fixed: Remote files from Recents now work (was timing out on stale connections)
 - Fixed: Deleted remote files are now removed from Recents menu
