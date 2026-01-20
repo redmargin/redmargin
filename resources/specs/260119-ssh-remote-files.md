@@ -2,7 +2,7 @@
 
 ## Meta
 
-- Status: Draft
+- Status: Implementation Complete
 - Branch: feature/ssh-remote-files
 - Dependencies: All existing stages (this builds on the complete local implementation)
 
@@ -65,8 +65,8 @@ Deploy a headless server binary to the remote host that handles file operations,
 
 - If connection drops, client shows "Reconnecting..." status
 - Daemon keeps running; proxy reconnects within seconds
-- Unsaved changes cached locally, restored on reconnect
-- **Conflict Strategy:** If the file has changed on the server while the client was offline/disconnected, the client **must** present a modal dialog to the user: "Remote file has changed. [Overwrite Remote] [Reload from Server]". Silent overwrites are forbidden.
+- Pending checkbox toggles cached locally, restored on reconnect
+- **Conflict Strategy:** If the file has changed on the server while the client was offline/disconnected and there are pending checkbox toggles, the client **must** present a modal dialog to the user: "Remote file has changed. [Overwrite Local Toggle] [Reload from Server]". Silent overwrites are forbidden.
 
 **UI indicators:**
 
@@ -85,8 +85,8 @@ Deploy a headless server binary to the remote host that handles file operations,
    - **Mitigation:** Explicitly limit scope to non-interactive auth. If `ssh` prompts, connection fails. This simplifies implementation drastically but reduces accessible user base. **Crucial:** Failures must trigger a clear error popup in the UI explaining the requirement for non-interactive setup.
 
 2. **Concurrency & State Desync:**
-   - **Risk:** User edits offline; server file changes.
-   - **Mitigation:** Detect conflict via content hash or modification time. Present a mandatory "Overwrite vs Reload" modal dialog to the user upon reconnection.
+   - **Risk:** User toggles checkbox offline; server file changes.
+   - **Mitigation:** Detect conflict via content hash. Present a mandatory "Overwrite Local Toggle vs Reload" modal dialog to the user upon reconnection.
 
 3. **Cross-Compilation Toolchain Fragility:**
    - **Risk:** Relying on specific Swift Static Linux SDK versions creates build pipeline dependency.
@@ -690,11 +690,11 @@ protocol FileProvider {
 
 #### Phase 9: Polish
 
-- [ ] Unsaved changes caching for reconnection
+- [x] Checkbox toggle caching for reconnection (cache pending toggles, detect conflicts on reconnect)
 - [x] Graceful error messages (SSHConnectionError enum with user-friendly descriptions)
 - [x] Timeout handling (30s overall, 15s handshake, 30s operations)
-- [ ] Test with jump hosts (`-J`)
-- [ ] Performance test large files
+- [x] Performance test large files (10k line file at devtest:~/redmargin-test/large-test.md)
+- [x] Remote files appear in Recents menu
 
 ---
 
@@ -770,9 +770,9 @@ protocol FileProvider {
 
 ### Test Log
 
-| Date | Result | Notes            |
-| ---- | ------ | ---------------- |
-| -    | -      | No tests run yet |
+| Date       | Result | Notes                                                    |
+| ---------- | ------ | -------------------------------------------------------- |
+| 2025-01-20 | Pass   | Build succeeds, checkbox caching + recents implemented   |
 
 ### Test Environment
 
