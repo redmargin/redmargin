@@ -165,8 +165,29 @@ final class RecentDocumentsMenuDelegate: NSObject, NSMenuDelegate {
     }
 
     @objc private func openRecentDocument(_ sender: NSMenuItem) {
-        guard let url = sender.representedObject as? URL else { return }
-        appDelegate?.openDocument(url)
+        guard let url = sender.representedObject as? URL,
+              let appDelegate = appDelegate else { return }
+
+        // Check if file exists
+        if !FileManager.default.fileExists(atPath: url.path) {
+            // Remove from recents
+            appDelegate.recentDocuments.removeAll { $0 == url }
+            UserDefaults.standard.set(
+                appDelegate.recentDocuments.map { $0.path },
+                forKey: "RedMargin.RecentDocumentURLs"
+            )
+
+            // Show alert
+            let alert = NSAlert()
+            alert.messageText = "File Not Found"
+            alert.informativeText = "The file no longer exists at:\n\(url.path)\n\nIt has been removed from Recent Documents."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+
+        appDelegate.openDocument(url)
     }
 
     @objc private func openRecentRemoteLocation(_ sender: NSMenuItem) {

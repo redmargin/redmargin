@@ -54,8 +54,10 @@ struct RemoteDocumentWindowContent: View {
                 markdown: state.content,
                 fileURL: URL(fileURLWithPath: location.path),
                 onCheckboxToggle: state.handleCheckboxToggle,
-                onScrollPositionChange: { _ in },
-                initialScrollPosition: 0,
+                onScrollPositionChange: { [weak appDelegate] position in
+                    appDelegate?.saveScrollPosition(position, for: location)
+                },
+                initialScrollPosition: appDelegate?.loadScrollPosition(for: location) ?? 0,
                 showLineNumbers: showLineNumbers,
                 gitChanges: state.gitChanges,
                 findController: findController,

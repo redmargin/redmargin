@@ -1,5 +1,13 @@
 # Changelog
 
+## 260120 Anchor Links and Debug Logging
+- Added: Heading anchor plugin for internal link navigation (headingAnchors.js)
+- Added: Debug logging for remote checkbox toggle flow
+- Fixed: Anchor links now scroll smoothly to target sections
+- Fixed: Fragment ID escaping in navigation handler
+- Changed: isWritingFile flag set before content update to prevent race condition
+- Changed: Large test file regenerated to 2745 lines for proper testing
+
 ## 260120 Code Quality: Fix Lint Violations
 - Fixed: SSHConnection type body length by extracting types and helpers to separate files
 - Fixed: AppDelegate type body length by extracting extensions to separate file
