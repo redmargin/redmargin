@@ -1,5 +1,11 @@
 # Changelog
 
+## 260120 Image Refresh and Window Flash Fix
+- Fixed: Image refresh now works with Cmd+R (cache-bust query param on local images)
+- Fixed: White flash when opening documents in dark mode
+- Added: Window fades in after content renders (prevents seeing unthemed content)
+- Added: Theme detection via prefers-color-scheme loads correct stylesheet immediately
+
 ## 260120 ServerTests Added
 - Added: Tests/ServerTests.swift with daemon lifecycle tests
 - Added: testDaemonStartStop verifies PID file, socket, RPC handshake

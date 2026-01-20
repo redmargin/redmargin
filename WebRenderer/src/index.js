@@ -33,14 +33,17 @@
         document.body.classList.add(`theme-${theme}`);
     }
 
-    function resolveImagePaths(html, basePath) {
+    function resolveImagePaths(html, basePath, cacheBust) {
         if (!basePath) return html;
+
+        // Add cache-bust query param if provided (for refresh)
+        const cacheBustSuffix = cacheBust ? `?_cb=${cacheBust}` : '';
 
         return html.replace(
             /(<img[^>]+src=["'])(?!https?:\/\/|data:)([^"']+)(["'])/gi,
             function(match, prefix, src, suffix) {
                 if (src.startsWith('/')) return match;
-                const resolvedPath = `file://${basePath}/${src}`;
+                const resolvedPath = `file://${basePath}/${src}${cacheBustSuffix}`;
                 return prefix + resolvedPath + suffix;
             }
         );
@@ -54,9 +57,11 @@
         }
     }
 
+    let lastCacheBust = 0;
+
     function render(payload) {
         const { markdown, options = {}, changes = null } = payload;
-        const { theme = 'light', basePath = '', inlineCodeColor = 'warm', showGutter = true } = options;
+        const { theme = 'light', basePath = '', inlineCodeColor = 'warm', showGutter = true, cacheBust = 0 } = options;
 
         currentBasePath = basePath;
         setTheme(theme);
@@ -66,8 +71,12 @@
         // Always store latest changes - RAF callback will use this instead of stale captured value
         latestChanges = changes;
 
+        // Force re-render if cacheBust changed (user pressed refresh)
+        const cacheBustChanged = cacheBust !== lastCacheBust;
+        lastCacheBust = cacheBust;
+
         // Check if content actually changed
-        const contentChanged = markdown !== lastRenderedMarkdown;
+        const contentChanged = markdown !== lastRenderedMarkdown || cacheBustChanged;
 
         // Save scroll position before any DOM changes
         var savedScrollY = window.scrollY;
@@ -80,7 +89,7 @@
             if (window.Sanitizer && window.Sanitizer.sanitize) {
                 html = window.Sanitizer.sanitize(html);
             }
-            html = resolveImagePaths(html, basePath);
+            html = resolveImagePaths(html, basePath, cacheBust);
 
             const container = document.getElementById('content-container');
             if (container) {

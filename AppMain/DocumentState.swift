@@ -7,11 +7,12 @@ class DocumentState: ObservableObject {
     @Published var content: String
     @Published var gitChanges: GitChangeResult?
     @Published var isRefreshing: Bool = false
-    
+    @Published var refreshToken: Int = 0  // Incremented on refresh to bust image cache
+
     // We keep fileURL for now as it might be used by UI or other parts
-    let fileURL: URL 
+    let fileURL: URL
     private let fileProvider: FileProvider
-    
+
     private var fileWatchToken: WatchToken?
     private var gitWatchToken: WatchToken?
     private var isWritingFile = false
@@ -28,7 +29,7 @@ class DocumentState: ObservableObject {
             await detectGitChanges()
         }
     }
-    
+
     deinit {
         let provider = fileProvider
         let fToken = fileWatchToken
@@ -42,7 +43,7 @@ class DocumentState: ObservableObject {
     private func setupFileWatcher() async {
         // Unwatch old if any
         if let token = fileWatchToken { await fileProvider.unwatch(token) }
-        
+
         fileWatchToken = await fileProvider.watchFile(at: fileURL.path) { [weak self] in
             Task { @MainActor in
                 self?.reloadContent()
@@ -81,6 +82,7 @@ class DocumentState: ObservableObject {
 
     func refresh() {
         isRefreshing = true
+        refreshToken += 1  // Bust image cache
         Task {
             if let newContent = try? await fileProvider.readFile(at: fileURL.path) {
                 await MainActor.run {
@@ -88,7 +90,7 @@ class DocumentState: ObservableObject {
                 }
             }
             await detectGitChanges()
-            
+
             try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s
             await MainActor.run {
                 self.isRefreshing = false
@@ -108,7 +110,7 @@ class DocumentState: ObservableObject {
                 if repoRoot == nil {
                     repoRoot = try await fileProvider.detectGitRepo(for: fileURL.path)
                     print("[Gutter] Detected repo root: \(repoRoot ?? "nil")")
-                    
+
                     if let root = repoRoot {
                         await setupGitWatcher(root: root)
                     }
@@ -136,10 +138,10 @@ class DocumentState: ObservableObject {
             }
         }
     }
-    
+
     private func setupGitWatcher(root: String) async {
         if let token = gitWatchToken { await fileProvider.unwatch(token) }
-        
+
         gitWatchToken = await fileProvider.watchGitRepo(at: root) { [weak self] in
             Task { @MainActor in
                 guard let self = self else { return }

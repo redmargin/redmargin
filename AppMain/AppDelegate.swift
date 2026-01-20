@@ -229,8 +229,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let window = createWindow(for: url, rootView: documentView)
         documentWindows[url] = window
         window.delegate = self
+
+        // Start hidden, show when content renders
+        window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        // Listen for content ready notification
+        let observerBox = ReferenceBox<NSObjectProtocol?>(nil)
+        observerBox.value = NotificationCenter.default.addObserver(
+            forName: .windowContentReady,
+            object: nil,
+            queue: .main
+        ) { [weak window] notification in
+            guard let notificationURL = notification.userInfo?["fileURL"] as? URL,
+                  notificationURL == url else { return }
+
+            // Remove observer after firing
+            if let obs = observerBox.value {
+                NotificationCenter.default.removeObserver(obs)
+            }
+
+            // Fade in window
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                window?.animator().alphaValue = 1
+            }
+        }
     }
 
     private func createWindow(for url: URL, rootView: DocumentWindowContent) -> NSWindow {
@@ -356,4 +381,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     @objc func toggleLineNumbers(_ sender: Any?) {
         NotificationCenter.default.post(name: .toggleLineNumbers, object: nil)
     }
+}
+
+// Helper to avoid sendable closure warning with notification observer
+private class ReferenceBox<T> {
+    var value: T
+    init(_ value: T) { self.value = value }
 }

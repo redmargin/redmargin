@@ -11,6 +11,7 @@ extension Notification.Name {
     static var findNext: Notification.Name { Notification.Name("RedMargin.findNext") }
     static var findPrevious: Notification.Name { Notification.Name("RedMargin.findPrevious") }
     static var printDocument: Notification.Name { Notification.Name("RedMargin.printDocument") }
+    static var windowContentReady: Notification.Name { Notification.Name("RedMargin.windowContentReady") }
 }
 
 // MARK: - URL Display Path

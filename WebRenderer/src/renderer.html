@@ -4,7 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RedMargin Renderer</title>
-    <link rel="stylesheet" id="theme-stylesheet" href="../styles/light.css">
+    <script>
+        // Load correct theme stylesheet immediately based on system preference
+        // JS render() will override if user has manual preference set
+        var isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.write('<link rel="stylesheet" id="theme-stylesheet" href="../styles/' + (isDark ? 'dark' : 'light') + '.css">');
+    </script>
     <link rel="stylesheet" href="../styles/gutter.css">
     <link rel="stylesheet" href="../styles/print.css">
 </head>
