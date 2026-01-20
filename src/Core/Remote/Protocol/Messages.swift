@@ -94,11 +94,18 @@ public struct ReadFilePayload: Codable {
 public struct ReadFileResponsePayload: Codable {
     public let content: String?
     public let error: String?
-    
-    public init(content: String?, error: String?) {
+    public let errorCode: String?
+
+    public init(content: String?, error: String?, errorCode: String? = nil) {
         self.content = content
         self.error = error
+        self.errorCode = errorCode
     }
+}
+
+public enum FileErrorCode: String {
+    case fileNotFound = "FILE_NOT_FOUND"
+    case permissionDenied = "PERMISSION_DENIED"
 }
 
 public struct WriteFilePayload: Codable {

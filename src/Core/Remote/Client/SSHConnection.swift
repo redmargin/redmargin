@@ -62,6 +62,11 @@ public actor SSHConnection {
         return state
     }
 
+    /// Returns true if the connection state is connected AND the SSH process is still running
+    public func isAlive() -> Bool {
+        return state == .connected && process?.isRunning == true
+    }
+
     private var homeDirectory: String?
 
     public func getHomeDirectory() async throws -> String {
