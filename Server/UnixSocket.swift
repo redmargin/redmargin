@@ -94,7 +94,7 @@ class UnixSocketListener {
             throw NSError(domain: "UnixSocket", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to listen"])
         }
         
-        print("Listening on \(path)")
+        fputs("Listening on \(path)\n", stderr)
     }
     
     func acceptConnection() -> Int32 {

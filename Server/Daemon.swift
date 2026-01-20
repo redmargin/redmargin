@@ -14,23 +14,13 @@ enum Daemon {
     static func start(pidFile: String, stdinSocket: String, stdoutSocket: String, stderrSocket: String) {
         fputs("Starting daemon...\n", stderr)
 
-        // 1. Fork to background
-        // Note: In a real deployment, we might skip this if managed by systemd,
-        // but for SSH spawning we need to detach.
-        #if os(Linux)
-        let pid = c_fork()
-        if pid < 0 {
-            fatalError("Failed to fork")
-        } else if pid > 0 {
-            // Parent exits
-            exit(0)
-        }
-        setsid()
-        #endif
-        // On macOS for dev/testing, we might not fork to keep it simple or use Process.
-        // But let's assume we are running directly for now if not linux, or rely on the caller.
+        // NOTE: We intentionally do NOT fork here.
+        // fork() breaks GCD/dispatch queues and Swift async/await because threads
+        // are not duplicated. The daemon uses both for connection handling.
+        // Instead, the proxy spawns us and we run in foreground.
+        // The proxy's Process.waitUntilExit() will return when we exit.
 
-        // 2. Write PID file
+        // 1. Write PID file
         do {
             let currentPid = String(ProcessInfo.processInfo.processIdentifier)
             try currentPid.write(toFile: pidFile, atomically: true, encoding: .utf8)
@@ -39,7 +29,11 @@ enum Daemon {
             exit(1)
         }
 
-        // 3. Listen on RPC socket
+        // 3. Initialize RPC handler BEFORE listening
+        // This ensures no delay between socket ready and accept loop
+        let rpcHandler = RPCHandler()
+
+        // 4. Listen on RPC socket
         // We use stdinSocket path as the main RPC channel
         let listener = UnixSocketListener(path: stdinSocket)
         do {
@@ -50,8 +44,6 @@ enum Daemon {
         }
 
         fputs("Daemon listening on \(stdinSocket)\n", stderr)
-
-        let rpcHandler = RPCHandler()
 
         // 4. Accept Loop
         while true {

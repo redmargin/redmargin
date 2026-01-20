@@ -1,5 +1,12 @@
 # Changelog
 
+## 260120 SSH First-Connection Fix (v0.42.10)
+- Fixed: SSH remote connections now work on first attempt (was failing, then working on retry)
+- Fixed: process.waitUntilExit() hanging with GCD on Linux - replaced with usleep()
+- Fixed: Thread.sleep() in connect loop replaced with usleep() to avoid GCD issues
+- Changed: Sync marker output simplified (removed RDY handshake complexity)
+- Changed: UnixSocketListener print() changed to fputs(stderr) to prevent protocol corruption
+
 ## 260120 SSH Remote File Improvements
 - Added: Path input field in file browser for navigating to any path (not just home)
 - Added: Delete button (minus icon) to remove servers from recent list
