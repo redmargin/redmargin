@@ -59,7 +59,17 @@ public actor SSHConnection {
     private var eventContinuation: AsyncStream<Data>.Continuation?
     public nonisolated let events: AsyncStream<Data>
 
-    private var state: SSHConnectionState = .disconnected
+    // Connection state stream
+    private var stateContinuation: AsyncStream<SSHConnectionState>.Continuation?
+    public nonisolated let stateChanges: AsyncStream<SSHConnectionState>
+
+    private var state: SSHConnectionState = .disconnected {
+        didSet {
+            if state != oldValue {
+                stateContinuation?.yield(state)
+            }
+        }
+    }
     private var isIntentionallyDisconnected = false
     private var reconnectAttempts = 0
     private let maxReconnectDelay: TimeInterval = 30.0
@@ -69,15 +79,27 @@ public actor SSHConnection {
 
     public init(host: String) {
         self.host = host
-        var continuation: AsyncStream<Data>.Continuation?
+
+        var eventCont: AsyncStream<Data>.Continuation?
+        var stateCont: AsyncStream<SSHConnectionState>.Continuation?
+
         self.events = AsyncStream { cont in
-            continuation = cont
+            eventCont = cont
         }
-        self.eventContinuation = continuation
+        self.stateChanges = AsyncStream { cont in
+            stateCont = cont
+        }
+
+        self.eventContinuation = eventCont
+        self.stateContinuation = stateCont
     }
 
     public func getHost() -> String {
         return host
+    }
+
+    public func getState() -> SSHConnectionState {
+        return state
     }
 
     private var homeDirectory: String?

@@ -45,6 +45,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private let savedURLsKey = "RedMargin.OpenDocumentURLs"
     private let recentURLsKey = "RedMargin.RecentDocumentURLs"
     private let recentRemoteKey = "RedMargin.RecentRemoteConnections"
+    private let recentRemoteLocationsKey = "RedMargin.RecentRemoteLocations"
     private let windowOrderKey = "RedMargin.WindowOrder"
     private let scrollPositionsKey = "RedMargin.ScrollPositions"
     private let lineNumbersKey = "RedMargin.DocumentLineNumbers"
@@ -52,11 +53,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     @Published var recentDocuments: [URL] = []
     @Published var recentRemoteServers: [String] = []
+    @Published var recentRemoteLocations: [RemoteLocation] = []
 
     override init() {
         super.init()
         recentDocuments = loadRecentDocuments()
         recentRemoteServers = loadRecentRemoteServers()
+        recentRemoteLocations = loadRecentRemoteLocations()
     }
 
     // MARK: - App Lifecycle
@@ -404,9 +407,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let host = await connection.getHost()
         let location = RemoteLocation(host: host, path: path)
 
-        // Add server to recent list
+        // Add to recent lists
         await MainActor.run {
             addToRecentRemoteServers(host)
+            addToRecentRemoteLocations(location)
         }
 
         // Check if already open
@@ -483,5 +487,51 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     func clearRecentRemoteServers() {
         recentRemoteServers = []
         UserDefaults.standard.removeObject(forKey: recentRemoteKey)
+    }
+
+    // MARK: - Recent Remote Locations
+
+    func addToRecentRemoteLocations(_ location: RemoteLocation) {
+        recentRemoteLocations.removeAll { $0 == location }
+        recentRemoteLocations.insert(location, at: 0)
+        if recentRemoteLocations.count > maxRecentDocuments {
+            recentRemoteLocations = Array(recentRemoteLocations.prefix(maxRecentDocuments))
+        }
+        saveRecentRemoteLocations()
+    }
+
+    private func loadRecentRemoteLocations() -> [RemoteLocation] {
+        guard let data = UserDefaults.standard.data(forKey: recentRemoteLocationsKey) else { return [] }
+        return (try? JSONDecoder().decode([RemoteLocation].self, from: data)) ?? []
+    }
+
+    private func saveRecentRemoteLocations() {
+        if let data = try? JSONEncoder().encode(recentRemoteLocations) {
+            UserDefaults.standard.set(data, forKey: recentRemoteLocationsKey)
+        }
+    }
+
+    func clearRecentRemoteLocations() {
+        recentRemoteLocations = []
+        UserDefaults.standard.removeObject(forKey: recentRemoteLocationsKey)
+    }
+
+    /// Opens a recent remote location by establishing a new connection
+    func openRecentRemoteLocation(_ location: RemoteLocation) {
+        Task {
+            do {
+                let connection = try await SSHConnectionManager.shared.connection(for: location.host)
+                try await openRemoteDocument(connection: connection, path: location.path)
+            } catch {
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.messageText = "Failed to open remote file"
+                    alert.informativeText = error.localizedDescription
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }
+            }
+        }
     }
 }

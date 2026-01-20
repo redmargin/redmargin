@@ -1,5 +1,12 @@
 # Changelog
 
+## 260120 Phase 9: Checkbox Caching and Remote Recents
+- Added: Checkbox toggles cached during disconnect, restored on reconnect
+- Added: Conflict resolution dialog when remote file changes during disconnect
+- Added: Remote files now appear in File > Open Recent menu
+- Added: Connection state streaming for real-time UI updates
+- Changed: Spec status updated to Implementation Complete
+
 ## 260120 SSH First-Connection Fix (v0.42.10)
 - Fixed: SSH remote connections now work on first attempt (was failing, then working on retry)
 - Fixed: process.waitUntilExit() hanging with GCD on Linux - replaced with usleep()

@@ -138,6 +138,16 @@ struct RemoteDocumentWindowContent: View {
             dismissFindBar()
             return .handled
         }
+        .alert("Remote File Changed", isPresented: $state.showConflictDialog) {
+            Button("Overwrite Remote") {
+                state.resolveConflictKeepLocalToggle()
+            }
+            Button("Reload from Server", role: .destructive) {
+                state.resolveConflictReloadFromServer()
+            }
+        } message: {
+            Text("The file on the server changed while you were disconnected, and you have a pending checkbox toggle. Choose how to resolve this conflict.")
+        }
     }
 
     @ViewBuilder

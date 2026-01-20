@@ -4,15 +4,25 @@ public actor RemoteFileProvider: FileProvider {
     private let connection: SSHConnection
     private var watchers: [WatchToken: WatchCallback] = [:]
     private var remoteTokens: [WatchToken: String] = [:] // Local Token -> Remote Token String
-    
+
+    /// Access to connection state changes for UI updates
+    public nonisolated var stateChanges: AsyncStream<SSHConnectionState> {
+        connection.stateChanges
+    }
+
+    /// Get current connection state
+    public func getConnectionState() async -> SSHConnectionState {
+        await connection.getState()
+    }
+
     private struct WatchCallback {
         let path: String
         let callback: () -> Void
     }
-    
+
     public init(connection: SSHConnection) {
         self.connection = connection
-        
+
         // Start listening for push events
         Task { [weak self] in
             for await eventData in connection.events {
