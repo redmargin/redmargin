@@ -17,12 +17,18 @@ if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
     WAS_RUNNING=true
     echo "Redmargin is running; quitting before rebuild..."
     osascript -e "tell application id \"$APP_BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
-    for _ in {1..50}; do
+    for _ in {1..30}; do
         if ! pgrep -x "$APP_NAME" >/dev/null 2>&1; then
             break
         fi
         sleep 0.1
     done
+    # Force kill if still running
+    if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
+        echo "Force killing Redmargin..."
+        pkill -9 -x "$APP_NAME" 2>/dev/null || true
+        sleep 0.5
+    fi
     if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
         echo "Redmargin is still running; refusing to overwrite the app bundle."
         exit 1

@@ -12,24 +12,13 @@ public actor ServerDeployer {
         ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
     }
 
-    public func ensureServerDeployed(host: String) async throws -> String {
+    public func ensureServerDeployed(
+        host: String,
+        onProgress: (@Sendable (String) -> Void)? = nil
+    ) async throws -> String {
         // 1. Detect remote OS and architecture
-        let unameResult = try await ProcessRunner.run(
-            executable: "ssh",
-            arguments: sshOptions + [host, "uname -sm"],
-            timeout: sshTimeout
-        )
-        if unameResult.exitCode != 0 {
-            throw ServerDeployerError.connectionFailed(unameResult.stderr)
-        }
-        let uname = unameResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        let parts = uname.split(separator: " ")
-        guard parts.count >= 2 else {
-            throw ServerDeployerError.unsupportedArchitecture(uname)
-        }
-        let os = String(parts[0]) // Darwin or Linux
-        let arch = String(parts[1]) // x86_64, arm64, aarch64
-
+        onProgress?("Checking remote server...")
+        let (osName, arch) = try await detectRemotePlatform(host: host)
         let remoteBinaryPath = "~/.redmargin-server/redmargin-server-\(version)"
 
         // 2. Check if already deployed
@@ -44,11 +33,12 @@ public actor ServerDeployer {
         }
 
         // 3. Find local binary for OS and architecture
-        guard let localBinaryURL = findLocalBinary(os: os, arch: arch) else {
-            throw ServerDeployerError.unsupportedArchitecture("\(os) \(arch)")
+        guard let localBinaryURL = findLocalBinary(osName: osName, arch: arch) else {
+            throw ServerDeployerError.unsupportedArchitecture("\(osName) \(arch)")
         }
 
         print("[ServerDeployer] Deploying \(localBinaryURL.lastPathComponent) to \(host)...")
+        onProgress?("Deploying server binary (first connect takes longer)...")
 
         // 4. Create directory and upload
         _ = try await ProcessRunner.run(
@@ -73,15 +63,44 @@ public actor ServerDeployer {
             timeout: sshTimeout
         )
 
-        // 6. Clean up old versions
+        // 6. Kill old daemon/proxy processes and clean up old binaries
+        await killOldProcesses(host: host)
         await cleanupOldVersions(host: host)
 
         return remoteBinaryPath
     }
 
-    private func findLocalBinary(os: String, arch: String) -> URL? {
+    private func detectRemotePlatform(host: String) async throws -> (osName: String, arch: String) {
+        let result = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: sshOptions + [host, "uname -sm"],
+            timeout: sshTimeout
+        )
+        if result.exitCode != 0 {
+            throw ServerDeployerError.connectionFailed(result.stderr)
+        }
+        let uname = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = uname.split(separator: " ")
+        guard parts.count >= 2 else {
+            throw ServerDeployerError.unsupportedArchitecture(uname)
+        }
+        return (String(parts[0]), String(parts[1]))
+    }
+
+    private func killOldProcesses(host: String) async {
+        // Kill any running daemon/proxy processes so they restart with new binary
+        let killCmd = "pkill -f redmargin-server 2>/dev/null || true"
+        _ = try? await ProcessRunner.run(
+            executable: "ssh",
+            arguments: sshOptions + [host, killCmd],
+            timeout: sshTimeout
+        )
+        print("[ServerDeployer] Killed old server processes on \(host)")
+    }
+
+    private func findLocalBinary(osName: String, arch: String) -> URL? {
         let platform: String
-        switch os.lowercased() {
+        switch osName.lowercased() {
         case "darwin":
             platform = "darwin"
         case "linux":
@@ -120,9 +139,32 @@ public actor ServerDeployer {
 
     private func cleanupOldVersions(host: String) async {
         // Remove old version binaries (keep only current version)
-        let cleanupCmd = "find ~/.redmargin-server -name 'redmargin-server-*' ! -name 'redmargin-server-\(version)' -type f -delete 2>/dev/null || true"
+        let cleanupCmd = """
+            find ~/.redmargin-server -name 'redmargin-server-*' \
+            ! -name 'redmargin-server-\(version)' -type f -delete 2>/dev/null || true
+            """
         _ = try? await ProcessRunner.run(executable: "ssh", arguments: [host, cleanupCmd])
         print("[ServerDeployer] Cleaned up old versions")
+    }
+
+    /// Remove the deployed server binary to force re-deployment
+    public func removeDeployedServer(host: String) async {
+        // Kill any running daemon/proxy processes first
+        let killCmd = "pkill -f redmargin-server 2>/dev/null || true"
+        _ = try? await ProcessRunner.run(
+            executable: "ssh",
+            arguments: sshOptions + [host, killCmd],
+            timeout: sshTimeout
+        )
+
+        // Remove the server directory
+        let removeCmd = "rm -rf ~/.redmargin-server"
+        _ = try? await ProcessRunner.run(
+            executable: "ssh",
+            arguments: sshOptions + [host, removeCmd],
+            timeout: sshTimeout
+        )
+        print("[ServerDeployer] Killed processes and removed server on \(host)")
     }
 }
 

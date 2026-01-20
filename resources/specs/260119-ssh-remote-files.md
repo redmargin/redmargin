@@ -31,8 +31,8 @@ Deploy a headless server binary to the remote host that handles file operations,
 - User opens "Open Remote" dialog (Cmd+Shift+O or File menu)
 - Step 1: Enter server name (hostname from ~/.ssh/config, no user@ needed) and connect
 - Step 2: Browse directories on the server, select a file to open
-- Recent servers shown for quick access
-- App uses SSH ControlMaster for connection multiplexing
+- Recent servers shown for quick access (with delete option)
+- Path input field allows navigating to any directory
 - **Auth Constraint:** Supports only non-interactive authentication (SSH keys, ssh-agent, or ControlMaster).
 - Does **NOT** support password prompts or interactive MFA (no terminal UI). Users must configure `~/.ssh/config` or keys beforehand.
 - **Error Handling:** If `ssh` prompts for input or fails to connect, the app must display an informative error popup to the user (e.g., "SSH connection failed: Authentication required but not configured for non-interactive use").
@@ -70,8 +70,9 @@ Deploy a headless server binary to the remote host that handles file operations,
 
 **UI indicators:**
 
-- Title bar shows `[remote] filename.md` or `host:path/filename.md`
+- Title bar shows `[hostname] /path/to/filename.md`
 - Status indicator shows connection state (connected/reconnecting/error)
+- Connection progress shows: Checking server → Deploying (if needed) → Connecting
 
 ---
 

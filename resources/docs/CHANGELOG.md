@@ -1,5 +1,19 @@
 # Changelog
 
+## 260120 SSH Remote File Improvements
+- Added: Path input field in file browser for navigating to any path (not just home)
+- Added: Delete button (minus icon) to remove servers from recent list
+- Added: Connection status messages during connect (Checking server / Deploying / Connecting)
+- Added: Auto-retry with redeploy when server handshake fails
+- Changed: Window title now shows server name and full path: `[hostname] /path/to/file`
+- Changed: Path field auto-focused when server connects
+- Changed: Server binary stdout/stderr redirected to prevent RPC corruption
+- Changed: SSH ControlMaster disabled to prevent stale socket issues
+- Changed: Build script now force-kills app if graceful quit fails
+- Fixed: "Session open refused by peer" errors from stale SSH control sockets
+- Fixed: Old daemon processes now killed when deploying new server version
+- Fixed: Daemon/Proxy print statements moved to stderr to prevent protocol corruption
+
 ## 260120 SSH Connection Timeout & Error Handling
 - Added: SSHConnectionError enum with user-friendly error messages
 - Added: Timeout on all SSH operations (30s overall connection, 15s handshake, 30s operations)

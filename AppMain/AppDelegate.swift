@@ -358,8 +358,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         var sheetWindow: NSWindow?
         var hostingController: NSHostingController<OpenRemoteSheet>?
 
+        let recentServersBinding = Binding<[String]>(
+            get: { [weak self] in self?.recentRemoteServers ?? [] },
+            set: { [weak self] newValue in
+                self?.recentRemoteServers = newValue
+                UserDefaults.standard.set(newValue, forKey: self?.recentRemoteKey ?? "")
+            }
+        )
+
         let sheet = OpenRemoteSheet(
-            recentServers: recentRemoteServers,
+            recentServers: recentServersBinding,
             onServerConnected: { [weak self] server in
                 self?.addToRecentRemoteServers(server)
             },
