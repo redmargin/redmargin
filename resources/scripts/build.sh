@@ -17,12 +17,18 @@ if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
     WAS_RUNNING=true
     echo "Redmargin is running; quitting before rebuild..."
     osascript -e "tell application id \"$APP_BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
-    for _ in {1..50}; do
+    for _ in {1..30}; do
         if ! pgrep -x "$APP_NAME" >/dev/null 2>&1; then
             break
         fi
         sleep 0.1
     done
+    # Force kill if still running
+    if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
+        echo "Force killing Redmargin..."
+        pkill -9 -x "$APP_NAME" 2>/dev/null || true
+        sleep 0.5
+    fi
     if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
         echo "Redmargin is still running; refusing to overwrite the app bundle."
         exit 1
@@ -53,11 +59,22 @@ cp WebRenderer/src/checkboxHandler.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/lineNumbers.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/scrollPosition.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/sanitizer.js "$RESOURCES_DIR/WebRenderer/src/"
+cp WebRenderer/src/headingAnchors.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/vendor/*.js "$RESOURCES_DIR/WebRenderer/src/vendor/"
 cp WebRenderer/styles/*.css "$RESOURCES_DIR/WebRenderer/styles/"
 
 echo "Bundling app icon..."
 cp resources/Redmargin.icns "$RESOURCES_DIR/"
+
+echo "Bundling server binaries..."
+mkdir -p "$RESOURCES_DIR/Servers"
+if [ -f "resources/servers/redmargin-server-x86_64-darwin" ]; then
+    cp resources/servers/redmargin-server-x86_64-darwin "$RESOURCES_DIR/Servers/"
+fi
+if [ -f "resources/servers/redmargin-server-x86_64-linux" ]; then
+    cp resources/servers/redmargin-server-x86_64-linux "$RESOURCES_DIR/Servers/"
+fi
+
 /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" "build/Redmargin.app/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string Redmargin" "build/Redmargin.app/Contents/Info.plist"
 
@@ -85,10 +102,8 @@ if [[ "$NO_INSTALL" == "false" ]]; then
     rm -rf /Applications/Redmargin.app 2>/dev/null || true
     mv build/Redmargin.app /Applications/
 
-    if [[ "$WAS_RUNNING" == "true" ]]; then
-        echo "Restarting Redmargin..."
-        open -a Redmargin
-    fi
+    echo "Launching Redmargin..."
+    open -a Redmargin
 fi
 
 echo "Done!"

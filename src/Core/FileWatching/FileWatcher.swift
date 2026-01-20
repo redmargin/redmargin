@@ -1,13 +1,14 @@
 import Foundation
 
-class FileWatcher {
+#if os(macOS)
+public class FileWatcher {
     private var source: DispatchSourceFileSystemObject?
     private var fileDescriptor: Int32 = -1
     private let url: URL
     private let onChange: () -> Void
     private let eventMask: DispatchSource.FileSystemEvent
 
-    init?(url: URL, writeOnly: Bool = false, onChange: @escaping () -> Void) {
+    public init?(url: URL, writeOnly: Bool = false, onChange: @escaping () -> Void) {
         self.url = url
         self.onChange = onChange
         // writeOnly excludes .attrib to avoid loops when file is read (atime updates)
@@ -79,3 +80,5 @@ class FileWatcher {
         }
     }
 }
+#endif
+

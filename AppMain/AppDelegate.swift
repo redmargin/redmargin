@@ -2,28 +2,13 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 import RedmarginLib
+import RedmarginCore
 
-extension Notification.Name {
-    static let toggleLineNumbers = Notification.Name("RedMargin.toggleLineNumbers")
-    static let refreshDocument = Notification.Name("RedMargin.refreshDocument")
-    static let showFindBar = Notification.Name("RedMargin.showFindBar")
-    static let findNext = Notification.Name("RedMargin.findNext")
-    static let findPrevious = Notification.Name("RedMargin.findPrevious")
-    static let printDocument = Notification.Name("RedMargin.printDocument")
-}
-
-extension URL {
-    var displayPath: String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        if path.hasPrefix(home) {
-            return "~" + path.dropFirst(home.count)
-        }
-        return path
-    }
-}
+// Notification.Name and URL extensions are in AppDelegateExtensions.swift
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     private var documentWindows: [URL: NSWindow] = [:]
+    var remoteDocumentWindows: [RemoteLocation: NSWindow] = [:]
     private var launchedWithFiles = false
     private var launchURLs: [URL] = []
 
@@ -42,16 +27,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     private let savedURLsKey = "RedMargin.OpenDocumentURLs"
     private let recentURLsKey = "RedMargin.RecentDocumentURLs"
+    let recentRemoteKey = "RedMargin.RecentRemoteConnections"
+    let recentRemoteLocationsKey = "RedMargin.RecentRemoteLocations"
     private let windowOrderKey = "RedMargin.WindowOrder"
     private let scrollPositionsKey = "RedMargin.ScrollPositions"
+    private let remoteScrollPositionsKey = "RedMargin.RemoteScrollPositions"
     private let lineNumbersKey = "RedMargin.DocumentLineNumbers"
-    private let maxRecentDocuments = 10
+    let maxRecentDocuments = 10
 
     @Published var recentDocuments: [URL] = []
+    @Published var recentRemoteServers: [String] = []
+    @Published var recentRemoteLocations: [RemoteLocation] = []
 
     override init() {
         super.init()
         recentDocuments = loadRecentDocuments()
+        recentRemoteServers = loadRecentRemoteServers()
+        recentRemoteLocations = loadRecentRemoteLocations()
     }
 
     // MARK: - App Lifecycle
@@ -61,8 +53,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         BookmarkManager.shared.cleanupStaleBookmarks()
         _ = openPanel  // Pre-initialize to avoid delay on first open
 
-        // Always restore previously open documents, even when launched via `open -a`.
-        // Files opened via command line will appear on top of restored documents.
         let savedURLs = restoreSavedURLs()
         if !savedURLs.isEmpty {
             let orderedPaths = UserDefaults.standard.stringArray(forKey: windowOrderKey) ?? []
@@ -80,7 +70,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             showOpenPanel()
         }
 
-        // Bring command-line files to front after restoring other documents
         for url in launchURLs {
             documentWindows[url]?.makeKeyAndOrderFront(nil)
         }
@@ -97,6 +86,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         UserDefaults.standard.set(orderedURLs.map { $0.path }, forKey: windowOrderKey)
 
         BookmarkManager.shared.stopAccessingAll()
+
+        for (_, window) in remoteDocumentWindows {
+            window.close()
+        }
+        remoteDocumentWindows.removeAll()
+
+        Task {
+            await SSHConnectionManager.shared.disconnectAll()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -132,15 +130,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         guard let paths = UserDefaults.standard.stringArray(forKey: savedURLsKey) else { return [] }
         return paths.compactMap { path -> URL? in
             let url = URL(fileURLWithPath: path)
-
-            // Try to resolve bookmark first for sandboxed access
             if let resolvedURL = BookmarkManager.shared.resolveBookmark(for: url) {
                 if BookmarkManager.shared.startAccessing(resolvedURL) {
                     return resolvedURL
                 }
             }
-
-            // Fall back to direct file access (works when not sandboxed)
             guard FileManager.default.fileExists(atPath: path) else { return nil }
             return url
         }
@@ -161,7 +155,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         guard let paths = UserDefaults.standard.stringArray(forKey: recentURLsKey) else { return [] }
         return paths.compactMap { path -> URL? in
             let url = URL(fileURLWithPath: path)
-            // Check if file exists (bookmark will be resolved when opening)
             guard FileManager.default.fileExists(atPath: path) else { return nil }
             return url
         }
@@ -170,6 +163,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     func clearRecentDocuments() {
         recentDocuments = []
         UserDefaults.standard.removeObject(forKey: recentURLsKey)
+    }
+
+    func loadRecentRemoteServers() -> [String] {
+        UserDefaults.standard.stringArray(forKey: recentRemoteKey) ?? []
+    }
+
+    func loadRecentRemoteLocations() -> [RemoteLocation] {
+        guard let data = UserDefaults.standard.data(forKey: recentRemoteLocationsKey) else { return [] }
+        return (try? JSONDecoder().decode([RemoteLocation].self, from: data)) ?? []
+    }
+
+    func saveRecentRemoteLocations() {
+        if let data = try? JSONEncoder().encode(recentRemoteLocations) {
+            UserDefaults.standard.set(data, forKey: recentRemoteLocationsKey)
+        }
     }
 
     // MARK: - Document Management
@@ -199,8 +207,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     func openDocument(_ url: URL) {
         addToRecentDocuments(url)
-
-        // Create security-scoped bookmark for sandboxed access
         BookmarkManager.shared.createBookmark(for: url)
 
         if let existingWindow = documentWindows[url] {
@@ -209,8 +215,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             return
         }
 
-        let content = (try? String(contentsOf: url, encoding: .utf8))
-            ?? "Error loading file"
+        let content = (try? String(contentsOf: url, encoding: .utf8)) ?? "Error loading file"
 
         let documentView = DocumentWindowContent(
             content: content,
@@ -224,8 +229,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let window = createWindow(for: url, rootView: documentView)
         documentWindows[url] = window
         window.delegate = self
+
+        // Start hidden, show when content renders
+        window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        // Listen for content ready notification
+        let observerBox = ReferenceBox<NSObjectProtocol?>(nil)
+        observerBox.value = NotificationCenter.default.addObserver(
+            forName: .windowContentReady,
+            object: nil,
+            queue: .main
+        ) { [weak window] notification in
+            guard let notificationURL = notification.userInfo?["fileURL"] as? URL,
+                  notificationURL == url else { return }
+
+            // Remove observer after firing
+            if let obs = observerBox.value {
+                NotificationCenter.default.removeObserver(obs)
+            }
+
+            // Fade in window
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                window?.animator().alphaValue = 1
+            }
+        }
     }
 
     private func createWindow(for url: URL, rootView: DocumentWindowContent) -> NSWindow {
@@ -260,6 +290,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         documentWindows = documentWindows.filter { $0.value !== window }
+        remoteDocumentWindows = remoteDocumentWindows.filter { $0.value !== window }
     }
 
     // MARK: - Scroll Position Persistence
@@ -273,6 +304,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private func loadScrollPosition(for url: URL) -> Double {
         let positions = UserDefaults.standard.dictionary(forKey: scrollPositionsKey) as? [String: Double] ?? [:]
         return positions[url.path] ?? 0
+    }
+
+    func saveScrollPosition(_ position: Double, for location: RemoteLocation) {
+        var positions = UserDefaults.standard.dictionary(
+            forKey: remoteScrollPositionsKey
+        ) as? [String: Double] ?? [:]
+        positions[location.storageKey] = position
+        UserDefaults.standard.set(positions, forKey: remoteScrollPositionsKey)
+    }
+
+    func loadScrollPosition(for location: RemoteLocation) -> Double {
+        let positions = UserDefaults.standard.dictionary(
+            forKey: remoteScrollPositionsKey
+        ) as? [String: Double] ?? [:]
+        return positions[location.storageKey] ?? 0
     }
 
     // MARK: - Per-Document Line Numbers Persistence
@@ -335,4 +381,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     @objc func toggleLineNumbers(_ sender: Any?) {
         NotificationCenter.default.post(name: .toggleLineNumbers, object: nil)
     }
+}
+
+// Helper to avoid sendable closure warning with notification observer
+private class ReferenceBox<T> {
+    var value: T
+    init(_ value: T) { self.value = value }
 }

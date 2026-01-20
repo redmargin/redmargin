@@ -3,19 +3,17 @@ import WebKit
 import RedmarginLib
 import RedmarginCore
 
-struct DocumentWindowContent: View {
-    @StateObject private var state: DocumentState
+struct RemoteDocumentWindowContent: View {
+    @StateObject private var state: RemoteDocumentState
     @StateObject private var findController = FindController()
     @ObservedObject private var prefs = PreferencesManager.shared
     @Environment(\.colorScheme) private var systemColorScheme
-    @State private var showLineNumbers: Bool
+    @State private var showLineNumbers: Bool = false
     @State private var showFindBar: Bool = false
     @State private var findBarFocusTrigger: UUID = UUID()
-    let initialScrollPosition: Double
-    let onScrollPositionChange: (Double) -> Void
     weak var appDelegate: AppDelegate?
 
-    var fileURL: URL { state.fileURL }
+    let location: RemoteLocation
 
     private var effectiveTheme: String {
         switch prefs.theme {
@@ -29,7 +27,6 @@ struct DocumentWindowContent: View {
     }
 
     private var shouldShowGutter: Bool {
-        // Show gutter if we have git changes (it's a repo), or if preference says show for non-repo
         if state.gitChanges != nil {
             return true
         }
@@ -38,43 +35,42 @@ struct DocumentWindowContent: View {
 
     init(
         content: String,
-        fileURL: URL,
-        initialScrollPosition: Double = 0,
-        showLineNumbers: Bool = false,
-        appDelegate: AppDelegate? = nil,
-        onScrollPositionChange: @escaping (Double) -> Void = { _ in }
+        location: RemoteLocation,
+        fileProvider: RemoteFileProvider,
+        appDelegate: AppDelegate? = nil
     ) {
-        _state = StateObject(wrappedValue: DocumentState(content: content, fileURL: fileURL))
-        _showLineNumbers = State(initialValue: showLineNumbers)
-        self.initialScrollPosition = initialScrollPosition
+        self.location = location
         self.appDelegate = appDelegate
-        self.onScrollPositionChange = onScrollPositionChange
+        _state = StateObject(wrappedValue: RemoteDocumentState(
+            content: content,
+            location: location,
+            fileProvider: fileProvider
+        ))
     }
 
     var body: some View {
         ZStack(alignment: .top) {
             MarkdownWebView(
                 markdown: state.content,
-                fileURL: fileURL,
+                fileURL: URL(fileURLWithPath: location.path),
                 onCheckboxToggle: state.handleCheckboxToggle,
-                onScrollPositionChange: onScrollPositionChange,
-                onFirstRenderComplete: {
-                    NotificationCenter.default.post(
-                        name: .windowContentReady,
-                        object: nil,
-                        userInfo: ["fileURL": fileURL]
-                    )
+                onScrollPositionChange: { [weak appDelegate] position in
+                    appDelegate?.saveScrollPosition(position, for: location)
                 },
-                initialScrollPosition: initialScrollPosition,
+                initialScrollPosition: appDelegate?.loadScrollPosition(for: location) ?? 0,
                 showLineNumbers: showLineNumbers,
                 gitChanges: state.gitChanges,
                 findController: findController,
                 theme: effectiveTheme,
                 inlineCodeColor: prefs.inlineCodeColor.rawValue,
                 allowRemoteImages: prefs.allowRemoteImages,
-                showGutter: shouldShowGutter,
-                cacheBust: state.refreshToken
+                showGutter: shouldShowGutter
             )
+
+            // Connection status overlay
+            if state.connectionState != .connected {
+                connectionStatusOverlay
+            }
 
             if state.isRefreshing {
                 VStack {
@@ -118,7 +114,7 @@ struct DocumentWindowContent: View {
         .onReceive(NotificationCenter.default.publisher(for: .showFindBar)) { _ in
             if isKeyWindow {
                 showFindBar = true
-                findBarFocusTrigger = UUID()  // Trigger refocus
+                findBarFocusTrigger = UUID()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .findNext)) { _ in
@@ -136,9 +132,6 @@ struct DocumentWindowContent: View {
                 executePrint()
             }
         }
-        .onChange(of: showLineNumbers) { _, newValue in
-            appDelegate?.saveLineNumbersVisible(newValue, for: fileURL)
-        }
         .onChange(of: findController.searchText) { _, newValue in
             findController.find(newValue)
         }
@@ -147,14 +140,63 @@ struct DocumentWindowContent: View {
             dismissFindBar()
             return .handled
         }
+        .alert("Remote File Changed", isPresented: $state.showConflictDialog) {
+            Button("Overwrite Remote") {
+                state.resolveConflictKeepLocalToggle()
+            }
+            Button("Reload from Server", role: .destructive) {
+                state.resolveConflictReloadFromServer()
+            }
+        } message: {
+            Text("The file on the server changed while you were disconnected, and you have a pending checkbox toggle. Choose how to resolve this conflict.")
+        }
+    }
+
+    @ViewBuilder
+    private var connectionStatusOverlay: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                VStack(spacing: 8) {
+                    switch state.connectionState {
+                    case .reconnecting:
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Reconnecting...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    case .disconnected:
+                        Image(systemName: "wifi.slash")
+                            .foregroundColor(.red)
+                        Text("Disconnected")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    case .connecting:
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Connecting...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    case .connected:
+                        EmptyView()
+                    }
+                }
+                .padding(16)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                Spacer()
+            }
+            Spacer()
+        }
+        .background(Color.black.opacity(0.3))
     }
 
     private var isKeyWindow: Bool {
         guard let window = NSApp.keyWindow,
-              let hostingController = window.contentViewController as? NSHostingController<DocumentWindowContent> else {
+              let hostingController = window.contentViewController as? NSHostingController<RemoteDocumentWindowContent> else {
             return false
         }
-        return hostingController.rootView.fileURL == fileURL
+        return hostingController.rootView.location == location
     }
 
     private func dismissFindBar() {
@@ -166,7 +208,6 @@ struct DocumentWindowContent: View {
         guard let webView = findController.webView,
               let window = NSApp.mainWindow ?? NSApp.keyWindow else { return }
 
-        // Build print CSS classes based on current document settings
         var classes: [String] = ["print-light-theme"]
         if !shouldShowGutter {
             classes.append("print-hide-gutter")
@@ -176,7 +217,6 @@ struct DocumentWindowContent: View {
         }
 
         let jsCommands: [String] = classes.map { "document.body.classList.add('\($0)');" }
-
         let prepareJS = jsCommands.joined()
 
         webView.evaluateJavaScript(prepareJS) { [weak webView] _, _ in
@@ -185,31 +225,32 @@ struct DocumentWindowContent: View {
             webView.setValue(true, forKey: "drawsBackground")
 
             let printInfo = NSPrintInfo.shared
-            printInfo.paperSize = NSSize(width: 595.28, height: 841.89) // A4
+            printInfo.paperSize = NSSize(width: 595.28, height: 841.89)
             printInfo.topMargin = 56
             printInfo.bottomMargin = 56
             printInfo.leftMargin = self.prefs.printMargin
             printInfo.rightMargin = self.prefs.printMargin
 
             let printOperation = webView.printOperation(with: printInfo)
-            printOperation.jobTitle = self.fileURL.deletingPathExtension().lastPathComponent
+            let filename = (self.location.path as NSString).lastPathComponent
+            printOperation.jobTitle = (filename as NSString).deletingPathExtension
             printOperation.showsPrintPanel = true
             printOperation.showsProgressPanel = true
 
-            let handler = PrintCompletionHandler(webView: webView, printClasses: classes)
+            let handler = RemotePrintCompletionHandler(webView: webView, printClasses: classes)
             objc_setAssociatedObject(printOperation, "handler", handler, .OBJC_ASSOCIATION_RETAIN)
 
             printOperation.runModal(
                 for: window,
                 delegate: handler,
-                didRun: #selector(PrintCompletionHandler.printOperationDidRun(_:success:contextInfo:)),
+                didRun: #selector(RemotePrintCompletionHandler.printOperationDidRun(_:success:contextInfo:)),
                 contextInfo: nil
             )
         }
     }
 }
 
-private class PrintCompletionHandler: NSObject {
+private class RemotePrintCompletionHandler: NSObject {
     private let webView: WKWebView
     private let printClasses: [String]
 
@@ -225,7 +266,6 @@ private class PrintCompletionHandler: NSObject {
         contextInfo: UnsafeMutableRawPointer?
     ) {
         webView.setValue(false, forKey: "drawsBackground")
-
         let cleanupJS = printClasses.map { "document.body.classList.remove('\($0)');" }.joined()
         webView.evaluateJavaScript(cleanupJS, completionHandler: nil)
     }

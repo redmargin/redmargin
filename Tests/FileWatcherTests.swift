@@ -1,8 +1,8 @@
 import XCTest
 import Foundation
+@testable import RedmarginLib
 
 /// Tests for file watching behavior
-/// Note: FileWatcher is in AppMain, so we test the underlying mechanism directly
 final class FileWatcherTests: XCTestCase {
 
     var tempDir: URL!

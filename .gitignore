@@ -14,3 +14,7 @@ default.profraw
 
 # Scratch files
 resources/docs/scratch.md
+*.artifactbundle.tar.gz
+.build-linux
+resources/servers/
+.mcp/

@@ -1,5 +1,6 @@
 import AppKit
 import RedmarginLib
+import RedmarginCore
 
 private var recentMenuDelegate: RecentDocumentsMenuDelegate?
 
@@ -33,6 +34,11 @@ func setupMainMenu(target: AppDelegate) {
     let openItem = NSMenuItem(title: "Open...", action: #selector(AppDelegate.showOpenPanel), keyEquivalent: "o")
     openItem.target = target
     fileMenu.addItem(openItem)
+
+    let openRemoteItem = NSMenuItem(title: "Open Remote...", action: #selector(AppDelegate.showOpenRemoteSheet), keyEquivalent: "O")
+    openRemoteItem.keyEquivalentModifierMask = [.command, .shift]
+    openRemoteItem.target = target
+    fileMenu.addItem(openRemoteItem)
 
     let recentMenu = NSMenu(title: "Open Recent")
     let recentMenuItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
@@ -127,6 +133,7 @@ final class RecentDocumentsMenuDelegate: NSObject, NSMenuDelegate {
 
         guard let appDelegate = appDelegate else { return }
 
+        // Show local files
         for url in appDelegate.recentDocuments {
             let item = NSMenuItem(title: url.displayPath, action: #selector(openRecentDocument(_:)), keyEquivalent: "")
             item.target = self
@@ -134,7 +141,22 @@ final class RecentDocumentsMenuDelegate: NSObject, NSMenuDelegate {
             menu.addItem(item)
         }
 
-        if !appDelegate.recentDocuments.isEmpty {
+        // Show remote files
+        if !appDelegate.recentRemoteLocations.isEmpty {
+            if !appDelegate.recentDocuments.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+            }
+
+            for location in appDelegate.recentRemoteLocations {
+                let item = NSMenuItem(title: location.displayString, action: #selector(openRecentRemoteLocation(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = location
+                menu.addItem(item)
+            }
+        }
+
+        let hasItems = !appDelegate.recentDocuments.isEmpty || !appDelegate.recentRemoteLocations.isEmpty
+        if hasItems {
             menu.addItem(NSMenuItem.separator())
             let clearItem = NSMenuItem(title: "Clear Menu", action: #selector(clearRecentDocuments(_:)), keyEquivalent: "")
             clearItem.target = self
@@ -143,11 +165,38 @@ final class RecentDocumentsMenuDelegate: NSObject, NSMenuDelegate {
     }
 
     @objc private func openRecentDocument(_ sender: NSMenuItem) {
-        guard let url = sender.representedObject as? URL else { return }
-        appDelegate?.openDocument(url)
+        guard let url = sender.representedObject as? URL,
+              let appDelegate = appDelegate else { return }
+
+        // Check if file exists
+        if !FileManager.default.fileExists(atPath: url.path) {
+            // Remove from recents
+            appDelegate.recentDocuments.removeAll { $0 == url }
+            UserDefaults.standard.set(
+                appDelegate.recentDocuments.map { $0.path },
+                forKey: "RedMargin.RecentDocumentURLs"
+            )
+
+            // Show alert
+            let alert = NSAlert()
+            alert.messageText = "File Not Found"
+            alert.informativeText = "The file no longer exists at:\n\(url.path)\n\nIt has been removed from Recent Documents."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+
+        appDelegate.openDocument(url)
+    }
+
+    @objc private func openRecentRemoteLocation(_ sender: NSMenuItem) {
+        guard let location = sender.representedObject as? RemoteLocation else { return }
+        appDelegate?.openRecentRemoteLocation(location)
     }
 
     @objc private func clearRecentDocuments(_ sender: NSMenuItem) {
         appDelegate?.clearRecentDocuments()
+        appDelegate?.clearRecentRemoteLocations()
     }
 }
