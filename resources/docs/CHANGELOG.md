@@ -1,5 +1,12 @@
 # Changelog
 
+## 260120 Remote Recents Bug Fixes
+- Fixed: Remote files from Recents now work (was timing out on stale connections)
+- Fixed: Deleted remote files are now removed from Recents menu
+- Added: Quick SSH check before opening remote file for instant feedback
+- Added: Structured error codes (FILE_NOT_FOUND) instead of text matching
+- Changed: SSHConnectionManager validates process health before reusing connections
+
 ## 260120 Remote Checkbox and File Safety
 - Fixed: Remote checkbox toggle now works reliably (was reverting due to race condition)
 - Fixed: Server writeFile uses POSIX rename() to prevent file deletion on Linux

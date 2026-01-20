@@ -50,7 +50,20 @@ actor FileOperations {
             let content = try String(contentsOf: url, encoding: .utf8)
             return ReadFileResponsePayload(content: content, error: nil)
         } catch {
-            return ReadFileResponsePayload(content: nil, error: error.localizedDescription)
+            let nsError = error as NSError
+            let errorCode: String?
+
+            // CocoaError.fileReadNoSuchFile is code 260 in NSCocoaErrorDomain
+            if nsError.domain == NSCocoaErrorDomain && nsError.code == 260 {
+                errorCode = FileErrorCode.fileNotFound.rawValue
+            } else if nsError.domain == NSCocoaErrorDomain && nsError.code == 257 {
+                // CocoaError.fileReadNoPermission
+                errorCode = FileErrorCode.permissionDenied.rawValue
+            } else {
+                errorCode = nil
+            }
+
+            return ReadFileResponsePayload(content: nil, error: error.localizedDescription, errorCode: errorCode)
         }
     }
 

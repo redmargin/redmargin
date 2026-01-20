@@ -176,13 +176,48 @@ extension AppDelegate {
     func openRecentRemoteLocation(_ location: RemoteLocation) {
         Task {
             do {
+                // Quick check if file exists before establishing full connection
+                let sshArgs = [
+                    "-o", "BatchMode=yes",
+                    "-o", "ConnectTimeout=5",
+                    location.host,
+                    "test -f '\(location.path)'"
+                ]
+                let checkResult = try await ProcessRunner.run(
+                    executable: "/usr/bin/ssh",
+                    arguments: sshArgs,
+                    timeout: 10
+                )
+                if checkResult.exitCode != 0 {
+                    throw RemoteFileError(message: "File does not exist", code: .fileNotFound)
+                }
+
                 let connection = try await SSHConnectionManager.shared.connection(for: location.host)
                 try await openRemoteDocument(connection: connection, path: location.path)
             } catch {
                 await MainActor.run {
+                    let isFileNotFound = (error as? RemoteFileError)?.isFileNotFound == true
+
                     let alert = NSAlert()
-                    alert.messageText = "Failed to open remote file"
-                    alert.informativeText = error.localizedDescription
+
+                    if isFileNotFound {
+                        // Remove from recents since file no longer exists
+                        recentRemoteLocations.removeAll { $0 == location }
+                        saveRecentRemoteLocations()
+
+                        alert.messageText = "File Not Found"
+                        let remotePath = "\(location.host):\(location.path)"
+                        alert.informativeText = """
+                            The file no longer exists at:
+                            \(remotePath)
+
+                            It has been removed from Recent Documents.
+                            """
+                    } else {
+                        alert.messageText = "Failed to open remote file"
+                        alert.informativeText = error.localizedDescription
+                    }
+
                     alert.alertStyle = .warning
                     alert.addButton(withTitle: "OK")
                     alert.runModal()

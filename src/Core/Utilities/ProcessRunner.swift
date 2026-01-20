@@ -24,7 +24,7 @@ public enum ProcessRunner {
     ///   - timeout: Optional timeout in seconds (default: no timeout)
     /// - Returns: ProcessResult with stdout, stderr, and exit code
     /// - Throws: ProcessRunnerError if the process cannot be started or times out
-    static func run(
+    public static func run(
         executable: String,
         arguments: [String] = [],
         workingDirectory: URL? = nil,

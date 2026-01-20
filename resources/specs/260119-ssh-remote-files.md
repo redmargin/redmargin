@@ -773,6 +773,7 @@ protocol FileProvider {
 | Date       | Result | Notes                                                    |
 | ---------- | ------ | -------------------------------------------------------- |
 | 2025-01-20 | Pass   | Build succeeds, checkbox caching + recents implemented   |
+| 2025-01-20 | Pass   | Recents bug fixes: stale connections, deleted file cleanup |
 
 ### Test Environment
 

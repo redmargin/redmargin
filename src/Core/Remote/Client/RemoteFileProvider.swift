@@ -1,5 +1,21 @@
 import Foundation
 
+public struct RemoteFileError: LocalizedError {
+    public let message: String
+    public let code: FileErrorCode?
+
+    public init(message: String, code: FileErrorCode?) {
+        self.message = message
+        self.code = code
+    }
+
+    public var errorDescription: String? { message }
+
+    public var isFileNotFound: Bool {
+        code == .fileNotFound
+    }
+}
+
 public actor RemoteFileProvider: FileProvider {
     private let connection: SSHConnection
     private var watchers: [WatchToken: WatchCallback] = [:]
@@ -36,11 +52,14 @@ public actor RemoteFileProvider: FileProvider {
         let payload = ReadFilePayload(path: path)
         let data = try await connection.send(type: RPCMessageType.readFile.rawValue, payload: payload)
         let response = try JSONDecoder().decode(RPCMessage<ReadFileResponsePayload>.self, from: data)
-        
+
         if let error = response.payload.error {
-            throw NSError(domain: "RemoteFileProvider", code: 1, userInfo: [NSLocalizedDescriptionKey: error])
+            throw RemoteFileError(
+                message: error,
+                code: response.payload.errorCode.flatMap { FileErrorCode(rawValue: $0) }
+            )
         }
-        
+
         return response.payload.content ?? ""
     }
     
