@@ -1,5 +1,14 @@
 import Foundation
 
+/// Result of sync marker detection
+struct SyncMarkerResult {
+    let found: Bool
+    let discarded: Data
+    let remaining: Data
+
+    static let notFound = SyncMarkerResult(found: false, discarded: Data(), remaining: Data())
+}
+
 /// Actor for accumulating data from async callbacks during sync marker detection
 actor SyncMarkerAccumulator {
     private var buffer = Data()
@@ -15,12 +24,15 @@ actor SyncMarkerAccumulator {
         }
     }
 
-    func getResult() -> (found: Bool, discarded: Data, remaining: Data) {
+    func getResult() -> SyncMarkerResult {
         guard foundMarker, let endIndex = markerEndIndex else {
-            return (false, Data(), Data())
+            return .notFound
         }
         let startIndex = buffer.range(of: Self.syncMarkerData)?.lowerBound ?? buffer.startIndex
-        return (true, buffer.prefix(upTo: startIndex), buffer.suffix(from: endIndex))
+        return SyncMarkerResult(
+            found: true,
+            discarded: buffer.prefix(upTo: startIndex),
+            remaining: buffer.suffix(from: endIndex))
     }
 
     func getBuffer() -> Data { buffer }

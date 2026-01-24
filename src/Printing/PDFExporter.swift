@@ -68,10 +68,40 @@ public final class PDFExporter {
 
         // Build CSS classes
         let cssClasses = buildCSSClasses(theme: theme)
-        // Add classes to both html and body elements for full coverage
-        let prepareJS = cssClasses.map {
+
+        // For dark theme, we need to inject a full-page background element
+        // CSS backgrounds don't properly fill print pages in WebKit
+        let bgColor = theme == "dark" ? "#1a1a1a" : "white"
+
+        let classStatements = cssClasses.map {
             "document.documentElement.classList.add('\($0)'); document.body.classList.add('\($0)');"
         }.joined()
+        let bgStyle = [
+            "position: fixed", "top: 0", "left: 0", "width: 100vw", "height: 100vh",
+            "background: \(bgColor)", "z-index: -99999",
+            "-webkit-print-color-adjust: exact", "print-color-adjust: exact"
+        ].joined(separator: "; ")
+
+        let prepareJS = """
+        (function() {
+            // Add CSS classes
+            \(classStatements)
+
+            // Remove any existing print background
+            var existing = document.getElementById('print-page-background');
+            if (existing) existing.remove();
+
+            // Create a full-page background element that will repeat on each page
+            var bg = document.createElement('div');
+            bg.id = 'print-page-background';
+            bg.style.cssText = '\(bgStyle)';
+            document.body.insertBefore(bg, document.body.firstChild);
+
+            // Also set backgrounds directly
+            document.documentElement.style.background = '\(bgColor)';
+            document.body.style.background = '\(bgColor)';
+        })();
+        """
 
         webView.evaluateJavaScript(prepareJS) { _, _ in
             // Enable background drawing
@@ -93,6 +123,7 @@ public final class PDFExporter {
             // Configure for PDF file output
             printInfo.jobDisposition = .save
             printInfo.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = outputURL
+            printInfo.dictionary()[NSPrintInfo.AttributeKey.headerAndFooter] = false
 
             // Create print operation
             let printOperation = webView.printOperation(with: printInfo)
@@ -183,9 +214,23 @@ private class PDFExportCompletionHandler: NSObject {
     ) {
         // Restore WebView state
         webView.setValue(false, forKey: "drawsBackground")
-        let cleanupJS = cssClasses.map {
+        let removeStatements = cssClasses.map {
             "document.documentElement.classList.remove('\($0)'); document.body.classList.remove('\($0)');"
         }.joined()
+        let cleanupJS = """
+        (function() {
+            // Remove CSS classes
+            \(removeStatements)
+
+            // Remove injected background element
+            var bg = document.getElementById('print-page-background');
+            if (bg) bg.remove();
+
+            // Reset inline styles
+            document.documentElement.style.background = '';
+            document.body.style.background = '';
+        })();
+        """
         webView.evaluateJavaScript(cleanupJS, completionHandler: nil)
 
         // Check result

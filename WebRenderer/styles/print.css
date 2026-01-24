@@ -26,13 +26,26 @@
         color: #262627 !important;
     }
 
-    html, body {
+    html {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: visible;
+        border: none;
+    }
+
+    body {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
         /* Margins handled via CSS padding to allow background color in margin area */
         margin: 0;
         padding: 56px 28px;
         box-sizing: border-box;
+        min-height: 100%;
+        overflow: visible;
+        border: none;
     }
 
     /* Force text colors for light theme print */
@@ -89,17 +102,17 @@
         background: #f0f0f0 !important;
     }
 
-    /* Dark theme print - use pure black background for PDF */
+    /* Dark theme print - both html and body need background for full coverage */
     html.print-dark-theme,
     html.print-dark-theme body,
     .print-dark-theme {
-        background: #000000 !important;
-        background-color: #000000 !important;
-        color: var(--text-color) !important;
+        background: #1a1a1a !important;
+        background-color: #1a1a1a !important;
+        color: var(--text-color, #e5e5e5) !important;
     }
 
     @page {
-        background: #000000;
+        margin: 0;
     }
 
     .print-dark-theme * {

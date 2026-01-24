@@ -119,10 +119,10 @@ struct OpenRemoteSheet: View {
 
             Spacer()
 
-            Button(action: { dismissSheet() }) {
+            Button(action: { dismissSheet() }, label: {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundColor(.secondary)
-            }
+            })
             .buttonStyle(.plain)
         }
         .padding()
@@ -241,7 +241,7 @@ struct OpenRemoteSheet: View {
                             Button(action: {
                                 serverName = server
                                 connectToServer()
-                            }) {
+                            }, label: {
                                 HStack {
                                     Image(systemName: "server.rack")
                                         .foregroundColor(.secondary)
@@ -252,7 +252,7 @@ struct OpenRemoteSheet: View {
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 6)
                                 .contentShape(Rectangle())
-                            }
+                            })
                             .buttonStyle(.plain)
 
                             Button(action: {
@@ -263,10 +263,10 @@ struct OpenRemoteSheet: View {
                                         selectedServerIndex = recentServers.isEmpty ? nil : recentServers.count - 1
                                     }
                                 }
-                            }) {
+                            }, label: {
                                 Image(systemName: "minus.circle")
                                     .foregroundColor(.secondary)
-                            }
+                            })
                             .buttonStyle(.plain)
                             .padding(.trailing, 8)
                         }
@@ -401,7 +401,7 @@ struct OpenRemoteSheet: View {
                 }
 
                 ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                    Button(action: { selectEntry(entry) }) {
+                    Button(action: { selectEntry(entry) }, label: {
                         HStack {
                             Image(systemName: entry.isDirectory ? "folder.fill" : fileIcon(for: entry.name))
                                 .foregroundColor(entry.isDirectory ? .blue : .secondary)
@@ -418,7 +418,7 @@ struct OpenRemoteSheet: View {
                         .padding(.horizontal)
                         .padding(.vertical, 6)
                         .contentShape(Rectangle())
-                    }
+                    })
                     .buttonStyle(.plain)
                     .background(selectedFileIndex == index ? Color.accentColor.opacity(0.2) : Color.clear)
 
