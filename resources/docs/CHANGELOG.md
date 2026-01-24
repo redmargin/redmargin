@@ -1,5 +1,12 @@
 # Changelog
 
+## 250124 Export to PDF
+- Added: Export as PDF (Cmd+E) saves directly to Downloads without print dialog
+- Added: Dark theme preserved in exported PDFs
+- Added: Unique filename generation (document.pdf, document-1.pdf, etc.)
+- Added: Progress indicator during export
+- Works with both local and remote documents
+
 ## 260124 Remote Document Improvements
 - Added: Remote image loading via WKURLSchemeHandler (redmargin-remote:// scheme)
 - Added: ReadAsset RPC for fetching binary assets over SSH

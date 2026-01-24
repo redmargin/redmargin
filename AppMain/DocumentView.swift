@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import UserNotifications
 import RedmarginLib
 import RedmarginCore
 
@@ -11,6 +12,7 @@ struct DocumentWindowContent: View {
     @State private var showLineNumbers: Bool
     @State private var showFindBar: Bool = false
     @State private var findBarFocusTrigger: UUID = UUID()
+    @State private var isExporting: Bool = false
     let initialScrollPosition: Double
     let onScrollPositionChange: (Double) -> Void
     weak var appDelegate: AppDelegate?
@@ -76,15 +78,21 @@ struct DocumentWindowContent: View {
                 cacheBust: state.refreshToken
             )
 
-            if state.isRefreshing {
+            if state.isRefreshing || isExporting {
                 VStack {
                     Spacer()
                     HStack {
                         Spacer()
-                        ProgressView()
-                            .scaleEffect(0.8)
-                            .padding(8)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                            Text(isExporting ? "Exporting PDF..." : "Refreshing...")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.primary)
+                        }
+                        .padding(24)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .shadow(radius: 8)
                         Spacer()
                     }
                     Spacer()
@@ -134,6 +142,11 @@ struct DocumentWindowContent: View {
         .onReceive(NotificationCenter.default.publisher(for: .printDocument)) { _ in
             if isKeyWindow {
                 executePrint()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .exportToPDF)) { _ in
+            if isKeyWindow {
+                executeExport()
             }
         }
         .onChange(of: showLineNumbers) { _, newValue in
@@ -206,6 +219,57 @@ struct DocumentWindowContent: View {
                 contextInfo: nil
             )
         }
+    }
+
+    private func executeExport() {
+        guard let webView = findController.webView else { return }
+        guard !isExporting else { return }
+
+        isExporting = true
+        let filename = fileURL.deletingPathExtension().lastPathComponent
+
+        PDFExporter.export(
+            webView: webView,
+            filename: filename,
+            theme: effectiveTheme,
+            printMargin: prefs.printMargin
+        ) { result in
+            DispatchQueue.main.async {
+                self.isExporting = false
+                switch result {
+                case .success(let url):
+                    self.showExportSuccessNotification(url: url)
+                case .failure(let error):
+                    self.showExportErrorAlert(error: error)
+                }
+            }
+        }
+    }
+
+    private func showExportSuccessNotification(url: URL) {
+        let content = UNMutableNotificationContent()
+        content.title = "PDF Exported"
+        content.body = url.lastPathComponent
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil
+        )
+
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    private func showExportErrorAlert(error: Error) {
+        guard let window = NSApp.keyWindow else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Export Failed"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.beginSheetModal(for: window)
     }
 }
 

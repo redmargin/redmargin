@@ -395,6 +395,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         NotificationCenter.default.post(name: .printDocument, object: nil)
     }
 
+    @objc func exportDocument(_ sender: Any?) {
+        NotificationCenter.default.post(name: .exportToPDF, object: nil)
+    }
+
     @objc func showFindBar(_ sender: Any?) {
         NotificationCenter.default.post(name: .showFindBar, object: nil)
     }
