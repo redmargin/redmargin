@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.77.1 (2026-01-24)
+
+### Remote Files via SSH
+- View Markdown files on remote servers via SSH (Cmd+Shift+O)
+- File browser with path navigation, keyboard controls (arrow keys, Enter)
+- Remote images load automatically with in-memory caching
+- Interactive checkboxes sync back to remote files
+- Remote documents appear in File > Open Recent
+- Automatic server deployment - daemon binary uploaded on first connect
+- Connection resilience with auto-reconnect and conflict resolution
+- Supports both Linux and macOS remote hosts
+
+### PDF Export
+- Export to PDF (Cmd+E) saves directly to Downloads folder
+- Preserves current theme (light or dark) in exported PDF
+- Includes Git gutter markers, red margin line, and line numbers
+- Unique filename generation prevents overwrites (document.pdf, document-1.pdf, etc.)
+- Progress indicator during export
+
+### Rendering Improvements
+- Anchor links scroll smoothly to heading targets
+- Image refresh with Cmd+R (cache-busting for updated images)
+- No more white flash when opening documents in dark mode
+
+### Fixes
+- File open dialog now opens instantly
+- Documents passed via command line appear on top of restored windows
+- Remote checkbox toggles no longer revert due to race conditions
+- SSH connections no longer hang on authentication failures
+
+---
+
 ## 260124 Export to PDF
 - Added: Export as PDF (Cmd+E) saves directly to Downloads without print dialog
 - Added: Dark theme preserved in exported PDFs
