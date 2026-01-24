@@ -2,6 +2,7 @@
 .DS_Store
 *.dmg
 *.zip
+RELEASE_NOTES.md
 WebRenderer/node_modules/
 
 # App bundle (build artifact)
