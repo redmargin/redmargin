@@ -2,11 +2,11 @@
 
 ## 260124 Export to PDF
 - Added: Export as PDF (Cmd+E) saves directly to Downloads without print dialog
-- Added: Dark theme preserved in exported PDFs with pure black background
+- Added: Dark theme preserved in exported PDFs
 - Added: Unique filename generation (document.pdf, document-1.pdf, etc.)
 - Added: Progress indicator during export
-- Fixed: White margin around dark theme PDFs (moved margins from print info to CSS padding)
-- Works with both local and remote documents
+- Changed: PDF export now shows gutter (git bars, red margin) and line numbers
+- Note: Known WebKit limitation causes thin white line at top of pages in dark theme
 
 ## 260124 Remote Document Improvements
 - Added: Remote image loading via WKURLSchemeHandler (redmargin-remote:// scheme)

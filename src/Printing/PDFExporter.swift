@@ -180,12 +180,12 @@ public final class PDFExporter {
             classes.append("print-dark-theme")
         }
 
-        // Hide gutter and line numbers for cleaner PDF output
-        classes.append("print-hide-gutter")
-        classes.append("print-hide-line-numbers")
+        // Keep gutter (git bars, red margin) and line numbers visible in PDF
+        // They will be shown exactly as displayed in the app
 
         return classes
     }
+
 }
 
 private class PDFExportCompletionHandler: NSObject {
