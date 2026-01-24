@@ -27,6 +27,14 @@ Run `swiftlint lint --quiet` before building and committing.
 
 ---
 
+## Debugging
+
+- NEVER ask Marco to check Console.app - figure it out yourself
+- Use `log show` command to read system logs programmatically
+- Add debug logging, rebuild, reproduce, read logs via CLI
+
+---
+
 ## MCP Usage
 
 ### Subagent Pattern

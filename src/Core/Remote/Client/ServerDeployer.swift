@@ -3,7 +3,7 @@ import Foundation
 public actor ServerDeployer {
     private let version = "0.77.1" // Match current app version
     private let sshTimeout: TimeInterval = 15 // seconds
-    private let scpTimeout: TimeInterval = 60 // seconds for upload
+    private let scpTimeout: TimeInterval = 120 // seconds for upload (67MB binary)
 
     public init() {}
 
@@ -21,26 +21,38 @@ public actor ServerDeployer {
         let (osName, arch) = try await detectRemotePlatform(host: host)
         let remoteBinaryPath = "~/.redmargin-server/redmargin-server-\(version)"
 
-        // 2. Check if already deployed
+        // 2. Find local binary first (needed for hash comparison)
+        guard let localBinaryURL = findLocalBinary(osName: osName, arch: arch) else {
+            throw ServerDeployerError.unsupportedArchitecture("\(osName) \(arch)")
+        }
+
+        // 3. Check if already deployed AND hash matches local binary
         let checkResult = try await ProcessRunner.run(
             executable: "ssh",
             arguments: sshOptions + [host, "test -x \(remoteBinaryPath)"],
             timeout: sshTimeout
         )
         if checkResult.exitCode == 0 {
-            print("[ServerDeployer] Server already deployed at \(remoteBinaryPath)")
-            return remoteBinaryPath
-        }
-
-        // 3. Find local binary for OS and architecture
-        guard let localBinaryURL = findLocalBinary(osName: osName, arch: arch) else {
-            throw ServerDeployerError.unsupportedArchitecture("\(osName) \(arch)")
+            // Binary exists - check if it matches local version
+            onProgress?("Verifying server on")
+            let needsUpdate = await binaryNeedsUpdate(
+                host: host, remotePath: remoteBinaryPath, localURL: localBinaryURL)
+            if !needsUpdate {
+                print("[ServerDeployer] Server already deployed and up-to-date at \(remoteBinaryPath)")
+                onProgress?("Connecting to")
+                return remoteBinaryPath
+            }
+            print("[ServerDeployer] Server binary outdated, redeploying...")
         }
 
         print("[ServerDeployer] Deploying \(localBinaryURL.lastPathComponent) to \(host)...")
-        onProgress?("Deploying to")
 
-        // 4. Create directory and upload
+        // 4. Kill old daemon FIRST so we can overwrite the binary
+        onProgress?("Stopping old server on")
+        await killOldProcesses(host: host)
+
+        // 5. Create directory and upload
+        onProgress?("Uploading to")
         _ = try await ProcessRunner.run(
             executable: "ssh",
             arguments: sshOptions + [host, "mkdir -p ~/.redmargin-server"],
@@ -56,15 +68,14 @@ public actor ServerDeployer {
             throw ServerDeployerError.uploadFailed(scpResult.stderr)
         }
 
-        // 5. Set executable permissions
+        // 6. Set executable permissions
         _ = try await ProcessRunner.run(
             executable: "ssh",
             arguments: sshOptions + [host, "chmod +x \(remoteBinaryPath)"],
             timeout: sshTimeout
         )
 
-        // 6. Kill old daemon/proxy processes and clean up old binaries
-        await killOldProcesses(host: host)
+        // 7. Clean up old version binaries
         await cleanupOldVersions(host: host)
 
         return remoteBinaryPath
@@ -145,6 +156,57 @@ public actor ServerDeployer {
             """
         _ = try? await ProcessRunner.run(executable: "ssh", arguments: [host, cleanupCmd])
         print("[ServerDeployer] Cleaned up old versions")
+    }
+
+    /// Check if local binary is newer than deployed binary by comparing MD5 hashes
+    private func binaryNeedsUpdate(host: String, remotePath: String, localURL: URL) async -> Bool {
+        // Get local file hash
+        guard let localHash = md5Hash(of: localURL) else {
+            print("[ServerDeployer] Could not hash local binary, will redeploy")
+            return true
+        }
+
+        // Get remote file hash
+        let hashCmd = "md5sum \(remotePath) 2>/dev/null | cut -d' ' -f1"
+        guard let result = try? await ProcessRunner.run(
+            executable: "ssh",
+            arguments: sshOptions + [host, hashCmd],
+            timeout: sshTimeout
+        ), result.exitCode == 0 else {
+            print("[ServerDeployer] Could not get remote hash, will redeploy")
+            return true
+        }
+
+        let remoteHash = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let needsUpdate = localHash != remoteHash
+        if needsUpdate {
+            print("[ServerDeployer] Hash mismatch: local=\(localHash) remote=\(remoteHash)")
+        }
+        return needsUpdate
+    }
+
+    /// Calculate MD5 hash of a file using system md5 command
+    private func md5Hash(of url: URL) -> String? {
+        // Use md5 command on macOS (outputs "MD5 (file) = hash")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/sbin/md5")
+        process.arguments = ["-q", url.path]  // -q for quiet (hash only)
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let hash = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !hash.isEmpty else {
+                return nil
+            }
+            return hash
+        } catch {
+            return nil
+        }
     }
 
     /// Remove the deployed server binary to force re-deployment

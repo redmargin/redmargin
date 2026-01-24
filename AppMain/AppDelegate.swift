@@ -74,12 +74,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
         // Restore remote documents
         if !savedRemoteLocations.isEmpty {
+            print("[AppDelegate] Restoring \(savedRemoteLocations.count) remote documents")
             Task {
                 for location in savedRemoteLocations {
+                    print("[AppDelegate] Restoring: \(location.host):\(location.path)")
                     do {
                         let connection = SSHConnection(host: location.host)
                         try await connection.connect()
                         try await openRemoteDocument(connection: connection, path: location.path)
+                        print("[AppDelegate] Restored: \(location.path)")
                     } catch {
                         print("[AppDelegate] Failed to restore remote document \(location): \(error)")
                     }
@@ -113,11 +116,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             }
         UserDefaults.standard.set(orderedURLs.map { $0.path }, forKey: windowOrderKey)
 
-        // Save open remote locations for restoration on next launch
-        let openRemoteLocations = Array(remoteDocumentWindows.keys)
-        if let data = try? JSONEncoder().encode(openRemoteLocations) {
-            UserDefaults.standard.set(data, forKey: openRemoteLocationsKey)
-        }
+        // Note: Remote locations are saved in applicationShouldTerminate (before windows close)
 
         BookmarkManager.shared.stopAccessingAll()
 
@@ -129,6 +128,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         Task {
             await SSHConnectionManager.shared.disconnectAll()
         }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Save remote locations BEFORE windows close (windowWillClose clears the dict)
+        let openRemoteLocations = Array(remoteDocumentWindows.keys)
+        print("[AppDelegate] applicationShouldTerminate: saving \(openRemoteLocations.count) remote locations")
+        if !openRemoteLocations.isEmpty {
+            if let data = try? JSONEncoder().encode(openRemoteLocations) {
+                UserDefaults.standard.set(data, forKey: openRemoteLocationsKey)
+            }
+        }
+        return .terminateNow
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
