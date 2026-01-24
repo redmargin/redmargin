@@ -78,12 +78,13 @@ public final class PDFExporter {
             webView.setValue(true, forKey: "drawsBackground")
 
             // Create print info for PDF output
+            // Use zero margins - CSS handles padding to avoid white borders in dark theme
             let printInfo = NSPrintInfo()
             printInfo.paperSize = NSSize(width: 595.28, height: 841.89)  // A4
-            printInfo.topMargin = 56
-            printInfo.bottomMargin = 56
-            printInfo.leftMargin = printMargin
-            printInfo.rightMargin = printMargin
+            printInfo.topMargin = 0
+            printInfo.bottomMargin = 0
+            printInfo.leftMargin = 0
+            printInfo.rightMargin = 0
             printInfo.horizontalPagination = .fit
             printInfo.verticalPagination = .automatic
             printInfo.isHorizontallyCentered = false

@@ -1,10 +1,11 @@
 # Changelog
 
-## 250124 Export to PDF
+## 260124 Export to PDF
 - Added: Export as PDF (Cmd+E) saves directly to Downloads without print dialog
-- Added: Dark theme preserved in exported PDFs
+- Added: Dark theme preserved in exported PDFs with pure black background
 - Added: Unique filename generation (document.pdf, document-1.pdf, etc.)
 - Added: Progress indicator during export
+- Fixed: White margin around dark theme PDFs (moved margins from print info to CSS padding)
 - Works with both local and remote documents
 
 ## 260124 Remote Document Improvements

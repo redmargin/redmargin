@@ -29,6 +29,10 @@
     html, body {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
+        /* Margins handled via CSS padding to allow background color in margin area */
+        margin: 0;
+        padding: 56px 28px;
+        box-sizing: border-box;
     }
 
     /* Force text colors for light theme print */
@@ -85,17 +89,17 @@
         background: #f0f0f0 !important;
     }
 
-    /* Dark theme print - preserve dark colors */
+    /* Dark theme print - use pure black background for PDF */
     html.print-dark-theme,
     html.print-dark-theme body,
     .print-dark-theme {
-        background: var(--bg-color) !important;
-        background-color: var(--bg-color) !important;
+        background: #000000 !important;
+        background-color: #000000 !important;
         color: var(--text-color) !important;
     }
 
     @page {
-        background: var(--bg-color);
+        background: #000000;
     }
 
     .print-dark-theme * {
@@ -154,7 +158,8 @@
     /* Adjust content container for print */
     #content-container {
         max-width: none;
-        padding: 0 0 0 32px;
+        padding: 0;
+        margin: 0;
     }
 
     /* When gutter is hidden, let content use full width */
