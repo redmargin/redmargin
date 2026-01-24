@@ -401,7 +401,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationIcon: NSApp.applicationIconImage as Any,
             .applicationName: "Redmargin",
-            .applicationVersion: "0.42.0",
+            .applicationVersion: "0.77.1",
             .version: "",
             .credits: credits
         ])
