@@ -98,7 +98,7 @@ redmargin/
 
 ## Status
 
-v0.42.0 - Feature complete. See `resources/docs/CHANGELOG.md` for version history.
+v0.77.1 - See `resources/docs/CHANGELOG.md` for version history.
 
 ## License
 
