@@ -84,14 +84,14 @@ final class PDFExportTests: XCTestCase {
         XCTAssertFalse(classes.contains("print-light-theme"))
     }
 
-    func testBuildCSSClasses_AlwaysHidesGutterAndLineNumbers() {
+    func testBuildCSSClasses_NeverHidesGutterAndLineNumbers() {
         let lightClasses = PDFExporter.buildCSSClasses(theme: "light")
         let darkClasses = PDFExporter.buildCSSClasses(theme: "dark")
 
-        XCTAssertTrue(lightClasses.contains("print-hide-gutter"))
-        XCTAssertTrue(lightClasses.contains("print-hide-line-numbers"))
-        XCTAssertTrue(darkClasses.contains("print-hide-gutter"))
-        XCTAssertTrue(darkClasses.contains("print-hide-line-numbers"))
+        XCTAssertFalse(lightClasses.contains("print-hide-gutter"))
+        XCTAssertFalse(lightClasses.contains("print-hide-line-numbers"))
+        XCTAssertFalse(darkClasses.contains("print-hide-gutter"))
+        XCTAssertFalse(darkClasses.contains("print-hide-line-numbers"))
     }
 
     // MARK: - Error Tests
