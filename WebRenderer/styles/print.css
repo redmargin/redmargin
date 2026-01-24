@@ -41,7 +41,7 @@
         print-color-adjust: exact;
         /* Margins handled via CSS padding to allow background color in margin area */
         margin: 0;
-        padding: 56px 28px;
+        padding: 0;
         box-sizing: border-box;
         min-height: 100%;
         overflow: visible;
@@ -171,12 +171,13 @@
     /* Adjust content container for print */
     #content-container {
         max-width: none;
-        padding: 0;
+        padding: 0 28px 0 16px;
         margin: 0;
     }
 
     /* When gutter is hidden, let content use full width */
     .print-hide-gutter #content-container {
         margin-left: 0;
+        padding-left: 0;
     }
 }

@@ -1,5 +1,7 @@
 import AppKit
 import WebKit
+import PDFKit
+import CoreGraphics
 import os.log
 
 /// Exports WebView content to PDF without showing a print dialog
@@ -69,35 +71,20 @@ public final class PDFExporter {
         // Build CSS classes
         let cssClasses = buildCSSClasses(theme: theme)
 
-        // For dark theme, we need to inject a full-page background element
-        // CSS backgrounds don't properly fill print pages in WebKit
+        // For dark theme, we use post-processing to fill the background.
+        // We set the document background just for the content area.
         let bgColor = theme == "dark" ? "#1a1a1a" : "white"
 
         let classStatements = cssClasses.map {
             "document.documentElement.classList.add('\($0)'); document.body.classList.add('\($0)');"
         }.joined()
-        let bgStyle = [
-            "position: fixed", "top: 0", "left: 0", "width: 100vw", "height: 100vh",
-            "background: \(bgColor)", "z-index: -99999",
-            "-webkit-print-color-adjust: exact", "print-color-adjust: exact"
-        ].joined(separator: "; ")
 
         let prepareJS = """
         (function() {
             // Add CSS classes
             \(classStatements)
 
-            // Remove any existing print background
-            var existing = document.getElementById('print-page-background');
-            if (existing) existing.remove();
-
-            // Create a full-page background element that will repeat on each page
-            var bg = document.createElement('div');
-            bg.id = 'print-page-background';
-            bg.style.cssText = '\(bgStyle)';
-            document.body.insertBefore(bg, document.body.firstChild);
-
-            // Also set backgrounds directly
+            // Set backgrounds directly
             document.documentElement.style.background = '\(bgColor)';
             document.body.style.background = '\(bgColor)';
         })();
@@ -108,13 +95,17 @@ public final class PDFExporter {
             webView.setValue(true, forKey: "drawsBackground")
 
             // Create print info for PDF output
-            // Use zero margins - CSS handles padding to avoid white borders in dark theme
             let printInfo = NSPrintInfo()
             printInfo.paperSize = NSSize(width: 595.28, height: 841.89)  // A4
-            printInfo.topMargin = 0
-            printInfo.bottomMargin = 0
-            printInfo.leftMargin = 0
-            printInfo.rightMargin = 0
+            
+            // Set margins to ensure correct pagination.
+            // Content will be inset by these margins.
+            // Post-processing will color the margins for dark mode.
+            printInfo.topMargin = 56
+            printInfo.bottomMargin = 56
+            printInfo.leftMargin = 28
+            printInfo.rightMargin = 28
+            
             printInfo.horizontalPagination = .fit
             printInfo.verticalPagination = .automatic
             printInfo.isHorizontallyCentered = false
@@ -135,6 +126,7 @@ public final class PDFExporter {
                 webView: webView,
                 cssClasses: cssClasses,
                 outputURL: outputURL,
+                theme: theme,
                 completion: completion
             )
 
@@ -192,17 +184,20 @@ private class PDFExportCompletionHandler: NSObject {
     private let webView: WKWebView
     private let cssClasses: [String]
     private let outputURL: URL
+    private let theme: String
     private let completion: (PDFExporter.ExportResult) -> Void
 
     init(
         webView: WKWebView,
         cssClasses: [String],
         outputURL: URL,
+        theme: String,
         completion: @escaping (PDFExporter.ExportResult) -> Void
     ) {
         self.webView = webView
         self.cssClasses = cssClasses
         self.outputURL = outputURL
+        self.theme = theme
         self.completion = completion
         super.init()
     }
@@ -222,10 +217,6 @@ private class PDFExportCompletionHandler: NSObject {
             // Remove CSS classes
             \(removeStatements)
 
-            // Remove injected background element
-            var bg = document.getElementById('print-page-background');
-            if (bg) bg.remove();
-
             // Reset inline styles
             document.documentElement.style.background = '';
             document.body.style.background = '';
@@ -235,9 +226,69 @@ private class PDFExportCompletionHandler: NSObject {
 
         // Check result
         if success && FileManager.default.fileExists(atPath: outputURL.path) {
+            // If dark theme, apply background to margins
+            if theme == "dark" {
+                // #1a1a1a is approx 0.102 grayscale or sRGB (26/255)
+                let darkColor = NSColor(srgbRed: 26/255.0, green: 26/255.0, blue: 26/255.0, alpha: 1.0)
+                if let error = applyBackground(to: outputURL, color: darkColor) {
+                    completion(.failure(PDFExporter.ExportError.fileWriteFailed(error)))
+                    return
+                }
+            }
             completion(.success(outputURL))
         } else {
             completion(.failure(PDFExporter.ExportError.pdfCreationFailed("Export was cancelled or failed")))
+        }
+    }
+    
+    private func applyBackground(to url: URL, color: NSColor) -> Error? {
+        guard let document = PDFDocument(url: url) else {
+            return NSError(domain: "com.redmargin.pdf", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open generated PDF"])
+        }
+        
+        let pageCount = document.pageCount
+        guard pageCount > 0 else { return nil }
+        
+        // We will create a new PDF by drawing the old pages onto a background
+        let newPDFData = NSMutableData()
+        guard let consumer = CGDataConsumer(data: newPDFData as CFMutableData) else {
+            return NSError(domain: "com.redmargin.pdf", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create data consumer"])
+        }
+        
+        // Get media box from first page
+        guard let firstPage = document.page(at: 0) else { return nil }
+        var mediaBox = firstPage.bounds(for: .mediaBox)
+        
+        guard let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
+            return NSError(domain: "com.redmargin.pdf", code: 3, userInfo: [NSLocalizedDescriptionKey: "Could not create PDF context"])
+        }
+        
+        // Process each page
+        for i in 0..<pageCount {
+            guard let page = document.page(at: i) else { continue }
+            var pageBounds = page.bounds(for: .mediaBox)
+            
+            context.beginPage(mediaBox: &pageBounds)
+            
+            // Draw background
+            context.setFillColor(color.cgColor)
+            context.fill(pageBounds)
+            
+            // Draw original page content
+            // We use the page's drawing method which renders the page content
+            page.draw(with: .mediaBox, to: context)
+            
+            context.endPage()
+        }
+        
+        context.closePDF()
+        
+        // Write back to file
+        do {
+            try newPDFData.write(to: url, options: .atomic)
+            return nil
+        } catch {
+            return error
         }
     }
 }
