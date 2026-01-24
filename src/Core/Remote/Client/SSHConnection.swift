@@ -510,4 +510,25 @@ public actor SSHConnection {
         }
         return response.payload.entries ?? []
     }
+
+    public func readAsset(path: String) async throws -> (data: Data, mimeType: String) {
+        // Longer timeout for large files (images can be several MB)
+        let responseData = try await send(
+            type: RPCMessageType.readAsset.rawValue,
+            payload: ReadAssetPayload(path: path),
+            timeout: 60
+        )
+        let response = try JSONDecoder().decode(
+            RPCMessage<ReadAssetResponsePayload>.self,
+            from: responseData
+        )
+        if let error = response.payload.error {
+            throw RPCError.serverError(error)
+        }
+        guard let base64Data = response.payload.data,
+              let data = Data(base64Encoded: base64Data) else {
+            throw RPCError.serverError("Invalid asset data")
+        }
+        return (data, response.payload.mimeType ?? "application/octet-stream")
+    }
 }

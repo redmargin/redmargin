@@ -135,6 +135,76 @@ final class MarkdownWebViewTests: XCTestCase {
     }
 }
 
+final class RemoteAssetSchemeHandlerTests: XCTestCase {
+
+    func testSchemeHandlerInterceptsCustomScheme() throws {
+        let expectation = XCTestExpectation(description: "Scheme handler intercepts request")
+
+        // Create a mock fetcher that returns test data
+        // Valid 1x1 transparent PNG (70 bytes)
+        let pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        let testData = Data(base64Encoded: pngBase64)!
+        let fetcher: (String) async throws -> (Data, String)? = { path in
+            print("[Test] Fetcher called with path: \(path)")
+            return (testData, "image/png")
+        }
+
+        // Create configuration with scheme handler
+        let configuration = WKWebViewConfiguration()
+        let schemeHandler = RemoteAssetSchemeHandler(fetchAsset: fetcher)
+        configuration.setURLSchemeHandler(schemeHandler, forURLScheme: RemoteAssetSchemeHandler.scheme)
+
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
+
+        // Load HTML that references an image with our custom scheme
+        let html = """
+        <html>
+        <body>
+        <img id="testImg" src="redmargin-remote:///test/image.png" />
+        <script>
+        document.getElementById('testImg').onload = function() {
+            window.webkit.messageHandlers.testResult.postMessage('loaded');
+        };
+        document.getElementById('testImg').onerror = function() {
+            window.webkit.messageHandlers.testResult.postMessage('error');
+        };
+        </script>
+        </body>
+        </html>
+        """
+
+        // Add message handler to receive result
+        let messageHandler = TestMessageHandler { message in
+            print("[Test] Got message: \(message)")
+            if message == "loaded" {
+                expectation.fulfill()
+            } else {
+                XCTFail("Image failed to load: \(message)")
+                expectation.fulfill()
+            }
+        }
+        configuration.userContentController.add(messageHandler, name: "testResult")
+
+        webView.loadHTMLString(html, baseURL: nil)
+
+        wait(for: [expectation], timeout: 10.0)
+    }
+}
+
+private class TestMessageHandler: NSObject, WKScriptMessageHandler {
+    let onMessage: (String) -> Void
+
+    init(onMessage: @escaping (String) -> Void) {
+        self.onMessage = onMessage
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let body = message.body as? String {
+            onMessage(body)
+        }
+    }
+}
+
 private class TestNavigationDelegate: NSObject, WKNavigationDelegate {
     var onFinish: (() -> Void)?
     var onError: ((Error) -> Void)?

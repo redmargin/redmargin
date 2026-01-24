@@ -1,5 +1,15 @@
 # Changelog
 
+## 260124 Remote Document Improvements
+- Added: Remote image loading via WKURLSchemeHandler (redmargin-remote:// scheme)
+- Added: ReadAsset RPC for fetching binary assets over SSH
+- Added: In-memory asset cache to prevent re-fetching on view updates
+- Added: Remote document restoration on app relaunch
+- Added: Keyboard navigation for file browser entries (up/down arrows, Enter)
+- Changed: File browser defaults to /opt instead of home directory
+- Changed: ReadAsset timeout increased to 60s for large files
+- Fixed: ".." entry now shown on first directory listing (not just after navigation)
+
 ## 260120 Image Refresh and Window Flash Fix
 - Fixed: Image refresh now works with Cmd+R (cache-bust query param on local images)
 - Fixed: White flash when opening documents in dark mode

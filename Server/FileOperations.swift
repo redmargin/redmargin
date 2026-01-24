@@ -67,6 +67,30 @@ actor FileOperations {
         }
     }
 
+    func readAsset(path: String) -> ReadAssetResponsePayload {
+        let expandedPath = NSString(string: path).expandingTildeInPath
+        guard let data = FileManager.default.contents(atPath: expandedPath) else {
+            return ReadAssetResponsePayload(data: nil, mimeType: nil, error: "File not found")
+        }
+        let base64 = data.base64EncodedString()
+        let mimeType = mimeTypeForExtension((expandedPath as NSString).pathExtension)
+        return ReadAssetResponsePayload(data: base64, mimeType: mimeType, error: nil)
+    }
+
+    private func mimeTypeForExtension(_ ext: String) -> String {
+        switch ext.lowercased() {
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "svg": return "image/svg+xml"
+        case "webp": return "image/webp"
+        case "ico": return "image/x-icon"
+        case "bmp": return "image/bmp"
+        case "pdf": return "application/pdf"
+        default: return "application/octet-stream"
+        }
+    }
+
     func writeFile(path: String, content: String) -> WriteFileResponsePayload {
         let url = URL(fileURLWithPath: path)
         let directory = url.deletingLastPathComponent()

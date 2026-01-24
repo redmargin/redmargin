@@ -64,17 +64,48 @@ final class RemoteIntegrationTests: XCTestCase {
     func testControlMasterReuse() async throws {
         let conn1 = SSHConnection(host: "devtest")
         let conn2 = SSHConnection(host: "devtest")
-        
+
         print("[Test] Testing ControlMaster reuse (multiplexing)...")
-        
+
         try await conn1.connect()
         print("[Test] Connection 1 established (Master created)")
-        
+
         try await conn2.connect()
         print("[Test] Connection 2 established (Multiplexed)")
-        
+
         await conn1.disconnect()
         await conn2.disconnect()
         print("[Test] Connections closed.")
+    }
+
+    func testReadAsset() async throws {
+        let connection = SSHConnection(host: "devtest")
+        try await connection.connect()
+
+        let provider = RemoteFileProvider(connection: connection)
+
+        print("[Test] Testing ReadAsset RPC...")
+
+        // Create a test binary file on the remote server
+        let testPath = "/tmp/redmargin-test-asset.png"
+        // Create a minimal valid PNG (1x1 transparent pixel)
+        let pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        _ = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: ["devtest", "echo '\(pngBase64)' | base64 -d > \(testPath)"]
+        )
+
+        // Read the asset via our RPC
+        let (data, mimeType) = try await provider.readAsset(at: testPath)
+
+        print("[Test] Got asset: \(data.count) bytes, mimeType: \(mimeType)")
+        XCTAssertGreaterThan(data.count, 0)
+        XCTAssertEqual(mimeType, "image/png")
+
+        // Cleanup
+        _ = try await ProcessRunner.run(executable: "ssh", arguments: ["devtest", "rm -f \(testPath)"])
+
+        await connection.disconnect()
+        print("[Test] ReadAsset test passed!")
     }
 }

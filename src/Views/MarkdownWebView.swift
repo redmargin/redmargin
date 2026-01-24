@@ -18,6 +18,8 @@ public struct MarkdownWebView: NSViewRepresentable {
     public var allowRemoteImages: Bool
     public var showGutter: Bool
     public var cacheBust: Int  // Token to bust image cache on refresh
+    public var remoteBasePath: String?  // Remote path for custom scheme
+    public var remoteAssetFetcher: ((String) async throws -> (Data, String)?)?
 
     public init(
         markdown: String,
@@ -33,7 +35,9 @@ public struct MarkdownWebView: NSViewRepresentable {
         inlineCodeColor: String = "warm",
         allowRemoteImages: Bool = false,
         showGutter: Bool = true,
-        cacheBust: Int = 0
+        cacheBust: Int = 0,
+        remoteBasePath: String? = nil,
+        remoteAssetFetcher: ((String) async throws -> (Data, String)?)? = nil
     ) {
         self.markdown = markdown
         self.fileURL = fileURL
@@ -49,12 +53,29 @@ public struct MarkdownWebView: NSViewRepresentable {
         self.allowRemoteImages = allowRemoteImages
         self.showGutter = showGutter
         self.cacheBust = cacheBust
+        self.remoteBasePath = remoteBasePath
+        self.remoteAssetFetcher = remoteAssetFetcher
     }
 
     public func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.preferences.setValue(false, forKey: "allowFileAccessFromFileURLs")
         configuration.websiteDataStore = WKWebsiteDataStore.nonPersistent()
+
+        // Always register scheme handler that delegates to coordinator
+        // This allows the fetcher to be set/updated later via coordinator
+        let coordinator = context.coordinator
+        let schemeHandler = RemoteAssetSchemeHandler { path in
+            // Delegate to coordinator's fetcher
+            guard let fetcher = coordinator.remoteAssetFetcher else {
+                return nil
+            }
+            return try await fetcher(path)
+        }
+        configuration.setURLSchemeHandler(schemeHandler, forURLScheme: RemoteAssetSchemeHandler.scheme)
+
+        // Set initial fetcher if available
+        coordinator.remoteAssetFetcher = remoteAssetFetcher
 
         let contentController = configuration.userContentController
         contentController.add(context.coordinator, name: "checkboxToggle")
@@ -93,6 +114,7 @@ public struct MarkdownWebView: NSViewRepresentable {
     public func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onCheckboxToggle = onCheckboxToggle
         context.coordinator.onScrollPositionChange = onScrollPositionChange
+        context.coordinator.remoteAssetFetcher = remoteAssetFetcher
 
         // Update content rules if allowRemoteImages preference changed
         if context.coordinator.lastAllowRemoteImages != allowRemoteImages {
@@ -100,7 +122,13 @@ public struct MarkdownWebView: NSViewRepresentable {
             updateContentRules(webView: webView, allowRemoteImages: allowRemoteImages)
         }
 
-        let basePath = fileURL?.deletingLastPathComponent().path ?? ""
+        // Use remote base path with custom scheme, or local file path
+        let basePath: String
+        if let remotePath = remoteBasePath {
+            basePath = "\(RemoteAssetSchemeHandler.scheme)://\(remotePath)"
+        } else {
+            basePath = fileURL?.deletingLastPathComponent().path ?? ""
+        }
         let params = RenderParams(
             markdown: markdown,
             theme: theme,
@@ -269,6 +297,8 @@ extension MarkdownWebView {
         var onScrollPositionChange: ((Double) -> Void)?
         var onFirstRenderComplete: (() -> Void)?
         var initialScrollPosition: Double = 0
+        // Remote asset fetcher - can be updated after WKWebView is created
+        var remoteAssetFetcher: ((String) async throws -> (Data, String)?)?
 
         public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             isLoaded = true

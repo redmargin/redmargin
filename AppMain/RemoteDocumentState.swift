@@ -316,6 +316,10 @@ class RemoteDocumentState: ObservableObject {
         }
     }
 
+    func readAsset(path: String) async throws -> (Data, String) {
+        try await fileProvider.readAsset(at: path)
+    }
+
     func handleCheckboxToggle(line: Int, checked: Bool) {
         // Optimistic UI - update locally first
         var lines = content.components(separatedBy: "\n")
