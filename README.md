@@ -8,7 +8,7 @@ Markdown viewer for macOS with Git diff gutter.
 
 - **Git gutter** - Shows changed/added/deleted lines compared to HEAD
 - **Live Markdown rendering** - View Markdown files as rendered HTML
-- **Remote files** - View and edit Markdown on SSH servers (Cmd+Shift+O)
+- **Remote files** - View Markdown on SSH servers (Cmd+Shift+O)
 - **PDF export** - Export to PDF with theme and gutter preserved (Cmd+E)
 - **Find in page** - Search text with match count and navigation (Cmd+F)
 - **Interactive checkboxes** - Click to toggle task list items, saves immediately
