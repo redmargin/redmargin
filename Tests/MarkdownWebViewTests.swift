@@ -142,7 +142,8 @@ final class RemoteAssetSchemeHandlerTests: XCTestCase {
 
         // Create a mock fetcher that returns test data
         // Valid 1x1 transparent PNG (70 bytes)
-        let pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        let pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAA" +
+            "DUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         let testData = Data(base64Encoded: pngBase64)!
         let fetcher: (String) async throws -> (Data, String)? = { path in
             print("[Test] Fetcher called with path: \(path)")

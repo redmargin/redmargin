@@ -13,12 +13,14 @@ func setupMainMenu(target: AppDelegate) {
     appMenuItem.submenu = appMenu
     mainMenu.addItem(appMenuItem)
 
-    let aboutItem = NSMenuItem(title: "About Redmargin", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
+    let aboutItem = NSMenuItem(
+        title: "About Redmargin", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
     aboutItem.target = target
     appMenu.addItem(aboutItem)
     appMenu.addItem(NSMenuItem.separator())
 
-    let prefsItem = NSMenuItem(title: "Settings...", action: #selector(AppDelegate.showPreferences(_:)), keyEquivalent: ",")
+    let prefsItem = NSMenuItem(
+        title: "Settings...", action: #selector(AppDelegate.showPreferences(_:)), keyEquivalent: ",")
     prefsItem.target = target
     appMenu.addItem(prefsItem)
     appMenu.addItem(NSMenuItem.separator())
@@ -35,7 +37,8 @@ func setupMainMenu(target: AppDelegate) {
     openItem.target = target
     fileMenu.addItem(openItem)
 
-    let openRemoteItem = NSMenuItem(title: "Open Remote...", action: #selector(AppDelegate.showOpenRemoteSheet), keyEquivalent: "O")
+    let openRemoteItem = NSMenuItem(
+        title: "Open Remote...", action: #selector(AppDelegate.showOpenRemoteSheet), keyEquivalent: "O")
     openRemoteItem.keyEquivalentModifierMask = [.command, .shift]
     openRemoteItem.target = target
     fileMenu.addItem(openRemoteItem)
@@ -77,7 +80,8 @@ func setupMainMenu(target: AppDelegate) {
     findNextItem.target = target
     editMenu.addItem(findNextItem)
 
-    let findPrevItem = NSMenuItem(title: "Find Previous", action: #selector(AppDelegate.findPrevious(_:)), keyEquivalent: "G")
+    let findPrevItem = NSMenuItem(
+        title: "Find Previous", action: #selector(AppDelegate.findPrevious(_:)), keyEquivalent: "G")
     findPrevItem.keyEquivalentModifierMask = [.command, .shift]
     findPrevItem.target = target
     editMenu.addItem(findPrevItem)
@@ -88,11 +92,15 @@ func setupMainMenu(target: AppDelegate) {
     viewMenuItem.submenu = viewMenu
     mainMenu.addItem(viewMenuItem)
 
-    let refreshItem = NSMenuItem(title: "Refresh", action: #selector(AppDelegate.refreshDocument(_:)), keyEquivalent: "r")
+    let refreshItem = NSMenuItem(
+        title: "Refresh", action: #selector(AppDelegate.refreshDocument(_:)), keyEquivalent: "r")
     refreshItem.target = target
     viewMenu.addItem(refreshItem)
 
-    let lineNumbersItem = NSMenuItem(title: "Toggle Line Numbers", action: #selector(AppDelegate.toggleLineNumbers(_:)), keyEquivalent: "l")
+    let lineNumbersItem = NSMenuItem(
+        title: "Toggle Line Numbers",
+        action: #selector(AppDelegate.toggleLineNumbers(_:)),
+        keyEquivalent: "l")
     lineNumbersItem.target = target
     viewMenu.addItem(lineNumbersItem)
 
@@ -148,7 +156,10 @@ final class RecentDocumentsMenuDelegate: NSObject, NSMenuDelegate {
             }
 
             for location in appDelegate.recentRemoteLocations {
-                let item = NSMenuItem(title: location.displayString, action: #selector(openRecentRemoteLocation(_:)), keyEquivalent: "")
+                let item = NSMenuItem(
+                    title: location.displayString,
+                    action: #selector(openRecentRemoteLocation(_:)),
+                    keyEquivalent: "")
                 item.target = self
                 item.representedObject = location
                 menu.addItem(item)
@@ -158,7 +169,8 @@ final class RecentDocumentsMenuDelegate: NSObject, NSMenuDelegate {
         let hasItems = !appDelegate.recentDocuments.isEmpty || !appDelegate.recentRemoteLocations.isEmpty
         if hasItems {
             menu.addItem(NSMenuItem.separator())
-            let clearItem = NSMenuItem(title: "Clear Menu", action: #selector(clearRecentDocuments(_:)), keyEquivalent: "")
+            let clearItem = NSMenuItem(
+                title: "Clear Menu", action: #selector(clearRecentDocuments(_:)), keyEquivalent: "")
             clearItem.target = self
             menu.addItem(clearItem)
         }
@@ -180,7 +192,12 @@ final class RecentDocumentsMenuDelegate: NSObject, NSMenuDelegate {
             // Show alert
             let alert = NSAlert()
             alert.messageText = "File Not Found"
-            alert.informativeText = "The file no longer exists at:\n\(url.path)\n\nIt has been removed from Recent Documents."
+            alert.informativeText = """
+                The file no longer exists at:
+                \(url.path)
+
+                It has been removed from Recent Documents.
+                """
             alert.alertStyle = .warning
             alert.addButton(withTitle: "OK")
             alert.runModal()

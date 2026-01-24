@@ -46,7 +46,7 @@ enum Proxy {
 
         // Need to start daemon - use lock file to prevent races
         let lockFD = acquireLock(lockFile: lockFile)
-        defer { releaseLock(fd: lockFD, lockFile: lockFile) }
+        defer { releaseLock(fileDesc: lockFD, lockFile: lockFile) }
 
         // Check again after acquiring lock (another process may have started daemon)
         socketFD = UnixSocketClient.connect(path: socketPath)
@@ -76,40 +76,40 @@ enum Proxy {
         #else
         let flags = O_CREAT | O_RDWR
         #endif
-        let fd = open(lockFile, flags, 0o644)
-        if fd < 0 {
+        let lockFD = open(lockFile, flags, 0o644)
+        if lockFD < 0 {
             fputs("Warning: Could not create lock file\n", stderr)
             return -1
         }
 
         // Try to acquire exclusive lock (blocks if another process has it)
         #if os(Linux)
-        var fl = flock()
-        fl.l_type = Int16(F_WRLCK)
-        fl.l_whence = Int16(SEEK_SET)
-        fl.l_start = 0
-        fl.l_len = 0
-        _ = fcntl(fd, F_SETLKW, &fl)
+        var lockInfo = flock()
+        lockInfo.l_type = Int16(F_WRLCK)
+        lockInfo.l_whence = Int16(SEEK_SET)
+        lockInfo.l_start = 0
+        lockInfo.l_len = 0
+        _ = fcntl(lockFD, F_SETLKW, &lockInfo)
         #else
-        _ = flock(fd, LOCK_EX)
+        _ = flock(lockFD, LOCK_EX)
         #endif
 
-        return fd
+        return lockFD
     }
 
-    private static func releaseLock(fd: Int32, lockFile: String) {
-        if fd >= 0 {
+    private static func releaseLock(fileDesc: Int32, lockFile: String) {
+        if fileDesc >= 0 {
             #if os(Linux)
-            var fl = flock()
-            fl.l_type = Int16(F_UNLCK)
-            fl.l_whence = Int16(SEEK_SET)
-            fl.l_start = 0
-            fl.l_len = 0
-            _ = fcntl(fd, F_SETLKW, &fl)
+            var lockInfo = flock()
+            lockInfo.l_type = Int16(F_UNLCK)
+            lockInfo.l_whence = Int16(SEEK_SET)
+            lockInfo.l_start = 0
+            lockInfo.l_len = 0
+            _ = fcntl(fileDesc, F_SETLKW, &lockInfo)
             #else
-            _ = flock(fd, LOCK_UN)
+            _ = flock(fileDesc, LOCK_UN)
             #endif
-            close(fd)
+            close(fileDesc)
         }
     }
 
@@ -131,7 +131,7 @@ enum Proxy {
         }
 
         group.wait()
-        _ = system_close(socketFD)
+        _ = systemClose(socketFD)
     }
 
     private static func bridgeFileDescriptors(from sourceFD: Int32, to destFD: Int32) {
@@ -140,9 +140,9 @@ enum Proxy {
         defer { buffer.deallocate() }
 
         while true {
-            let count = socket_read(fd: sourceFD, buffer: buffer, count: bufferSize)
+            let count = socketRead(fileDesc: sourceFD, buffer: buffer, count: bufferSize)
             if count <= 0 { break }
-            let written = socket_write(fd: destFD, buffer: buffer, count: count)
+            let written = socketWrite(fileDesc: destFD, buffer: buffer, count: count)
             if written < 0 { break }
         }
     }

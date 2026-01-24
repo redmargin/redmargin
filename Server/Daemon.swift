@@ -58,7 +58,7 @@ enum Daemon {
             DispatchQueue.global().async {
                 let streamHandler = RPCStreamHandler()
                 handleClient(clientFD: clientFD, rpcHandler: rpcHandler, streamHandler: streamHandler)
-                _ = system_close(clientFD)
+                _ = systemClose(clientFD)
                 fputs("Connection closed\n", stderr)
             }
         }
@@ -76,7 +76,7 @@ enum Daemon {
             writeQueue.async {
                 data.withUnsafeBytes { ptr in
                     if let baseAddress = ptr.baseAddress {
-                        _ = socket_write(fd: clientFD, buffer: baseAddress, count: data.count)
+                        _ = socketWrite(fileDesc: clientFD, buffer: baseAddress, count: data.count)
                     }
                 }
             }
@@ -93,7 +93,7 @@ enum Daemon {
         defer { buffer.deallocate() }
 
         while true {
-            let readCount = socket_read(fd: clientFD, buffer: buffer, count: bufferSize)
+            let readCount = socketRead(fileDesc: clientFD, buffer: buffer, count: bufferSize)
             if readCount <= 0 { break }
 
             let data = Data(bytes: buffer, count: readCount)

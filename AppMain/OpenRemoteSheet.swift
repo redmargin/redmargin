@@ -24,7 +24,7 @@ struct OpenRemoteSheet: View {
     @State private var isConnecting = false
     @State private var connectionStatus: String = "Connecting..."
     @State private var errorMessage: String?
-    @State private var selectedServerIndex: Int? = nil
+    @State private var selectedServerIndex: Int?
     @FocusState private var isServerFieldFocused: Bool
 
     // Step 2: File browsing
@@ -36,7 +36,7 @@ struct OpenRemoteSheet: View {
     @State private var pathHistory: [String] = []
     @State private var usePathEntry = false
     @State private var manualPath: String = ""
-    @State private var selectedFileIndex: Int? = nil  // -1 = "..", 0+ = entries index
+    @State private var selectedFileIndex: Int?  // -1 = "..", 0+ = entries index
     @FocusState private var isPathFieldFocused: Bool
 
     @Binding var recentServers: [String]
@@ -71,21 +71,21 @@ struct OpenRemoteSheet: View {
             footer
         }
         .frame(width: 500, height: 450)
-        .onKeyPress(.downArrow) { handleArrowNavigation(.down) }
-        .onKeyPress(.upArrow) { handleArrowNavigation(.up) }
+        .onKeyPress(.downArrow) { handleArrowNavigation(.downward) }
+        .onKeyPress(.upArrow) { handleArrowNavigation(.upward) }
         .onKeyPress(.return) { handleEnterKey() }
         // Ctrl+N/Ctrl+P for navigation (works in TextField unlike arrow keys)
         .onKeyPress(keys: [KeyEquivalent("n")], phases: .down) { press in
             guard press.modifiers.contains(.control) else { return .ignored }
-            return handleArrowNavigation(.down)
+            return handleArrowNavigation(.downward)
         }
         .onKeyPress(keys: [KeyEquivalent("p")], phases: .down) { press in
             guard press.modifiers.contains(.control) else { return .ignored }
-            return handleArrowNavigation(.up)
+            return handleArrowNavigation(.upward)
         }
     }
 
-    private enum NavDirection { case up, down }
+    private enum NavDirection { case upward, downward }
 
     private func handleEnterKey() -> KeyPress.Result {
         // File browser mode
@@ -176,7 +176,7 @@ struct OpenRemoteSheet: View {
         // Server selection mode
         if connection == nil && !isConnecting && !recentServers.isEmpty {
             switch direction {
-            case .down:
+            case .downward:
                 if let current = selectedServerIndex {
                     selectedServerIndex = min(current + 1, recentServers.count - 1)
                 } else {
@@ -186,7 +186,7 @@ struct OpenRemoteSheet: View {
                     serverName = recentServers[index]
                 }
                 return .handled
-            case .up:
+            case .upward:
                 if let current = selectedServerIndex {
                     selectedServerIndex = max(current - 1, 0)
                 } else {
@@ -208,14 +208,14 @@ struct OpenRemoteSheet: View {
             guard maxIndex >= minIndex else { return .ignored }
 
             switch direction {
-            case .down:
+            case .downward:
                 if let current = selectedFileIndex {
                     selectedFileIndex = min(current + 1, maxIndex)
                 } else {
                     selectedFileIndex = minIndex
                 }
                 return .handled
-            case .up:
+            case .upward:
                 if let current = selectedFileIndex {
                     selectedFileIndex = max(current - 1, minIndex)
                 } else {

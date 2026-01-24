@@ -158,7 +158,10 @@ struct RemoteDocumentWindowContent: View {
                 state.resolveConflictReloadFromServer()
             }
         } message: {
-            Text("The file on the server changed while you were disconnected, and you have a pending checkbox toggle. Choose how to resolve this conflict.")
+            Text("""
+                The file on the server changed while you were disconnected, \
+                and you have a pending checkbox toggle. Choose how to resolve this conflict.
+                """)
         }
     }
 
@@ -202,8 +205,9 @@ struct RemoteDocumentWindowContent: View {
     }
 
     private var isKeyWindow: Bool {
-        guard let window = NSApp.keyWindow,
-              let hostingController = window.contentViewController as? NSHostingController<RemoteDocumentWindowContent> else {
+        guard let window = NSApp.keyWindow else { return false }
+        typealias HostingVC = NSHostingController<RemoteDocumentWindowContent>
+        guard let hostingController = window.contentViewController as? HostingVC else {
             return false
         }
         return hostingController.rootView.location == location
