@@ -48,23 +48,52 @@ xcrun notarytool submit "$DMG_PATH" --keychain-profile "redmargin-notarize" --wa
 echo "==> Stapling notarization ticket..."
 xcrun stapler staple "$DMG_PATH"
 
+echo "==> Generating release notes..."
+CHANGELOG="$PROJECT_DIR/resources/docs/CHANGELOG.md"
+RELEASE_NOTES="$PROJECT_DIR/RELEASE_NOTES.md"
+
+# Extract latest changelog entry (first ## section after header)
+LATEST_ENTRY=$(awk '/^## [0-9]/{if(found) exit; found=1} found{print}' "$CHANGELOG")
+ENTRY_BODY=$(echo "$LATEST_ENTRY" | tail -n +2)
+
+cat > "$RELEASE_NOTES" << EOF
+## What's New in $VERSION
+
+$ENTRY_BODY
+
+---
+
+Redmargin is a Markdown viewer for macOS with Git diff gutter, remote file support via SSH, and PDF export.
+
+**Requirements:** macOS 14.0 (Sonoma) or later
+EOF
+
+echo "==> Tagging v$VERSION..."
+if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+    echo "Tag v$VERSION already exists, skipping"
+else
+    git tag -a "v$VERSION" -m "Version $VERSION"
+fi
+
 echo ""
 echo "Release prepared: $DMG_PATH"
 echo ""
-echo "Test the DMG, then press Enter to publish v$VERSION to GitHub (Ctrl+C to cancel)"
-read -r
-
-echo "==> Creating tag and pushing..."
-git tag "v$VERSION"
-git push public "v$VERSION"
-
-echo "==> Waiting for release workflow..."
-sleep 5
-RUN_ID=$(gh run list --repo redmargin/redmargin --limit 1 --json databaseId --jq '.[0].databaseId')
-gh run watch "$RUN_ID" --repo redmargin/redmargin
-
-echo "==> Uploading DMG..."
-gh release upload "v$VERSION" "$DMG_NAME" --repo redmargin/redmargin
-
+read -p "Push tag and upload DMG to GitHub? [y/N] " -n 1 -r
 echo ""
-echo "Released: https://github.com/redmargin/redmargin/releases/tag/v$VERSION"
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "==> Pushing tag v$VERSION..."
+    git push public "v$VERSION"
+
+    echo "==> Waiting for GitHub Actions to create release..."
+    sleep 10
+
+    echo "==> Uploading DMG..."
+    gh release upload "v$VERSION" "$DMG_NAME" --repo redmargin/redmargin --clobber
+
+    echo ""
+    echo "Done! https://github.com/redmargin/redmargin/releases/tag/v$VERSION"
+else
+    echo "Skipped. To publish manually:"
+    echo "  git push public v$VERSION"
+    echo "  gh release upload v$VERSION $DMG_NAME --repo redmargin/redmargin --clobber"
+fi
