@@ -19,62 +19,112 @@
         display: none !important;
     }
 
-    /* Reset body for print */
-    html, body {
+    /* Reset body for print - only when not preserving dark theme */
+    body:not(.print-dark-theme) html,
+    body:not(.print-dark-theme) {
         background: white !important;
         color: #262627 !important;
+    }
+
+    html, body {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
 
-    /* Force all text to be dark */
-    * {
+    /* Force text colors for light theme print */
+    body:not(.print-dark-theme) * {
         color: #262627 !important;
     }
 
-    a {
+    body:not(.print-dark-theme) a {
         color: #2563eb !important;
     }
 
-    /* Inline code - print-friendly */
-    code {
+    /* Inline code - light theme print */
+    body:not(.print-dark-theme) code {
         color: #b45309 !important;
         background: #f5f5f5 !important;
         border: 0.5px solid #ddd !important;
         padding: 1px 4px !important;
     }
 
-    /* Code blocks - print-friendly */
-    pre {
+    /* Code blocks - light theme print */
+    body:not(.print-dark-theme) pre {
         background: #f8f8f8 !important;
         border: 1px solid #ddd !important;
+    }
+
+    pre {
         page-break-inside: avoid;
         break-inside: avoid;
     }
 
-    pre code {
+    body:not(.print-dark-theme) pre code {
         background: transparent !important;
         border: none !important;
         padding: 0 !important;
     }
 
-    /* Tables - print-friendly (no dark backgrounds) */
+    /* Tables - light theme print */
     table {
         border-collapse: collapse !important;
         page-break-inside: auto;
         break-inside: auto;
     }
 
-    th, td {
+    body:not(.print-dark-theme) th,
+    body:not(.print-dark-theme) td {
         border: 1px solid #999 !important;
         padding: 6px 10px !important;
         background: white !important;
         color: #262627 !important;
     }
 
-    th {
+    body:not(.print-dark-theme) th {
         font-weight: 600 !important;
         background: #f0f0f0 !important;
+    }
+
+    /* Dark theme print - preserve dark colors */
+    html.print-dark-theme,
+    html.print-dark-theme body,
+    .print-dark-theme {
+        background: var(--bg-color) !important;
+        background-color: var(--bg-color) !important;
+        color: var(--text-color) !important;
+    }
+
+    @page {
+        background: var(--bg-color);
+    }
+
+    .print-dark-theme * {
+        color: inherit;
+    }
+
+    .print-dark-theme a {
+        color: var(--link-color) !important;
+    }
+
+    .print-dark-theme code {
+        color: var(--code-text) !important;
+        background: var(--code-bg) !important;
+    }
+
+    .print-dark-theme pre {
+        background: var(--pre-bg) !important;
+        border-color: var(--pre-border) !important;
+    }
+
+    .print-dark-theme th,
+    .print-dark-theme td {
+        border-color: var(--table-border) !important;
+        background: inherit !important;
+        color: var(--text-color) !important;
+    }
+
+    .print-dark-theme th {
+        background: var(--table-header-bg) !important;
     }
 
     /* Avoid breaking table rows */

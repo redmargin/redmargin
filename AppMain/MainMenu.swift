@@ -56,6 +56,11 @@ func setupMainMenu(target: AppDelegate) {
     printItem.target = target
     fileMenu.addItem(printItem)
 
+    let exportItem = NSMenuItem(
+        title: "Export as PDF", action: #selector(AppDelegate.exportDocument(_:)), keyEquivalent: "e")
+    exportItem.target = target
+    fileMenu.addItem(exportItem)
+
     fileMenu.addItem(NSMenuItem.separator())
 
     let closeItem = NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
