@@ -4,19 +4,19 @@ import RedmarginCore
 class RPCHandler {
     let fileOperations = FileOperations()
     let gitOperations = GitOperations()
-    
+
     func handle(_ data: Data) async -> Data? {
         // 1. Decode Header
         guard let header = try? JSONDecoder().decode(RPCHeader.self, from: data) else {
             print("Failed to decode RPC header")
             return nil
         }
-        
+
         guard let type = RPCMessageType(rawValue: header.type) else {
             print("Unknown RPC message type: \(header.type)")
             return nil
         }
-        
+
         do {
             switch type {
             case .hello:
@@ -48,7 +48,7 @@ class RPCHandler {
             return nil
         }
     }
-    
+
     private func handleHello(_ data: Data) async throws -> Data {
         let msg = try JSONDecoder().decode(RPCMessage<HelloPayload>.self, from: data)
         let responsePayload = HelloResponsePayload(
@@ -102,7 +102,7 @@ class RPCHandler {
             payload: responsePayload
         )
     }
-    
+
     private func handleWatchFile(_ data: Data) async throws -> Data {
         let msg = try JSONDecoder().decode(RPCMessage<WatchFilePayload>.self, from: data)
         let token = await fileOperations.watchFile(path: msg.payload.path)
@@ -112,7 +112,7 @@ class RPCHandler {
             payload: WatchFileResponsePayload(token: token)
         )
     }
-    
+
     private func handleUnwatchFile(_ data: Data) async throws -> Data {
         let msg = try JSONDecoder().decode(RPCMessage<UnwatchFilePayload>.self, from: data)
         let success = await fileOperations.unwatchFile(token: msg.payload.token)
@@ -122,7 +122,7 @@ class RPCHandler {
             payload: UnwatchFileResponsePayload(success: success)
         )
     }
-    
+
     private func handleGitDetectRepo(_ data: Data) async throws -> Data {
         let msg = try JSONDecoder().decode(RPCMessage<GitDetectRepoPayload>.self, from: data)
         let repoRoot = await gitOperations.detectRepo(path: msg.payload.path)
@@ -132,7 +132,7 @@ class RPCHandler {
             payload: GitDetectRepoResponsePayload(repoRoot: repoRoot)
         )
     }
-    
+
     private func handleGitDiff(_ data: Data) async throws -> Data {
         let msg = try JSONDecoder().decode(RPCMessage<GitDiffPayload>.self, from: data)
         let responsePayload = await gitOperations.diff(path: msg.payload.path, repoRoot: msg.payload.repoRoot)
@@ -142,7 +142,7 @@ class RPCHandler {
             payload: responsePayload
         )
     }
-    
+
     private func handleWatchGitRepo(_ data: Data) async throws -> Data {
         let msg = try JSONDecoder().decode(RPCMessage<WatchGitRepoPayload>.self, from: data)
         let token = await gitOperations.watchRepo(repoRoot: msg.payload.repoRoot)

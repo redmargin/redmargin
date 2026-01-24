@@ -99,7 +99,7 @@ class RemoteDocumentState: ObservableObject {
                     if let pending = pendingToggle {
                         if serverChanged {
                             // Conflict: server changed AND we have pending toggle
-                            print("[RemoteDocumentState] Conflict detected - server changed while we had pending toggle")
+                            print("[RemoteDocumentState] Conflict - server changed with pending toggle")
                             showConflictDialog = true
                         } else {
                             // No conflict: apply pending toggle

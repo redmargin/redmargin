@@ -248,7 +248,11 @@ public actor SSHConnection {
 
         // Wait for sync marker - discard any shell initialization output (.bashrc, etc.)
         print("[SSHConnection] Waiting for sync marker...")
-        try await waitForSyncMarker(stdout: outPipe.fileHandleForReading, process: process, stderrCollector: stderrCollector, errPipe: errPipe)
+        try await waitForSyncMarker(
+            stdout: outPipe.fileHandleForReading,
+            process: process,
+            stderrCollector: stderrCollector,
+            errPipe: errPipe)
         print("[SSHConnection] Sync marker received, starting protocol")
 
         // Start reading loop

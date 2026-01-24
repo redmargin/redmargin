@@ -5,7 +5,7 @@ actor SyncMarkerAccumulator {
     private var buffer = Data()
     private var foundMarker = false
     private var markerEndIndex: Data.Index?
-    private static let syncMarkerData = "REDMARGIN_SYNC_7f3d9a\n".data(using: .utf8)!
+    private static let syncMarkerData = Data("REDMARGIN_SYNC_7f3d9a\n".utf8)
 
     func append(_ data: Data, marker: Data) {
         buffer.append(data)
