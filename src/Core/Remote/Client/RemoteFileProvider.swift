@@ -50,7 +50,7 @@ public actor RemoteFileProvider: FileProvider {
 
     public func readFile(at path: String) async throws -> String {
         let payload = ReadFilePayload(path: path)
-        let data = try await connection.send(type: RPCMessageType.readFile.rawValue, payload: payload)
+        let data = try await connection.send(type: RPCMessageType.readFile.rawValue, payload: payload, timeout: 30)
         let response = try JSONDecoder().decode(RPCMessage<ReadFileResponsePayload>.self, from: data)
 
         if let error = response.payload.error {
@@ -105,14 +105,14 @@ public actor RemoteFileProvider: FileProvider {
 
     public func detectGitRepo(for path: String) async throws -> String? {
         let payload = GitDetectRepoPayload(path: path)
-        let data = try await connection.send(type: RPCMessageType.gitDetectRepo.rawValue, payload: payload)
+        let data = try await connection.send(type: RPCMessageType.gitDetectRepo.rawValue, payload: payload, timeout: 20)
         let response = try JSONDecoder().decode(RPCMessage<GitDetectRepoResponsePayload>.self, from: data)
         return response.payload.repoRoot
     }
 
     public func gitDiff(for path: String, repoRoot: String) async throws -> GitChangeResult {
         let payload = GitDiffPayload(path: path, repoRoot: repoRoot)
-        let data = try await connection.send(type: RPCMessageType.gitDiff.rawValue, payload: payload)
+        let data = try await connection.send(type: RPCMessageType.gitDiff.rawValue, payload: payload, timeout: 20)
         let response = try JSONDecoder().decode(RPCMessage<GitDiffResponsePayload>.self, from: data)
 
         if let error = response.payload.error {
@@ -139,19 +139,26 @@ public actor RemoteFileProvider: FileProvider {
     }
 
     private func handlePushEvent(_ data: Data) {
+        print("[RemoteFileProvider] handlePushEvent called, data size: \(data.count)")
         if let msg = try? JSONDecoder().decode(RPCMessage<FileChangedPayload>.self, from: data),
            msg.type == RPCMessageType.fileChanged.rawValue {
-
+            print("[RemoteFileProvider] File changed event: \(msg.payload.path)")
             let callbacks = watchers.values.filter { $0.path == msg.payload.path }
+            print("[RemoteFileProvider] Found \(callbacks.count) watchers for path")
             for item in callbacks {
                 item.callback()
             }
         } else if let msg = try? JSONDecoder().decode(RPCMessage<GitChangedPayload>.self, from: data),
                   msg.type == RPCMessageType.gitChanged.rawValue {
-
+            print("[RemoteFileProvider] Git changed event: \(msg.payload.repoRoot)")
             let callbacks = watchers.values.filter { $0.path == msg.payload.repoRoot }
+            print("[RemoteFileProvider] Found \(callbacks.count) watchers for repo")
             for item in callbacks {
                 item.callback()
+            }
+        } else {
+            if let text = String(data: data, encoding: .utf8) {
+                print("[RemoteFileProvider] Unknown push event: \(text.prefix(200))")
             }
         }
     }

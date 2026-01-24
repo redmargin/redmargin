@@ -82,11 +82,15 @@ enum Daemon {
             }
         }
 
-        // Setup event handlers
+        // Setup event handlers SYNCHRONOUSLY before processing any requests
+        // This prevents race condition where watchFile request is processed before handlers are set
+        let semaphore = DispatchSemaphore(value: 0)
         Task {
             await rpcHandler.fileOperations.setEventHandler(sendData)
             await rpcHandler.gitOperations.setEventHandler(sendData)
+            semaphore.signal()
         }
+        semaphore.wait()
 
         let bufferSize = 4096
         let buffer = UnsafeMutableRawPointer.allocate(byteCount: bufferSize, alignment: 1)

@@ -29,10 +29,11 @@ struct RemoteDocumentWindowContent: View {
     }
 
     private var shouldShowGutter: Bool {
-        if state.gitChanges != nil {
-            return true
-        }
-        return prefs.gutterVisibilityForNonRepo == .showEmpty
+        let hasGitChanges = state.gitChanges != nil
+        let prefShowEmpty = prefs.gutterVisibilityForNonRepo == .showEmpty
+        let result = hasGitChanges || prefShowEmpty
+        print("[RemoteDoc] shouldShowGutter: \(result) (gitChanges=\(hasGitChanges), pref=\(prefShowEmpty))")
+        return result
     }
 
     init(
@@ -162,7 +163,10 @@ struct RemoteDocumentWindowContent: View {
             appDelegate?.saveLineNumbersVisible(newValue, for: location)
         }
         .onAppear {
-            showLineNumbers = appDelegate?.loadLineNumbersVisible(for: location) ?? false
+            let loaded = appDelegate?.loadLineNumbersVisible(for: location)
+            showLineNumbers = loaded ?? false
+            let hasDelegate = appDelegate != nil
+            print("[RemoteDoc] onAppear: lineNumbers=\(String(describing: loaded)), delegate=\(hasDelegate)")
         }
         .onKeyPress(.escape) {
             guard showFindBar else { return .ignored }
