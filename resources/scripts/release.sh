@@ -53,7 +53,8 @@ CHANGELOG="$PROJECT_DIR/resources/docs/CHANGELOG.md"
 RELEASE_NOTES="$PROJECT_DIR/RELEASE_NOTES.md"
 
 # Extract latest changelog entry (first ## section after header)
-LATEST_ENTRY=$(awk '/^## [0-9]/{if(found) exit; found=1} found{print}' "$CHANGELOG")
+# Matches both "## v0.77.1" (version) and "## 260124" (date) formats
+LATEST_ENTRY=$(awk '/^## [v0-9]/{if(found) exit; found=1} found{print}' "$CHANGELOG")
 ENTRY_BODY=$(echo "$LATEST_ENTRY" | tail -n +2)
 
 cat > "$RELEASE_NOTES" << EOF
