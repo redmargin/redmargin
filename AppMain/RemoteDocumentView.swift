@@ -48,6 +48,10 @@ struct RemoteDocumentWindowContent: View {
         ))
     }
 
+    private var remoteBasePath: String {
+        (location.path as NSString).deletingLastPathComponent
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             MarkdownWebView(
@@ -64,7 +68,13 @@ struct RemoteDocumentWindowContent: View {
                 theme: effectiveTheme,
                 inlineCodeColor: prefs.inlineCodeColor.rawValue,
                 allowRemoteImages: prefs.allowRemoteImages,
-                showGutter: shouldShowGutter
+                showGutter: shouldShowGutter,
+                remoteBasePath: remoteBasePath,
+                remoteAssetFetcher: { [weak state] path in
+                    guard let state = state else { return nil }
+                    let result = try await state.readAsset(path: path)
+                    return result
+                }
             )
 
             // Connection status overlay

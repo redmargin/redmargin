@@ -99,6 +99,10 @@ public actor RemoteFileProvider: FileProvider {
         }
     }
     
+    public func readAsset(at path: String) async throws -> (data: Data, mimeType: String) {
+        try await connection.readAsset(path: path)
+    }
+
     public func detectGitRepo(for path: String) async throws -> String? {
         let payload = GitDetectRepoPayload(path: path)
         let data = try await connection.send(type: RPCMessageType.gitDetectRepo.rawValue, payload: payload)

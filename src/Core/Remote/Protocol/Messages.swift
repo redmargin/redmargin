@@ -7,6 +7,8 @@ public enum RPCMessageType: String, Codable {
     case listDirectoryResponse = "ListDirectoryResponse"
     case readFile = "ReadFile"
     case readFileResponse = "ReadFileResponse"
+    case readAsset = "ReadAsset"
+    case readAssetResponse = "ReadAssetResponse"
     case writeFile = "WriteFile"
     case writeFileResponse = "WriteFileResponse"
     case watchFile = "WatchFile"
@@ -120,8 +122,30 @@ public struct WriteFilePayload: Codable {
 
 public struct WriteFileResponsePayload: Codable {
     public let error: String?
-    
+
     public init(error: String?) {
+        self.error = error
+    }
+}
+
+// MARK: - Asset Reading (binary files)
+
+public struct ReadAssetPayload: Codable {
+    public let path: String
+
+    public init(path: String) {
+        self.path = path
+    }
+}
+
+public struct ReadAssetResponsePayload: Codable {
+    public let data: String?      // base64 encoded binary
+    public let mimeType: String?
+    public let error: String?
+
+    public init(data: String?, mimeType: String?, error: String?) {
+        self.data = data
+        self.mimeType = mimeType
         self.error = error
     }
 }

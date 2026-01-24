@@ -39,11 +39,17 @@
         // Add cache-bust query param if provided (for refresh)
         const cacheBustSuffix = cacheBust ? `?_cb=${cacheBust}` : '';
 
+        // Check if basePath already has a scheme (e.g., redmargin-remote://)
+        const hasScheme = basePath.includes('://');
+
         return html.replace(
             /(<img[^>]+src=["'])(?!https?:\/\/|data:)([^"']+)(["'])/gi,
             function(match, prefix, src, suffix) {
                 if (src.startsWith('/')) return match;
-                const resolvedPath = `file://${basePath}/${src}${cacheBustSuffix}`;
+                // If basePath already has scheme, use it directly; otherwise add file://
+                const resolvedPath = hasScheme
+                    ? `${basePath}/${src}${cacheBustSuffix}`
+                    : `file://${basePath}/${src}${cacheBustSuffix}`;
                 return prefix + resolvedPath + suffix;
             }
         );

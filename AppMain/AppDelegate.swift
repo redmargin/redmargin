@@ -29,6 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private let recentURLsKey = "RedMargin.RecentDocumentURLs"
     let recentRemoteKey = "RedMargin.RecentRemoteConnections"
     let recentRemoteLocationsKey = "RedMargin.RecentRemoteLocations"
+    private let openRemoteLocationsKey = "RedMargin.OpenRemoteLocations"
     private let windowOrderKey = "RedMargin.WindowOrder"
     private let scrollPositionsKey = "RedMargin.ScrollPositions"
     private let remoteScrollPositionsKey = "RedMargin.RemoteScrollPositions"
@@ -54,6 +55,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         _ = openPanel  // Pre-initialize to avoid delay on first open
 
         let savedURLs = restoreSavedURLs()
+        let savedRemoteLocations = restoreOpenRemoteLocations()
+
         if !savedURLs.isEmpty {
             let orderedPaths = UserDefaults.standard.stringArray(forKey: windowOrderKey) ?? []
             let orderedURLs = orderedPaths.compactMap { path -> URL? in
@@ -66,13 +69,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             for url in allURLsOrdered.reversed() {
                 openDocument(url)
             }
-        } else if !launchedWithFiles {
+        }
+
+        // Restore remote documents
+        if !savedRemoteLocations.isEmpty {
+            Task {
+                for location in savedRemoteLocations {
+                    do {
+                        let connection = SSHConnection(host: location.host)
+                        try await connection.connect()
+                        try await openRemoteDocument(connection: connection, path: location.path)
+                    } catch {
+                        print("[AppDelegate] Failed to restore remote document \(location): \(error)")
+                    }
+                }
+            }
+        }
+
+        if savedURLs.isEmpty && savedRemoteLocations.isEmpty && !launchedWithFiles {
             showOpenPanel()
         }
 
         for url in launchURLs {
             documentWindows[url]?.makeKeyAndOrderFront(nil)
         }
+    }
+
+    private func restoreOpenRemoteLocations() -> [RemoteLocation] {
+        guard let data = UserDefaults.standard.data(forKey: openRemoteLocationsKey) else { return [] }
+        // Clear after reading so we don't restore again if app crashes during restore
+        UserDefaults.standard.removeObject(forKey: openRemoteLocationsKey)
+        return (try? JSONDecoder().decode([RemoteLocation].self, from: data)) ?? []
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -84,6 +111,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
                 documentWindows.first { $0.value === window }?.key
             }
         UserDefaults.standard.set(orderedURLs.map { $0.path }, forKey: windowOrderKey)
+
+        // Save open remote locations for restoration on next launch
+        let openRemoteLocations = Array(remoteDocumentWindows.keys)
+        if let data = try? JSONEncoder().encode(openRemoteLocations) {
+            UserDefaults.standard.set(data, forKey: openRemoteLocationsKey)
+        }
 
         BookmarkManager.shared.stopAccessingAll()
 

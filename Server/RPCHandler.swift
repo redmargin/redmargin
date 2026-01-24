@@ -25,6 +25,8 @@ class RPCHandler {
                 return try await handleListDirectory(data)
             case .readFile:
                 return try await handleReadFile(data)
+            case .readAsset:
+                return try await handleReadAsset(data)
             case .writeFile:
                 return try await handleWriteFile(data)
             case .watchFile:
@@ -80,7 +82,17 @@ class RPCHandler {
             payload: responsePayload
         )
     }
-    
+
+    private func handleReadAsset(_ data: Data) async throws -> Data {
+        let msg = try JSONDecoder().decode(RPCMessage<ReadAssetPayload>.self, from: data)
+        let responsePayload = await fileOperations.readAsset(path: msg.payload.path)
+        return try RPCStreamHandler.encode(
+            id: msg.id,
+            type: RPCMessageType.readAssetResponse.rawValue,
+            payload: responsePayload
+        )
+    }
+
     private func handleWriteFile(_ data: Data) async throws -> Data {
         let msg = try JSONDecoder().decode(RPCMessage<WriteFilePayload>.self, from: data)
         let responsePayload = await fileOperations.writeFile(path: msg.payload.path, content: msg.payload.content)

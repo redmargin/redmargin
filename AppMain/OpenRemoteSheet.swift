@@ -24,6 +24,7 @@ struct OpenRemoteSheet: View {
     @State private var isConnecting = false
     @State private var connectionStatus: String = "Connecting..."
     @State private var errorMessage: String?
+    @State private var selectedServerIndex: Int? = nil
     @FocusState private var isServerFieldFocused: Bool
 
     // Step 2: File browsing
@@ -35,6 +36,7 @@ struct OpenRemoteSheet: View {
     @State private var pathHistory: [String] = []
     @State private var usePathEntry = false
     @State private var manualPath: String = ""
+    @State private var selectedFileIndex: Int? = nil  // -1 = "..", 0+ = entries index
     @FocusState private var isPathFieldFocused: Bool
 
     @Binding var recentServers: [String]
@@ -69,6 +71,36 @@ struct OpenRemoteSheet: View {
             footer
         }
         .frame(width: 500, height: 450)
+        .onKeyPress(.downArrow) { handleArrowNavigation(.down) }
+        .onKeyPress(.upArrow) { handleArrowNavigation(.up) }
+        .onKeyPress(.return) { handleEnterKey() }
+        // Ctrl+N/Ctrl+P for navigation (works in TextField unlike arrow keys)
+        .onKeyPress(keys: [KeyEquivalent("n")], phases: .down) { press in
+            guard press.modifiers.contains(.control) else { return .ignored }
+            return handleArrowNavigation(.down)
+        }
+        .onKeyPress(keys: [KeyEquivalent("p")], phases: .down) { press in
+            guard press.modifiers.contains(.control) else { return .ignored }
+            return handleArrowNavigation(.up)
+        }
+    }
+
+    private enum NavDirection { case up, down }
+
+    private func handleEnterKey() -> KeyPress.Result {
+        // File browser mode
+        if connection != nil && !isLoadingDirectory {
+            guard let index = selectedFileIndex else { return .ignored }
+            if index == -1 {
+                // ".." selected
+                navigateUp()
+                return .handled
+            } else if index >= 0 && index < entries.count {
+                selectEntry(entries[index])
+                return .handled
+            }
+        }
+        return .ignored
     }
 
     // MARK: - Header
@@ -139,6 +171,63 @@ struct OpenRemoteSheet: View {
         .padding()
     }
 
+    // Handle arrow navigation - called from body
+    private func handleArrowNavigation(_ direction: NavDirection) -> KeyPress.Result {
+        // Server selection mode
+        if connection == nil && !isConnecting && !recentServers.isEmpty {
+            switch direction {
+            case .down:
+                if let current = selectedServerIndex {
+                    selectedServerIndex = min(current + 1, recentServers.count - 1)
+                } else {
+                    selectedServerIndex = 0
+                }
+                if let index = selectedServerIndex {
+                    serverName = recentServers[index]
+                }
+                return .handled
+            case .up:
+                if let current = selectedServerIndex {
+                    selectedServerIndex = max(current - 1, 0)
+                } else {
+                    selectedServerIndex = recentServers.count - 1
+                }
+                if let index = selectedServerIndex {
+                    serverName = recentServers[index]
+                }
+                return .handled
+            }
+        }
+
+        // File browser mode
+        if connection != nil && !isLoadingDirectory {
+            let hasParent = currentPath != "/" && !currentPath.isEmpty
+            let minIndex = hasParent ? -1 : 0  // -1 = ".."
+            let maxIndex = entries.count - 1
+
+            guard maxIndex >= minIndex else { return .ignored }
+
+            switch direction {
+            case .down:
+                if let current = selectedFileIndex {
+                    selectedFileIndex = min(current + 1, maxIndex)
+                } else {
+                    selectedFileIndex = minIndex
+                }
+                return .handled
+            case .up:
+                if let current = selectedFileIndex {
+                    selectedFileIndex = max(current - 1, minIndex)
+                } else {
+                    selectedFileIndex = maxIndex
+                }
+                return .handled
+            }
+        }
+
+        return .ignored
+    }
+
     private var recentServersView: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Recent:")
@@ -147,7 +236,7 @@ struct OpenRemoteSheet: View {
 
             ScrollView {
                 VStack(spacing: 4) {
-                    ForEach(recentServers, id: \.self) { server in
+                    ForEach(Array(recentServers.enumerated()), id: \.element) { index, server in
                         HStack {
                             Button(action: {
                                 serverName = server
@@ -168,6 +257,12 @@ struct OpenRemoteSheet: View {
 
                             Button(action: {
                                 recentServers.removeAll { $0 == server }
+                                // Adjust selection if needed
+                                if let selected = selectedServerIndex {
+                                    if selected >= recentServers.count {
+                                        selectedServerIndex = recentServers.isEmpty ? nil : recentServers.count - 1
+                                    }
+                                }
                             }) {
                                 Image(systemName: "minus.circle")
                                     .foregroundColor(.secondary)
@@ -175,6 +270,12 @@ struct OpenRemoteSheet: View {
                             .buttonStyle(.plain)
                             .padding(.trailing, 8)
                         }
+                        .background(
+                            selectedServerIndex == index
+                                ? Color.accentColor.opacity(0.2)
+                                : Color.clear
+                        )
+                        .cornerRadius(4)
                     }
                 }
             }
@@ -280,8 +381,8 @@ struct OpenRemoteSheet: View {
     private var fileList: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                // Parent directory entry
-                if !pathHistory.isEmpty {
+                // Parent directory entry - show if not at root
+                if currentPath != "/" && !currentPath.isEmpty {
                     Button(action: navigateUp) {
                         HStack {
                             Image(systemName: "folder.fill")
@@ -295,10 +396,11 @@ struct OpenRemoteSheet: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .background(selectedFileIndex == -1 ? Color.accentColor.opacity(0.2) : Color.clear)
                     Divider().padding(.leading, 40)
                 }
 
-                ForEach(entries) { entry in
+                ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                     Button(action: { selectEntry(entry) }) {
                         HStack {
                             Image(systemName: entry.isDirectory ? "folder.fill" : fileIcon(for: entry.name))
@@ -318,8 +420,9 @@ struct OpenRemoteSheet: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .background(selectedFileIndex == index ? Color.accentColor.opacity(0.2) : Color.clear)
 
-                    if entry.id != entries.last?.id {
+                    if index < entries.count - 1 {
                         Divider().padding(.leading, 40)
                     }
                 }
@@ -406,28 +509,40 @@ struct OpenRemoteSheet: View {
                 let homeDir = try await conn.getHomeDirectory()
                 print("[OpenRemoteSheet] Home directory: \(homeDir)")
 
-                // Try to list directory with timeout, fall back to path entry if it fails
+                // Try /opt first as default, fall back to home if it doesn't exist
+                var startPath = "/opt"
                 var dirEntries: [DirectoryEntry] = []
                 var useFallback = false
+
                 do {
-                    print("[OpenRemoteSheet] Listing directory...")
+                    print("[OpenRemoteSheet] Trying /opt...")
                     dirEntries = try await withTimeout(seconds: 5) {
-                        try await conn.listDirectory(path: homeDir)
+                        try await conn.listDirectory(path: "/opt")
                     }
-                    print("[OpenRemoteSheet] Got \(dirEntries.count) entries")
+                    print("[OpenRemoteSheet] Got \(dirEntries.count) entries in /opt")
                 } catch {
-                    print("[OpenRemoteSheet] ListDirectory failed: \(error), using fallback")
-                    useFallback = true
+                    print("[OpenRemoteSheet] /opt failed, trying home directory...")
+                    startPath = homeDir
+                    do {
+                        dirEntries = try await withTimeout(seconds: 5) {
+                            try await conn.listDirectory(path: homeDir)
+                        }
+                        print("[OpenRemoteSheet] Got \(dirEntries.count) entries in home")
+                    } catch {
+                        print("[OpenRemoteSheet] ListDirectory failed: \(error), using fallback")
+                        useFallback = true
+                    }
                 }
 
                 await MainActor.run {
                     self.connection = conn
-                    self.currentPath = homeDir
-                    self.pathInput = homeDir
+                    self.currentPath = startPath
+                    self.pathInput = startPath
                     self.entries = dirEntries
                     self.pathHistory = []
                     self.isConnecting = false
                     self.usePathEntry = useFallback
+                    self.selectedFileIndex = nil
                     self.isPathFieldFocused = true
                 }
             } catch {
@@ -461,8 +576,15 @@ struct OpenRemoteSheet: View {
     }
 
     private func navigateUp() {
-        guard let previousPath = pathHistory.popLast() else { return }
-        loadDirectory(previousPath)
+        if let previousPath = pathHistory.popLast() {
+            loadDirectory(previousPath)
+        } else {
+            // No history - compute parent from current path
+            let parent = (currentPath as NSString).deletingLastPathComponent
+            if !parent.isEmpty && parent != currentPath {
+                loadDirectory(parent)
+            }
+        }
     }
 
     private func loadDirectory(_ path: String) {
@@ -470,6 +592,7 @@ struct OpenRemoteSheet: View {
 
         isLoadingDirectory = true
         errorMessage = nil
+        selectedFileIndex = nil
 
         Task {
             do {
@@ -479,6 +602,7 @@ struct OpenRemoteSheet: View {
                     self.pathInput = path
                     self.entries = dirEntries
                     self.isLoadingDirectory = false
+                    self.selectedFileIndex = nil
                 }
             } catch {
                 await MainActor.run {
