@@ -8,6 +8,8 @@ Markdown viewer for macOS with Git diff gutter.
 
 - **Git gutter** - Shows changed/added/deleted lines compared to HEAD
 - **Live Markdown rendering** - View Markdown files as rendered HTML
+- **Remote files** - View and edit Markdown on SSH servers (Cmd+Shift+O)
+- **PDF export** - Export to PDF with theme and gutter preserved (Cmd+E)
 - **Find in page** - Search text with match count and navigation (Cmd+F)
 - **Interactive checkboxes** - Click to toggle task list items, saves immediately
 - **Preferences** - Theme (light/dark/system), inline code colors, gutter visibility, remote images
@@ -58,8 +60,10 @@ The build script will:
 | Action | Shortcut |
 |--------|----------|
 | Open File | Cmd-O |
-| Preferences | Cmd-, |
+| Open Remote | Cmd-Shift-O |
+| Export PDF | Cmd-E |
 | Print | Cmd-P |
+| Preferences | Cmd-, |
 | Refresh | Cmd-R |
 | Toggle Line Numbers | Cmd-L |
 | Find | Cmd-F |
@@ -74,8 +78,12 @@ redmargin/
 ├── src/                  # Swift library source
 │   ├── App/              # Document management, security
 │   ├── Views/            # SwiftUI views, WebView wrapper
-│   ├── Git/              # Git operations, diff parsing
+│   ├── Core/             # Core functionality
+│   │   ├── Git/          # Git operations, diff parsing
+│   │   ├── Remote/       # SSH client, RPC protocol
+│   │   └── FileProvider/ # Local/remote file abstraction
 │   └── Preferences/      # Settings management
+├── Server/               # Remote daemon (deployed to SSH hosts)
 ├── WebRenderer/          # JavaScript markdown rendering
 │   ├── src/              # markdown-it, sourcepos, sanitizer
 │   ├── styles/           # Light/dark CSS themes
