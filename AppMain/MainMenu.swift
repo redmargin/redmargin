@@ -7,11 +7,22 @@ private var recentMenuDelegate: RecentDocumentsMenuDelegate?
 func setupMainMenu(target: AppDelegate) {
     let mainMenu = NSMenu()
 
-    // App menu
+    mainMenu.addItem(createAppMenu(target: target))
+    mainMenu.addItem(createFileMenu(target: target))
+    mainMenu.addItem(createEditMenu(target: target))
+    mainMenu.addItem(createViewMenu(target: target))
+    mainMenu.addItem(createWindowMenu())
+    mainMenu.addItem(createHelpMenu())
+
+    NSApp.mainMenu = mainMenu
+}
+
+// MARK: - Menu Builders
+
+private func createAppMenu(target: AppDelegate) -> NSMenuItem {
     let appMenu = NSMenu()
     let appMenuItem = NSMenuItem(title: "Redmargin", action: nil, keyEquivalent: "")
     appMenuItem.submenu = appMenu
-    mainMenu.addItem(appMenuItem)
 
     let aboutItem = NSMenuItem(
         title: "About Redmargin", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
@@ -27,11 +38,13 @@ func setupMainMenu(target: AppDelegate) {
 
     appMenu.addItem(withTitle: "Quit Redmargin", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
-    // File menu
+    return appMenuItem
+}
+
+private func createFileMenu(target: AppDelegate) -> NSMenuItem {
     let fileMenu = NSMenu(title: "File")
     let fileMenuItem = NSMenuItem(title: "File", action: nil, keyEquivalent: "")
     fileMenuItem.submenu = fileMenu
-    mainMenu.addItem(fileMenuItem)
 
     let openItem = NSMenuItem(title: "Open...", action: #selector(AppDelegate.showOpenPanel), keyEquivalent: "o")
     openItem.target = target
@@ -66,11 +79,13 @@ func setupMainMenu(target: AppDelegate) {
     let closeItem = NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
     fileMenu.addItem(closeItem)
 
-    // Edit menu
+    return fileMenuItem
+}
+
+private func createEditMenu(target: AppDelegate) -> NSMenuItem {
     let editMenu = NSMenu(title: "Edit")
     let editMenuItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
     editMenuItem.submenu = editMenu
-    mainMenu.addItem(editMenuItem)
 
     editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
     editMenu.addItem(NSMenuItem.separator())
@@ -91,11 +106,13 @@ func setupMainMenu(target: AppDelegate) {
     findPrevItem.target = target
     editMenu.addItem(findPrevItem)
 
-    // View menu
+    return editMenuItem
+}
+
+private func createViewMenu(target: AppDelegate) -> NSMenuItem {
     let viewMenu = NSMenu(title: "View")
     let viewMenuItem = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
     viewMenuItem.submenu = viewMenu
-    mainMenu.addItem(viewMenuItem)
 
     let refreshItem = NSMenuItem(
         title: "Refresh", action: #selector(AppDelegate.refreshDocument(_:)), keyEquivalent: "r")
@@ -109,26 +126,30 @@ func setupMainMenu(target: AppDelegate) {
     lineNumbersItem.target = target
     viewMenu.addItem(lineNumbersItem)
 
-    // Window menu
+    return viewMenuItem
+}
+
+private func createWindowMenu() -> NSMenuItem {
     let windowMenu = NSMenu(title: "Window")
     let windowMenuItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
     windowMenuItem.submenu = windowMenu
-    mainMenu.addItem(windowMenuItem)
 
     windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
     windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
 
     NSApp.windowsMenu = windowMenu
 
-    // Help menu
+    return windowMenuItem
+}
+
+private func createHelpMenu() -> NSMenuItem {
     let helpMenu = NSMenu(title: "Help")
     let helpMenuItem = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
     helpMenuItem.submenu = helpMenu
-    mainMenu.addItem(helpMenuItem)
 
     NSApp.helpMenu = helpMenu
 
-    NSApp.mainMenu = mainMenu
+    return helpMenuItem
 }
 
 // MARK: - Recent Documents Menu Delegate
@@ -146,15 +167,14 @@ final class RecentDocumentsMenuDelegate: NSObject, NSMenuDelegate {
 
         guard let appDelegate = appDelegate else { return }
 
-        // Show local files
         for url in appDelegate.recentDocuments {
-            let item = NSMenuItem(title: url.displayPath, action: #selector(openRecentDocument(_:)), keyEquivalent: "")
+            let item = NSMenuItem(
+                title: url.displayPath, action: #selector(openRecentDocument(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = url
             menu.addItem(item)
         }
 
-        // Show remote files
         if !appDelegate.recentRemoteLocations.isEmpty {
             if !appDelegate.recentDocuments.isEmpty {
                 menu.addItem(NSMenuItem.separator())
@@ -185,16 +205,13 @@ final class RecentDocumentsMenuDelegate: NSObject, NSMenuDelegate {
         guard let url = sender.representedObject as? URL,
               let appDelegate = appDelegate else { return }
 
-        // Check if file exists
         if !FileManager.default.fileExists(atPath: url.path) {
-            // Remove from recents
             appDelegate.recentDocuments.removeAll { $0 == url }
             UserDefaults.standard.set(
                 appDelegate.recentDocuments.map { $0.path },
                 forKey: "RedMargin.RecentDocumentURLs"
             )
 
-            // Show alert
             let alert = NSAlert()
             alert.messageText = "File Not Found"
             alert.informativeText = """

@@ -34,6 +34,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private let scrollPositionsKey = "RedMargin.ScrollPositions"
     private let remoteScrollPositionsKey = "RedMargin.RemoteScrollPositions"
     private let lineNumbersKey = "RedMargin.DocumentLineNumbers"
+    private let remoteLineNumbersKey = "RedMargin.RemoteDocumentLineNumbers"
     let maxRecentDocuments = 10
 
     @Published var recentDocuments: [URL] = []
@@ -365,6 +366,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     func loadLineNumbersVisible(for url: URL) -> Bool {
         let settings = UserDefaults.standard.dictionary(forKey: lineNumbersKey) as? [String: Bool] ?? [:]
         return settings[url.path] ?? false
+    }
+
+    func saveLineNumbersVisible(_ visible: Bool, for location: RemoteLocation) {
+        var settings = UserDefaults.standard.dictionary(
+            forKey: remoteLineNumbersKey
+        ) as? [String: Bool] ?? [:]
+        settings[location.storageKey] = visible
+        UserDefaults.standard.set(settings, forKey: remoteLineNumbersKey)
+    }
+
+    func loadLineNumbersVisible(for location: RemoteLocation) -> Bool {
+        let settings = UserDefaults.standard.dictionary(
+            forKey: remoteLineNumbersKey
+        ) as? [String: Bool] ?? [:]
+        return settings[location.storageKey] ?? false
     }
 
     // MARK: - Menu Actions
