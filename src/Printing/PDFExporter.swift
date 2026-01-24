@@ -97,7 +97,7 @@ public final class PDFExporter {
             // Create print info for PDF output
             let printInfo = NSPrintInfo()
             printInfo.paperSize = NSSize(width: 595.28, height: 841.89)  // A4
-            
+
             // Set margins to ensure correct pagination.
             // Content will be inset by these margins.
             // Post-processing will color the margins for dark mode.
@@ -105,7 +105,7 @@ public final class PDFExporter {
             printInfo.bottomMargin = 56
             printInfo.leftMargin = 28
             printInfo.rightMargin = 28
-            
+
             printInfo.horizontalPagination = .fit
             printInfo.verticalPagination = .automatic
             printInfo.isHorizontallyCentered = false
@@ -240,49 +240,52 @@ private class PDFExportCompletionHandler: NSObject {
             completion(.failure(PDFExporter.ExportError.pdfCreationFailed("Export was cancelled or failed")))
         }
     }
-    
+
     private func applyBackground(to url: URL, color: NSColor) -> Error? {
         guard let document = PDFDocument(url: url) else {
-            return NSError(domain: "com.redmargin.pdf", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open generated PDF"])
+            let info = [NSLocalizedDescriptionKey: "Could not open generated PDF"]
+            return NSError(domain: "com.redmargin.pdf", code: 1, userInfo: info)
         }
-        
+
         let pageCount = document.pageCount
         guard pageCount > 0 else { return nil }
-        
+
         // We will create a new PDF by drawing the old pages onto a background
         let newPDFData = NSMutableData()
         guard let consumer = CGDataConsumer(data: newPDFData as CFMutableData) else {
-            return NSError(domain: "com.redmargin.pdf", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create data consumer"])
+            let info = [NSLocalizedDescriptionKey: "Could not create data consumer"]
+            return NSError(domain: "com.redmargin.pdf", code: 2, userInfo: info)
         }
-        
+
         // Get media box from first page
         guard let firstPage = document.page(at: 0) else { return nil }
         var mediaBox = firstPage.bounds(for: .mediaBox)
-        
+
         guard let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
-            return NSError(domain: "com.redmargin.pdf", code: 3, userInfo: [NSLocalizedDescriptionKey: "Could not create PDF context"])
+            let info = [NSLocalizedDescriptionKey: "Could not create PDF context"]
+            return NSError(domain: "com.redmargin.pdf", code: 3, userInfo: info)
         }
-        
+
         // Process each page
-        for i in 0..<pageCount {
-            guard let page = document.page(at: i) else { continue }
+        for pageIndex in 0..<pageCount {
+            guard let page = document.page(at: pageIndex) else { continue }
             var pageBounds = page.bounds(for: .mediaBox)
-            
+
             context.beginPage(mediaBox: &pageBounds)
-            
+
             // Draw background
             context.setFillColor(color.cgColor)
             context.fill(pageBounds)
-            
+
             // Draw original page content
             // We use the page's drawing method which renders the page content
             page.draw(with: .mediaBox, to: context)
-            
+
             context.endPage()
         }
-        
+
         context.closePDF()
-        
+
         // Write back to file
         do {
             try newPDFData.write(to: url, options: .atomic)

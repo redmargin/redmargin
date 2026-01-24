@@ -158,6 +158,12 @@ struct RemoteDocumentWindowContent: View {
         .onChange(of: findController.searchText) { _, newValue in
             findController.find(newValue)
         }
+        .onChange(of: showLineNumbers) { _, newValue in
+            appDelegate?.saveLineNumbersVisible(newValue, for: location)
+        }
+        .onAppear {
+            showLineNumbers = appDelegate?.loadLineNumbersVisible(for: location) ?? false
+        }
         .onKeyPress(.escape) {
             guard showFindBar else { return .ignored }
             dismissFindBar()
