@@ -9,7 +9,13 @@
         html: true,
         linkify: true,
         typographer: false,
-        breaks: false
+        breaks: false,
+        highlight: function(code, lang) {
+            if (window.highlightCode) {
+                return window.highlightCode(code, lang);
+            }
+            return '';
+        }
     });
 
     md.use(window.markdownitTaskLists, { enabled: true, label: true });
@@ -28,6 +34,10 @@
         const stylesheet = document.getElementById('theme-stylesheet');
         if (stylesheet) {
             stylesheet.href = `../styles/${theme}.css`;
+        }
+        const highlightStylesheet = document.getElementById('highlight-stylesheet');
+        if (highlightStylesheet) {
+            highlightStylesheet.href = `../styles/highlight-${theme}.css`;
         }
         document.body.classList.remove('theme-light', 'theme-dark');
         document.body.classList.add(`theme-${theme}`);
@@ -57,9 +67,18 @@
 
 
     function setGutterVisible(visible) {
+        // Master switch - controls entire gutter including margin line
         const gutterContainer = document.getElementById('gutter-container');
         if (gutterContainer) {
             gutterContainer.style.display = visible ? '' : 'none';
+        }
+    }
+
+    function setGitIndicatorsVisible(visible) {
+        // Controls git change indicators only
+        const gitGutter = document.getElementById('git-gutter');
+        if (gitGutter) {
+            gitGutter.style.display = visible ? '' : 'none';
         }
     }
 
@@ -67,12 +86,13 @@
 
     function render(payload) {
         const { markdown, options = {}, changes = null } = payload;
-        const { theme = 'light', basePath = '', inlineCodeColor = 'warm', showGutter = true, cacheBust = 0 } = options;
+        const { theme = 'light', basePath = '', inlineCodeColor = 'warm', showGutter = true, showGitIndicators = true, cacheBust = 0 } = options;
 
         currentBasePath = basePath;
         setTheme(theme);
         setInlineCodeColor(inlineCodeColor);
         setGutterVisible(showGutter);
+        setGitIndicatorsVisible(showGitIndicators);
 
         // Always store latest changes - RAF callback will use this instead of stale captured value
         latestChanges = changes;

@@ -1,0 +1,22 @@
+/* highlight.js dark theme - GitHub Dark-inspired, matching Redmargin dark theme */
+
+.hljs { color: #c9d1d9; }
+.hljs-comment, .hljs-quote { color: #8b949e; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag { color: #ff7b72; }
+.hljs-string, .hljs-attr, .hljs-template-variable, .hljs-variable, .hljs-template-tag { color: #a5d6ff; }
+.hljs-number, .hljs-literal, .hljs-type, .hljs-params, .hljs-link { color: #79c0ff; }
+.hljs-built_in, .hljs-builtin-name { color: #79c0ff; }
+.hljs-function, .hljs-title, .hljs-title.function_ { color: #d2a8ff; }
+.hljs-class .hljs-title, .hljs-title.class_ { color: #d2a8ff; }
+.hljs-name, .hljs-section, .hljs-tag { color: #7ee787; }
+.hljs-attribute { color: #d2a8ff; }
+.hljs-symbol, .hljs-bullet { color: #79c0ff; }
+.hljs-meta { color: #8b949e; }
+.hljs-meta .hljs-keyword { color: #ff7b72; }
+.hljs-meta .hljs-string { color: #a5d6ff; }
+.hljs-deletion { color: #ffa198; background-color: #490202; }
+.hljs-addition { color: #7ee787; background-color: #0d4429; }
+.hljs-selector-class, .hljs-selector-id { color: #d2a8ff; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: bold; }
+.hljs-regexp, .hljs-doctag { color: #a5d6ff; }

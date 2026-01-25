@@ -1,9 +1,11 @@
 import AppKit
+import SwiftUI
 import RedmarginLib
 import RedmarginCore
 
 private var recentMenuDelegate: RecentDocumentsMenuDelegate?
 
+@MainActor
 func setupMainMenu(target: AppDelegate) {
     let mainMenu = NSMenu()
 
@@ -109,30 +111,116 @@ private func createEditMenu(target: AppDelegate) -> NSMenuItem {
     return editMenuItem
 }
 
+private var viewMenuDelegate: ViewMenuDelegate?
+
 private func createViewMenu(target: AppDelegate) -> NSMenuItem {
     let viewMenu = NSMenu(title: "View")
     let viewMenuItem = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
     viewMenuItem.submenu = viewMenu
+    viewMenuDelegate = ViewMenuDelegate(appDelegate: target)
+    viewMenu.delegate = viewMenuDelegate
 
     let refreshItem = NSMenuItem(
         title: "Refresh", action: #selector(AppDelegate.refreshDocument(_:)), keyEquivalent: "r")
     refreshItem.target = target
     viewMenu.addItem(refreshItem)
 
+    viewMenu.addItem(NSMenuItem.separator())
+
+    let gutterItem = NSMenuItem(
+        title: "Show Gutter",
+        action: #selector(AppDelegate.toggleGutter(_:)),
+        keyEquivalent: "g")
+    gutterItem.keyEquivalentModifierMask = [.command, .option]
+    gutterItem.target = target
+    gutterItem.tag = ViewMenuTag.gutter.rawValue
+    viewMenu.addItem(gutterItem)
+
     let lineNumbersItem = NSMenuItem(
-        title: "Toggle Line Numbers",
+        title: "Show Line Numbers",
         action: #selector(AppDelegate.toggleLineNumbers(_:)),
         keyEquivalent: "l")
     lineNumbersItem.target = target
+    lineNumbersItem.tag = ViewMenuTag.lineNumbers.rawValue
     viewMenu.addItem(lineNumbersItem)
+
+    let gitIndicatorsItem = NSMenuItem(
+        title: "Show Git Indicators",
+        action: #selector(AppDelegate.toggleGitIndicators(_:)),
+        keyEquivalent: "i")
+    gitIndicatorsItem.keyEquivalentModifierMask = [.command, .shift]
+    gitIndicatorsItem.target = target
+    gitIndicatorsItem.tag = ViewMenuTag.gitIndicators.rawValue
+    viewMenu.addItem(gitIndicatorsItem)
 
     return viewMenuItem
 }
 
+private enum ViewMenuTag: Int {
+    case gutter = 100
+    case lineNumbers = 101
+    case gitIndicators = 102
+}
+
+final class ViewMenuDelegate: NSObject, NSMenuDelegate {
+    private weak var appDelegate: AppDelegate?
+
+    init(appDelegate: AppDelegate) {
+        self.appDelegate = appDelegate
+        super.init()
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard let appDelegate = appDelegate else { return }
+        let prefs = PreferencesManager.shared
+
+        // Determine state based on current document, falling back to preferences
+        var gutterVisible = prefs.showGutter
+        var lineNumbersVisible = prefs.showLineNumbers
+        var gitIndicatorsVisible = prefs.showGitIndicators
+
+        if let window = NSApp.keyWindow {
+            if let hostingVC = window.contentViewController as? NSHostingController<DocumentWindowContent> {
+                let url = hostingVC.rootView.fileURL
+                gutterVisible = appDelegate.loadGutterVisible(for: url) ?? prefs.showGutter
+                lineNumbersVisible = appDelegate.loadLineNumbersVisible(for: url)
+                gitIndicatorsVisible = appDelegate.loadGitIndicatorsVisible(for: url) ?? prefs.showGitIndicators
+            } else if let hostingVC = window.contentViewController
+                        as? NSHostingController<RemoteDocumentWindowContent> {
+                let location = hostingVC.rootView.location
+                gutterVisible = appDelegate.loadGutterVisible(for: location) ?? prefs.showGutter
+                lineNumbersVisible = appDelegate.loadLineNumbersVisible(for: location)
+                gitIndicatorsVisible = appDelegate.loadGitIndicatorsVisible(for: location) ?? prefs.showGitIndicators
+            }
+        }
+
+        for item in menu.items {
+            switch item.tag {
+            case ViewMenuTag.gutter.rawValue:
+                item.title = gutterVisible ? "Hide Gutter" : "Show Gutter"
+            case ViewMenuTag.lineNumbers.rawValue:
+                item.title = lineNumbersVisible ? "Hide Line Numbers" : "Show Line Numbers"
+            case ViewMenuTag.gitIndicators.rawValue:
+                item.title = gitIndicatorsVisible ? "Hide Git Indicators" : "Show Git Indicators"
+            default:
+                break
+            }
+        }
+    }
+}
+
+@MainActor
+private var windowMenuDelegate: WindowMenuDelegate?
+
+@MainActor
 private func createWindowMenu() -> NSMenuItem {
     let windowMenu = NSMenu(title: "Window")
     let windowMenuItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
     windowMenuItem.submenu = windowMenu
+
+    // Remove "Enter Full Screen" that macOS adds automatically
+    windowMenuDelegate = WindowMenuDelegate()
+    windowMenu.delegate = windowMenuDelegate
 
     windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
     windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
@@ -140,6 +228,16 @@ private func createWindowMenu() -> NSMenuItem {
     NSApp.windowsMenu = windowMenu
 
     return windowMenuItem
+}
+
+/// Delegate that removes the "Enter Full Screen" item macOS automatically adds
+@MainActor
+final class WindowMenuDelegate: NSObject, NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        for item in menu.items where item.action == #selector(NSWindow.toggleFullScreen(_:)) {
+            menu.removeItem(item)
+        }
+    }
 }
 
 private func createHelpMenu() -> NSMenuItem {

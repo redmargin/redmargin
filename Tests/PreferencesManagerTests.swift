@@ -4,7 +4,9 @@ import XCTest
 final class PreferencesManagerTests: XCTestCase {
     private let testKeys = [
         "RedMargin.Preferences.Theme",
-        "RedMargin.Preferences.GutterVisibilityForNonRepo",
+        "RedMargin.Preferences.ShowGutter",
+        "RedMargin.Preferences.ShowLineNumbers",
+        "RedMargin.Preferences.ShowGitIndicators",
         "RedMargin.Preferences.AllowRemoteImages",
         "RedMargin.Preferences.InlineCodeColor"
     ]
@@ -26,7 +28,9 @@ final class PreferencesManagerTests: XCTestCase {
         let prefs = PreferencesManager.shared
 
         XCTAssertEqual(prefs.theme, .system, "Default theme should be system")
-        XCTAssertEqual(prefs.gutterVisibilityForNonRepo, .showEmpty, "Default gutter visibility should be showEmpty")
+        XCTAssertEqual(prefs.showGutter, true, "Default showGutter should be true")
+        XCTAssertEqual(prefs.showLineNumbers, false, "Default showLineNumbers should be false")
+        XCTAssertEqual(prefs.showGitIndicators, true, "Default showGitIndicators should be true")
         XCTAssertEqual(prefs.allowRemoteImages, false, "Default allowRemoteImages should be false")
         XCTAssertEqual(prefs.inlineCodeColor, .warm, "Default inline code color should be warm")
     }
@@ -49,13 +53,29 @@ final class PreferencesManagerTests: XCTestCase {
         XCTAssertEqual(saved, true, "Allow remote images should persist to UserDefaults")
     }
 
-    func testGutterPreferencePersists() {
+    func testGutterPreferencesPersist() {
         let prefs = PreferencesManager.shared
-        prefs.gutterVisibilityForNonRepo = .hide
 
-        // Verify it was saved to UserDefaults
-        let saved = UserDefaults.standard.string(forKey: "RedMargin.Preferences.GutterVisibilityForNonRepo")
-        XCTAssertEqual(saved, "hide", "Gutter visibility should persist to UserDefaults")
+        prefs.showGutter = false
+        XCTAssertEqual(
+            UserDefaults.standard.bool(forKey: "RedMargin.Preferences.ShowGutter"),
+            false,
+            "showGutter should persist to UserDefaults"
+        )
+
+        prefs.showLineNumbers = true
+        XCTAssertEqual(
+            UserDefaults.standard.bool(forKey: "RedMargin.Preferences.ShowLineNumbers"),
+            true,
+            "showLineNumbers should persist to UserDefaults"
+        )
+
+        prefs.showGitIndicators = false
+        XCTAssertEqual(
+            UserDefaults.standard.bool(forKey: "RedMargin.Preferences.ShowGitIndicators"),
+            false,
+            "showGitIndicators should persist to UserDefaults"
+        )
     }
 
     func testInlineCodeColorPersists() {

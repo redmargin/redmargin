@@ -60,6 +60,7 @@ cp WebRenderer/src/lineNumbers.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/scrollPosition.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/sanitizer.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/headingAnchors.js "$RESOURCES_DIR/WebRenderer/src/"
+cp WebRenderer/src/highlight.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/vendor/*.js "$RESOURCES_DIR/WebRenderer/src/vendor/"
 cp WebRenderer/styles/*.css "$RESOURCES_DIR/WebRenderer/styles/"
 

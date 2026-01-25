@@ -9,7 +9,9 @@ struct RemoteDocumentWindowContent: View {
     @StateObject private var findController = FindController()
     @ObservedObject private var prefs = PreferencesManager.shared
     @Environment(\.colorScheme) private var systemColorScheme
+    @State private var showGutter: Bool
     @State private var showLineNumbers: Bool = false
+    @State private var showGitIndicators: Bool
     @State private var showFindBar: Bool = false
     @State private var findBarFocusTrigger: UUID = UUID()
     @State private var isExporting: Bool = false
@@ -28,22 +30,17 @@ struct RemoteDocumentWindowContent: View {
         }
     }
 
-    private var shouldShowGutter: Bool {
-        let hasGitChanges = state.gitChanges != nil
-        let prefShowEmpty = prefs.gutterVisibilityForNonRepo == .showEmpty
-        let result = hasGitChanges || prefShowEmpty
-        print("[RemoteDoc] shouldShowGutter: \(result) (gitChanges=\(hasGitChanges), pref=\(prefShowEmpty))")
-        return result
-    }
-
     init(
         content: String,
         location: RemoteLocation,
         fileProvider: RemoteFileProvider,
         appDelegate: AppDelegate? = nil
     ) {
+        let prefs = PreferencesManager.shared
         self.location = location
         self.appDelegate = appDelegate
+        _showGutter = State(initialValue: prefs.showGutter)
+        _showGitIndicators = State(initialValue: prefs.showGitIndicators)
         _state = StateObject(wrappedValue: RemoteDocumentState(
             content: content,
             location: location,
@@ -71,7 +68,8 @@ struct RemoteDocumentWindowContent: View {
                 theme: effectiveTheme,
                 inlineCodeColor: prefs.inlineCodeColor.rawValue,
                 allowRemoteImages: prefs.allowRemoteImages,
-                showGutter: shouldShowGutter,
+                showGutter: showGutter,
+                showGitIndicators: showGitIndicators,
                 remoteBasePath: remoteBasePath,
                 remoteAssetFetcher: { [weak state] path in
                     guard let state = state else { return nil }
@@ -120,9 +118,19 @@ struct RemoteDocumentWindowContent: View {
             }
         }
         .frame(minWidth: 500, idealWidth: 750, minHeight: 400, idealHeight: 1000)
+        .onReceive(NotificationCenter.default.publisher(for: .toggleGutter)) { _ in
+            if isKeyWindow {
+                showGutter.toggle()
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .toggleLineNumbers)) { _ in
             if isKeyWindow {
                 showLineNumbers.toggle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleGitIndicators)) { _ in
+            if isKeyWindow {
+                showGitIndicators.toggle()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
@@ -159,14 +167,23 @@ struct RemoteDocumentWindowContent: View {
         .onChange(of: findController.searchText) { _, newValue in
             findController.find(newValue)
         }
+        .onChange(of: showGutter) { _, newValue in
+            appDelegate?.saveGutterVisible(newValue, for: location)
+        }
         .onChange(of: showLineNumbers) { _, newValue in
             appDelegate?.saveLineNumbersVisible(newValue, for: location)
         }
+        .onChange(of: showGitIndicators) { _, newValue in
+            appDelegate?.saveGitIndicatorsVisible(newValue, for: location)
+        }
         .onAppear {
-            let loaded = appDelegate?.loadLineNumbersVisible(for: location)
-            showLineNumbers = loaded ?? false
-            let hasDelegate = appDelegate != nil
-            print("[RemoteDoc] onAppear: lineNumbers=\(String(describing: loaded)), delegate=\(hasDelegate)")
+            if let loaded = appDelegate?.loadGutterVisible(for: location) {
+                showGutter = loaded
+            }
+            showLineNumbers = appDelegate?.loadLineNumbersVisible(for: location) ?? false
+            if let loaded = appDelegate?.loadGitIndicatorsVisible(for: location) {
+                showGitIndicators = loaded
+            }
         }
         .onKeyPress(.escape) {
             guard showFindBar else { return .ignored }
@@ -246,7 +263,7 @@ struct RemoteDocumentWindowContent: View {
               let window = NSApp.mainWindow ?? NSApp.keyWindow else { return }
 
         var classes: [String] = ["print-light-theme"]
-        if !shouldShowGutter {
+        if !prefs.showGutter {
             classes.append("print-hide-gutter")
         }
         if !showLineNumbers {

@@ -9,7 +9,9 @@ struct DocumentWindowContent: View {
     @StateObject private var findController = FindController()
     @ObservedObject private var prefs = PreferencesManager.shared
     @Environment(\.colorScheme) private var systemColorScheme
+    @State private var showGutter: Bool
     @State private var showLineNumbers: Bool
+    @State private var showGitIndicators: Bool
     @State private var showFindBar: Bool = false
     @State private var findBarFocusTrigger: UUID = UUID()
     @State private var isExporting: Bool = false
@@ -30,24 +32,21 @@ struct DocumentWindowContent: View {
         }
     }
 
-    private var shouldShowGutter: Bool {
-        // Show gutter if we have git changes (it's a repo), or if preference says show for non-repo
-        if state.gitChanges != nil {
-            return true
-        }
-        return prefs.gutterVisibilityForNonRepo == .showEmpty
-    }
-
     init(
         content: String,
         fileURL: URL,
         initialScrollPosition: Double = 0,
-        showLineNumbers: Bool = false,
+        showGutter: Bool? = nil,
+        showLineNumbers: Bool? = nil,
+        showGitIndicators: Bool? = nil,
         appDelegate: AppDelegate? = nil,
         onScrollPositionChange: @escaping (Double) -> Void = { _ in }
     ) {
+        let prefs = PreferencesManager.shared
         _state = StateObject(wrappedValue: DocumentState(content: content, fileURL: fileURL))
-        _showLineNumbers = State(initialValue: showLineNumbers)
+        _showGutter = State(initialValue: showGutter ?? prefs.showGutter)
+        _showLineNumbers = State(initialValue: showLineNumbers ?? prefs.showLineNumbers)
+        _showGitIndicators = State(initialValue: showGitIndicators ?? prefs.showGitIndicators)
         self.initialScrollPosition = initialScrollPosition
         self.appDelegate = appDelegate
         self.onScrollPositionChange = onScrollPositionChange
@@ -74,7 +73,8 @@ struct DocumentWindowContent: View {
                 theme: effectiveTheme,
                 inlineCodeColor: prefs.inlineCodeColor.rawValue,
                 allowRemoteImages: prefs.allowRemoteImages,
-                showGutter: shouldShowGutter,
+                showGutter: showGutter,
+                showGitIndicators: showGitIndicators,
                 cacheBust: state.refreshToken
             )
 
@@ -113,9 +113,19 @@ struct DocumentWindowContent: View {
             }
         }
         .frame(minWidth: 500, idealWidth: 750, minHeight: 400, idealHeight: 1000)
+        .onReceive(NotificationCenter.default.publisher(for: .toggleGutter)) { _ in
+            if isKeyWindow {
+                showGutter.toggle()
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .toggleLineNumbers)) { _ in
             if isKeyWindow {
                 showLineNumbers.toggle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleGitIndicators)) { _ in
+            if isKeyWindow {
+                showGitIndicators.toggle()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
@@ -149,8 +159,14 @@ struct DocumentWindowContent: View {
                 executeExport()
             }
         }
+        .onChange(of: showGutter) { _, newValue in
+            appDelegate?.saveGutterVisible(newValue, for: fileURL)
+        }
         .onChange(of: showLineNumbers) { _, newValue in
             appDelegate?.saveLineNumbersVisible(newValue, for: fileURL)
+        }
+        .onChange(of: showGitIndicators) { _, newValue in
+            appDelegate?.saveGitIndicatorsVisible(newValue, for: fileURL)
         }
         .onChange(of: findController.searchText) { _, newValue in
             findController.find(newValue)
@@ -181,7 +197,7 @@ struct DocumentWindowContent: View {
 
         // Build print CSS classes based on current document settings
         var classes: [String] = ["print-light-theme"]
-        if !shouldShowGutter {
+        if !prefs.showGutter {
             classes.append("print-hide-gutter")
         }
         if !showLineNumbers {

@@ -17,6 +17,7 @@ public struct MarkdownWebView: NSViewRepresentable {
     public var inlineCodeColor: String
     public var allowRemoteImages: Bool
     public var showGutter: Bool
+    public var showGitIndicators: Bool
     public var cacheBust: Int  // Token to bust image cache on refresh
     public var remoteBasePath: String?  // Remote path for custom scheme
     public var remoteAssetFetcher: ((String) async throws -> (Data, String)?)?
@@ -35,6 +36,7 @@ public struct MarkdownWebView: NSViewRepresentable {
         inlineCodeColor: String = "warm",
         allowRemoteImages: Bool = false,
         showGutter: Bool = true,
+        showGitIndicators: Bool = true,
         cacheBust: Int = 0,
         remoteBasePath: String? = nil,
         remoteAssetFetcher: ((String) async throws -> (Data, String)?)? = nil
@@ -52,6 +54,7 @@ public struct MarkdownWebView: NSViewRepresentable {
         self.inlineCodeColor = inlineCodeColor
         self.allowRemoteImages = allowRemoteImages
         self.showGutter = showGutter
+        self.showGitIndicators = showGitIndicators
         self.cacheBust = cacheBust
         self.remoteBasePath = remoteBasePath
         self.remoteAssetFetcher = remoteAssetFetcher
@@ -137,6 +140,7 @@ public struct MarkdownWebView: NSViewRepresentable {
             gitChanges: gitChanges,
             inlineCodeColor: inlineCodeColor,
             showGutter: showGutter,
+            showGitIndicators: showGitIndicators,
             cacheBust: cacheBust
         )
 
@@ -196,6 +200,7 @@ public struct MarkdownWebView: NSViewRepresentable {
                 "basePath": params.basePath,
                 "inlineCodeColor": params.inlineCodeColor,
                 "showGutter": params.showGutter,
+                "showGitIndicators": params.showGitIndicators,
                 "cacheBust": params.cacheBust
             ]
         ]
@@ -278,6 +283,7 @@ public struct MarkdownWebView: NSViewRepresentable {
         var gitChanges: GitChangeResult?
         var inlineCodeColor: String = "warm"
         var showGutter: Bool = true
+        var showGitIndicators: Bool = true
         var cacheBust: Int = 0
     }
 }

@@ -6,6 +6,8 @@ import RedmarginCore
 
 extension Notification.Name {
     static var toggleLineNumbers: Notification.Name { Notification.Name("RedMargin.toggleLineNumbers") }
+    static var toggleGutter: Notification.Name { Notification.Name("RedMargin.toggleGutter") }
+    static var toggleGitIndicators: Notification.Name { Notification.Name("RedMargin.toggleGitIndicators") }
     static var refreshDocument: Notification.Name { Notification.Name("RedMargin.refreshDocument") }
     static var showFindBar: Notification.Name { Notification.Name("RedMargin.showFindBar") }
     static var findNext: Notification.Name { Notification.Name("RedMargin.findNext") }
@@ -125,6 +127,7 @@ extension AppDelegate {
         let window = NSWindow(contentViewController: NSHostingController(rootView: rootView))
         window.title = location.displayTitle
         window.styleMask = [NSWindow.StyleMask.titled, .closable, .miniaturizable, .resizable]
+        window.collectionBehavior = .fullScreenNone
         window.tabbingMode = NSWindow.TabbingMode.disallowed
         window.minSize = NSSize(width: 500, height: 400)
 

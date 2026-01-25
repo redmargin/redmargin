@@ -6,11 +6,6 @@ public enum Theme: String, CaseIterable {
     case dark
 }
 
-public enum GutterVisibility: String, CaseIterable {
-    case showEmpty
-    case hide
-}
-
 public enum InlineCodeColor: String, CaseIterable {
     case warm
     case cool
@@ -23,7 +18,9 @@ public class PreferencesManager: ObservableObject {
     public static let shared = PreferencesManager()
 
     private let themeKey = "RedMargin.Preferences.Theme"
-    private let gutterVisibilityKey = "RedMargin.Preferences.GutterVisibilityForNonRepo"
+    private let showGutterKey = "RedMargin.Preferences.ShowGutter"
+    private let showLineNumbersKey = "RedMargin.Preferences.ShowLineNumbers"
+    private let showGitIndicatorsKey = "RedMargin.Preferences.ShowGitIndicators"
     private let allowRemoteImagesKey = "RedMargin.Preferences.AllowRemoteImages"
     private let inlineCodeColorKey = "RedMargin.Preferences.InlineCodeColor"
     private let printMarginKey = "RedMargin.Preferences.PrintMargin"
@@ -32,8 +29,16 @@ public class PreferencesManager: ObservableObject {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: themeKey) }
     }
 
-    @Published public var gutterVisibilityForNonRepo: GutterVisibility {
-        didSet { UserDefaults.standard.set(gutterVisibilityForNonRepo.rawValue, forKey: gutterVisibilityKey) }
+    @Published public var showGutter: Bool {
+        didSet { UserDefaults.standard.set(showGutter, forKey: showGutterKey) }
+    }
+
+    @Published public var showLineNumbers: Bool {
+        didSet { UserDefaults.standard.set(showLineNumbers, forKey: showLineNumbersKey) }
+    }
+
+    @Published public var showGitIndicators: Bool {
+        didSet { UserDefaults.standard.set(showGitIndicators, forKey: showGitIndicatorsKey) }
     }
 
     @Published public var allowRemoteImages: Bool {
@@ -52,9 +57,9 @@ public class PreferencesManager: ObservableObject {
         let themeString = UserDefaults.standard.string(forKey: themeKey) ?? Theme.system.rawValue
         self.theme = Theme(rawValue: themeString) ?? .system
 
-        let defaultGutter = GutterVisibility.showEmpty.rawValue
-        let gutterString = UserDefaults.standard.string(forKey: gutterVisibilityKey) ?? defaultGutter
-        self.gutterVisibilityForNonRepo = GutterVisibility(rawValue: gutterString) ?? .showEmpty
+        self.showGutter = UserDefaults.standard.object(forKey: showGutterKey) as? Bool ?? true
+        self.showLineNumbers = UserDefaults.standard.object(forKey: showLineNumbersKey) as? Bool ?? false
+        self.showGitIndicators = UserDefaults.standard.object(forKey: showGitIndicatorsKey) as? Bool ?? true
 
         self.allowRemoteImages = UserDefaults.standard.object(forKey: allowRemoteImagesKey) as? Bool ?? false
 

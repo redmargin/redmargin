@@ -35,6 +35,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private let remoteScrollPositionsKey = "RedMargin.RemoteScrollPositions"
     private let lineNumbersKey = "RedMargin.DocumentLineNumbers"
     private let remoteLineNumbersKey = "RedMargin.RemoteDocumentLineNumbers"
+    private let gutterKey = "RedMargin.DocumentGutter"
+    private let remoteGutterKey = "RedMargin.RemoteDocumentGutter"
+    private let gitIndicatorsKey = "RedMargin.DocumentGitIndicators"
+    private let remoteGitIndicatorsKey = "RedMargin.RemoteDocumentGitIndicators"
     let maxRecentDocuments = 10
 
     @Published var recentDocuments: [URL] = []
@@ -266,7 +270,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             content: content,
             fileURL: url,
             initialScrollPosition: loadScrollPosition(for: url),
+            showGutter: loadGutterVisible(for: url),
             showLineNumbers: loadLineNumbersVisible(for: url),
+            showGitIndicators: loadGitIndicatorsVisible(for: url),
             appDelegate: self,
             onScrollPositionChange: { [weak self] in self?.saveScrollPosition($0, for: url) }
         )
@@ -307,6 +313,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let window = NSWindow(contentViewController: NSHostingController(rootView: rootView))
         window.title = url.displayPath
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.collectionBehavior = .fullScreenNone
         window.tabbingMode = .disallowed
         window.minSize = NSSize(width: 500, height: 400)
 
@@ -394,6 +401,54 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         return settings[location.storageKey] ?? false
     }
 
+    // MARK: - Per-Document Gutter Persistence
+
+    func saveGutterVisible(_ visible: Bool, for url: URL) {
+        var settings = UserDefaults.standard.dictionary(forKey: gutterKey) as? [String: Bool] ?? [:]
+        settings[url.path] = visible
+        UserDefaults.standard.set(settings, forKey: gutterKey)
+    }
+
+    func loadGutterVisible(for url: URL) -> Bool? {
+        let settings = UserDefaults.standard.dictionary(forKey: gutterKey) as? [String: Bool] ?? [:]
+        return settings[url.path]
+    }
+
+    func saveGutterVisible(_ visible: Bool, for location: RemoteLocation) {
+        var settings = UserDefaults.standard.dictionary(forKey: remoteGutterKey) as? [String: Bool] ?? [:]
+        settings[location.storageKey] = visible
+        UserDefaults.standard.set(settings, forKey: remoteGutterKey)
+    }
+
+    func loadGutterVisible(for location: RemoteLocation) -> Bool? {
+        let settings = UserDefaults.standard.dictionary(forKey: remoteGutterKey) as? [String: Bool] ?? [:]
+        return settings[location.storageKey]
+    }
+
+    // MARK: - Per-Document Git Indicators Persistence
+
+    func saveGitIndicatorsVisible(_ visible: Bool, for url: URL) {
+        var settings = UserDefaults.standard.dictionary(forKey: gitIndicatorsKey) as? [String: Bool] ?? [:]
+        settings[url.path] = visible
+        UserDefaults.standard.set(settings, forKey: gitIndicatorsKey)
+    }
+
+    func loadGitIndicatorsVisible(for url: URL) -> Bool? {
+        let settings = UserDefaults.standard.dictionary(forKey: gitIndicatorsKey) as? [String: Bool] ?? [:]
+        return settings[url.path]
+    }
+
+    func saveGitIndicatorsVisible(_ visible: Bool, for location: RemoteLocation) {
+        var settings = UserDefaults.standard.dictionary(forKey: remoteGitIndicatorsKey) as? [String: Bool] ?? [:]
+        settings[location.storageKey] = visible
+        UserDefaults.standard.set(settings, forKey: remoteGitIndicatorsKey)
+    }
+
+    func loadGitIndicatorsVisible(for location: RemoteLocation) -> Bool? {
+        let settings = UserDefaults.standard.dictionary(forKey: remoteGitIndicatorsKey) as? [String: Bool] ?? [:]
+        return settings[location.storageKey]
+    }
+
     // MARK: - Menu Actions
 
     @objc func showPreferences(_ sender: Any?) {
@@ -444,6 +499,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     @objc func toggleLineNumbers(_ sender: Any?) {
         NotificationCenter.default.post(name: .toggleLineNumbers, object: nil)
+    }
+
+    @objc func toggleGutter(_ sender: Any?) {
+        NotificationCenter.default.post(name: .toggleGutter, object: nil)
+    }
+
+    @objc func toggleGitIndicators(_ sender: Any?) {
+        NotificationCenter.default.post(name: .toggleGitIndicators, object: nil)
     }
 }
 

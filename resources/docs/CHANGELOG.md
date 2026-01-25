@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.78.0 (2026-01-25)
+
+### View Menu Improvements
+- Per-document gutter, line numbers, and git indicators settings
+- View menu shows "Show/Hide" based on current document state
+- Keyboard shortcuts: Cmd+Option+G (Gutter), Cmd+L (Line Numbers), Cmd+Shift+I (Git Indicators)
+- Settings in Preferences now set defaults for new documents
+- Removed "Enter Full Screen" menu item
+
+---
+
 ## v0.77.1 (2026-01-24)
 
 ### Remote Files via SSH

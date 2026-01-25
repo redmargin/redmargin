@@ -142,12 +142,13 @@ private struct GeneralSettingsView: View {
             }
 
             Section {
-                Picker("Non-repository files", selection: $prefs.gutterVisibilityForNonRepo) {
-                    Text("Show empty gutter").tag(GutterVisibility.showEmpty)
-                    Text("Hide gutter").tag(GutterVisibility.hide)
-                }
+                Toggle("Show gutter by default", isOn: $prefs.showGutter)
+                Toggle("Show line numbers by default", isOn: $prefs.showLineNumbers)
+                    .disabled(!prefs.showGutter)
+                Toggle("Show git indicators by default", isOn: $prefs.showGitIndicators)
+                    .disabled(!prefs.showGutter)
             } header: {
-                Text("Git Gutter")
+                Text("Gutter (defaults for new documents)")
             }
 
             Section {

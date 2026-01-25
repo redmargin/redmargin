@@ -12,7 +12,7 @@
 Redmargin has exceeded its original MVP scope with remote file support and PDF export, but lacks features users expect from a polished 1.0 release: syntax highlighting in code blocks, folder navigation for browsing repo docs, and auto-updates.
 
 ### Solution
-Add syntax highlighting via highlight.js, a minimal sidebar showing Markdown files in the current repo, Sparkle for auto-updates, and bump all version references to 1.0.0.
+Add syntax highlighting via highlight.js, a minimal sidebar showing Markdown files in the current repo, and bump all version references to 1.0.0.
 
 ### Behaviors
 
@@ -30,12 +30,6 @@ Add syntax highlighting via highlight.js, a minimal sidebar showing Markdown fil
 - Sidebar state (visible/hidden, width) persists per-window
 - Remote files: sidebar shows remote directory listing via existing RPC
 
-**Auto-Updates**
-- Check for updates on launch (after 5 second delay)
-- Menu item: Redmargin > Check for Updates...
-- Uses Sparkle framework with appcast hosted on GitHub releases
-- Updates are signed and verified
-
 ---
 
 ## Technical
@@ -45,8 +39,6 @@ Add syntax highlighting via highlight.js, a minimal sidebar showing Markdown fil
 **Syntax Highlighting:** Integrate highlight.js into the WebRenderer bundle. markdown-it has a `highlight` option that receives code and language, returns highlighted HTML. Load highlight.js with a subset of common languages (python, javascript, typescript, swift, rust, go, java, bash, json, yaml, sql, html, css, markdown). Use highlight.js themes that complement existing light/dark themes.
 
 **Sidebar:** Add `NSSplitViewController` wrapper around document content. Left pane contains `NSOutlineView` (or SwiftUI `List`) showing file tree. FileTreeProvider class enumerates Markdown files from repo root (via `GitRepoDetector.repoRoot`) or file's parent directory. Watch directory for changes using existing `FileWatcher` pattern. For remote files, use existing `SSHConnectionManager.listDirectory` RPC.
-
-**Auto-Updates:** Add Sparkle.framework via SPM. Configure `SUFeedURL` in Info.plist pointing to GitHub-hosted appcast.xml. Release script generates appcast entry with DMG URL, version, and EdDSA signature. Sparkle handles download, verification, and restart.
 
 ### File Changes
 
@@ -95,33 +87,6 @@ Add syntax highlighting via highlight.js, a minimal sidebar showing Markdown fil
 
 **AppMain/MainMenu.swift** (modify)
 - Add View > Show/Hide Sidebar (Cmd-1)
-- Add Redmargin > Check for Updates...
-
-**Package.swift** (modify)
-- Add Sparkle dependency: `.package(url: "https://github.com/sparkle-project/Sparkle", from: "2.0.0")`
-- Add Sparkle to RedmarginLib dependencies
-
-**src/App/UpdateController.swift** (create)
-- SPUStandardUpdaterController wrapper
-- `checkForUpdates()` method for menu action
-- Configure automatic check on launch
-
-**AppMain/AppDelegate.swift** (modify)
-- Initialize UpdateController
-- Call checkForUpdates on applicationDidFinishLaunching (with delay)
-
-**build/Info.plist** (modify via build.sh)
-- Add SUFeedURL key pointing to appcast
-- Add SUPublicEDKey for signature verification
-
-**resources/scripts/release.sh** (modify)
-- Generate appcast.xml entry after notarization
-- Sign update with EdDSA key
-- Upload appcast.xml to GitHub releases or gh-pages
-
-**resources/appcast.xml** (create)
-- Sparkle appcast template
-- Updated by release script
 
 **build/Info.plist** (modify via build.sh)
 - Update CFBundleShortVersionString to 1.0.0
@@ -138,20 +103,18 @@ Add syntax highlighting via highlight.js, a minimal sidebar showing Markdown fil
 
 | Risk | Mitigation |
 |------|------------|
-| highlight.js bundle size too large | Use custom build with only needed languages; measure bundle size before/after |
+| highlight.js bundle size too large | Use official common build; measure bundle size before/after |
 | Sidebar file enumeration slow for large repos | Limit depth, ignore node_modules/.git/etc, async enumeration with placeholder |
-| Sparkle integration complexity | Follow Sparkle documentation exactly; test update flow with beta channel first |
-| EdDSA key management | Store signing key securely; document key generation in release process |
 | Sidebar conflicts with existing window state | Persist sidebar state separately from document state; test with saved windows |
 
 ### Implementation Plan
 
 **Phase 1: Syntax Highlighting**
-- [ ] Download highlight.js and create custom bundle with selected languages
-- [ ] Create highlight-light.css and highlight-dark.css themes
-- [ ] Create WebRenderer/src/highlight.js wrapper
-- [ ] Modify index.js to configure markdown-it with highlight function
-- [ ] Import highlight CSS in light.css and dark.css
+- [x] Download highlight.js and create custom bundle with selected languages
+- [x] Create highlight-light.css and highlight-dark.css themes
+- [x] Create WebRenderer/src/highlight.js wrapper
+- [x] Modify index.js to configure markdown-it with highlight function
+- [x] Import highlight CSS in light.css and dark.css
 - [ ] Test with code blocks in various languages
 - [ ] Verify theme switching works correctly
 
@@ -171,17 +134,7 @@ Add syntax highlighting via highlight.js, a minimal sidebar showing Markdown fil
 - [ ] Handle connection state (show placeholder when disconnected)
 - [ ] Test remote sidebar navigation
 
-**Phase 4: Auto-Updates (Sparkle)**
-- [ ] Add Sparkle package dependency
-- [ ] Create UpdateController wrapper
-- [ ] Add SUFeedURL and SUPublicEDKey to Info.plist
-- [ ] Generate EdDSA keypair for signing
-- [ ] Add "Check for Updates..." menu item
-- [ ] Modify release.sh to generate appcast entry
-- [ ] Create initial appcast.xml
-- [ ] Test update flow with test release
-
-**Phase 5: Version Bump and Polish**
+**Phase 4: Version Bump and Polish**
 - [ ] Update Info.plist version to 1.0.0
 - [ ] Update ServerDeployer version to 1.0.0
 - [ ] Update README status to v1.0.0
@@ -222,5 +175,15 @@ After implementation, Marco verifies:
 - [ ] Sidebar shows .md files from repo root
 - [ ] Clicking file in sidebar opens it
 - [ ] Sidebar works for remote files
-- [ ] Check for Updates menu item opens Sparkle dialog
 - [ ] App version shows 1.0.0 in About dialog
+
+---
+
+## Maybe Later
+
+### Auto-Updates (Sparkle)
+- Add Sparkle.framework via SPM for automatic update checking
+- Configure `SUFeedURL` in Info.plist pointing to GitHub-hosted appcast.xml
+- Release script generates appcast entry with DMG URL, version, and EdDSA signature
+- Menu item: Redmargin > Check for Updates...
+- Check for updates on launch (after 5 second delay)
