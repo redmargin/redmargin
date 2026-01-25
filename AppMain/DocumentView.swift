@@ -7,8 +7,11 @@ import RedmarginCore
 struct DocumentWindowContent: View {
     @StateObject private var state: DocumentState
     @StateObject private var findController = FindController()
+    @StateObject private var fileTreeProvider: FileTreeProvider
     @ObservedObject private var prefs = PreferencesManager.shared
     @Environment(\.colorScheme) private var systemColorScheme
+    @State private var showSidebar: Bool
+    @State private var sidebarWidth: CGFloat
     @State private var showGutter: Bool
     @State private var showLineNumbers: Bool
     @State private var showGitIndicators: Bool
@@ -19,7 +22,10 @@ struct DocumentWindowContent: View {
     let onScrollPositionChange: (Double) -> Void
     weak var appDelegate: AppDelegate?
 
-    var fileURL: URL { state.fileURL }
+    /// Stored file URL for identification (avoids StateObject access issues)
+    let storedFileURL: URL
+
+    var fileURL: URL { storedFileURL }
 
     private var effectiveTheme: String {
         switch prefs.theme {
@@ -36,6 +42,8 @@ struct DocumentWindowContent: View {
         content: String,
         fileURL: URL,
         initialScrollPosition: Double = 0,
+        showSidebar: Bool? = nil,
+        sidebarWidth: CGFloat? = nil,
         showGutter: Bool? = nil,
         showLineNumbers: Bool? = nil,
         showGitIndicators: Bool? = nil,
@@ -43,7 +51,11 @@ struct DocumentWindowContent: View {
         onScrollPositionChange: @escaping (Double) -> Void = { _ in }
     ) {
         let prefs = PreferencesManager.shared
+        self.storedFileURL = fileURL
         _state = StateObject(wrappedValue: DocumentState(content: content, fileURL: fileURL))
+        _fileTreeProvider = StateObject(wrappedValue: FileTreeProvider(currentFileURL: fileURL))
+        _showSidebar = State(initialValue: showSidebar ?? false)
+        _sidebarWidth = State(initialValue: sidebarWidth ?? 200)
         _showGutter = State(initialValue: showGutter ?? prefs.showGutter)
         _showLineNumbers = State(initialValue: showLineNumbers ?? prefs.showLineNumbers)
         _showGitIndicators = State(initialValue: showGitIndicators ?? prefs.showGitIndicators)
@@ -53,129 +65,139 @@ struct DocumentWindowContent: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            MarkdownWebView(
-                markdown: state.content,
+        mainContent
+            .frame(minWidth: 500, idealWidth: 750, minHeight: 400, idealHeight: 1000)
+            .modifier(NotificationModifiers(
+                checkIsKeyWindow: { [self] in self.isKeyWindow },
+                showSidebar: $showSidebar,
+                showGutter: $showGutter,
+                showLineNumbers: $showLineNumbers,
+                showGitIndicators: $showGitIndicators,
+                showFindBar: $showFindBar,
+                findBarFocusTrigger: $findBarFocusTrigger,
+                sidebarWidth: sidebarWidth,
+                onRefresh: { state.refresh() },
+                onFindNext: { findController.findNext() },
+                onFindPrevious: { findController.findPrevious() },
+                onPrint: executePrint,
+                onExport: executeExport
+            ))
+            .modifier(PersistenceModifiers(
                 fileURL: fileURL,
-                onCheckboxToggle: state.handleCheckboxToggle,
-                onScrollPositionChange: onScrollPositionChange,
-                onFirstRenderComplete: {
-                    NotificationCenter.default.post(
-                        name: .windowContentReady,
-                        object: nil,
-                        userInfo: ["fileURL": fileURL]
-                    )
-                },
-                initialScrollPosition: initialScrollPosition,
-                showLineNumbers: showLineNumbers,
-                gitChanges: state.gitChanges,
-                findController: findController,
-                theme: effectiveTheme,
-                inlineCodeColor: prefs.inlineCodeColor.rawValue,
-                allowRemoteImages: prefs.allowRemoteImages,
                 showGutter: showGutter,
+                showLineNumbers: showLineNumbers,
                 showGitIndicators: showGitIndicators,
-                cacheBust: state.refreshToken
-            )
+                showSidebar: showSidebar,
+                sidebarWidth: sidebarWidth,
+                findSearchText: findController.searchText,
+                appDelegate: appDelegate,
+                onFind: { findController.find($0) }
+            ))
+            .onKeyPress(.escape) {
+                guard showFindBar else { return .ignored }
+                dismissFindBar()
+                return .handled
+            }
+    }
+
+    @ViewBuilder
+    private var mainContent: some View {
+        SidebarSplitView(
+            sidebar: {
+                SidebarView(
+                    rootNodes: fileTreeProvider.rootNodes,
+                    rootDirectory: fileTreeProvider.rootDirectory?.path,
+                    currentFileURL: state.fileURL,
+                    isLoading: fileTreeProvider.isLoading,
+                    onFileSelected: { url in
+                        handleFileSelection(url)
+                    },
+                    onRefresh: {
+                        fileTreeProvider.refresh()
+                    }
+                )
+            },
+            content: {
+                documentContent
+            },
+            isSidebarVisible: $showSidebar,
+            sidebarWidth: $sidebarWidth
+        )
+    }
+
+    @ViewBuilder
+    private var documentContent: some View {
+        ZStack(alignment: .top) {
+            markdownView
 
             if state.isRefreshing || isExporting {
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        VStack(spacing: 12) {
-                            ProgressView()
-                                .scaleEffect(1.5)
-                            Text(isExporting ? "Exporting PDF..." : "Refreshing...")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.primary)
-                        }
-                        .padding(24)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                        .shadow(radius: 8)
-                        Spacer()
-                    }
-                    Spacer()
-                }
+                loadingOverlay
             }
 
             if showFindBar {
-                FindBar(
-                    searchText: $findController.searchText,
-                    isVisible: $showFindBar,
-                    matchCount: findController.matchCount,
-                    currentMatch: findController.currentMatch,
-                    focusTrigger: findBarFocusTrigger,
-                    onFindNext: { findController.findNext() },
-                    onFindPrevious: { findController.findPrevious() },
-                    onDismiss: { dismissFindBar() }
+                findBarView
+            }
+        }
+    }
+
+    private var markdownView: some View {
+        MarkdownWebView(
+            markdown: state.content,
+            fileURL: fileURL,
+            onCheckboxToggle: state.handleCheckboxToggle,
+            onScrollPositionChange: onScrollPositionChange,
+            onFirstRenderComplete: {
+                NotificationCenter.default.post(
+                    name: .windowContentReady,
+                    object: nil,
+                    userInfo: ["fileURL": fileURL]
                 )
+            },
+            initialScrollPosition: initialScrollPosition,
+            showLineNumbers: showLineNumbers,
+            gitChanges: state.gitChanges,
+            findController: findController,
+            theme: effectiveTheme,
+            inlineCodeColor: prefs.inlineCodeColor.rawValue,
+            allowRemoteImages: prefs.allowRemoteImages,
+            showGutter: showGutter,
+            showGitIndicators: showGitIndicators,
+            cacheBust: state.refreshToken
+        )
+    }
+
+    private var loadingOverlay: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                    Text(isExporting ? "Exporting PDF..." : "Refreshing...")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.primary)
+                }
+                .padding(24)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .shadow(radius: 8)
+                Spacer()
             }
+            Spacer()
         }
-        .frame(minWidth: 500, idealWidth: 750, minHeight: 400, idealHeight: 1000)
-        .onReceive(NotificationCenter.default.publisher(for: .toggleGutter)) { _ in
-            if isKeyWindow {
-                showGutter.toggle()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleLineNumbers)) { _ in
-            if isKeyWindow {
-                showLineNumbers.toggle()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleGitIndicators)) { _ in
-            if isKeyWindow {
-                showGitIndicators.toggle()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
-            if isKeyWindow {
-                state.refresh()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showFindBar)) { _ in
-            if isKeyWindow {
-                showFindBar = true
-                findBarFocusTrigger = UUID()  // Trigger refocus
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .findNext)) { _ in
-            if isKeyWindow && showFindBar {
-                findController.findNext()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .findPrevious)) { _ in
-            if isKeyWindow && showFindBar {
-                findController.findPrevious()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .printDocument)) { _ in
-            if isKeyWindow {
-                executePrint()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .exportToPDF)) { _ in
-            if isKeyWindow {
-                executeExport()
-            }
-        }
-        .onChange(of: showGutter) { _, newValue in
-            appDelegate?.saveGutterVisible(newValue, for: fileURL)
-        }
-        .onChange(of: showLineNumbers) { _, newValue in
-            appDelegate?.saveLineNumbersVisible(newValue, for: fileURL)
-        }
-        .onChange(of: showGitIndicators) { _, newValue in
-            appDelegate?.saveGitIndicatorsVisible(newValue, for: fileURL)
-        }
-        .onChange(of: findController.searchText) { _, newValue in
-            findController.find(newValue)
-        }
-        .onKeyPress(.escape) {
-            guard showFindBar else { return .ignored }
-            dismissFindBar()
-            return .handled
-        }
+    }
+
+    private var findBarView: some View {
+        FindBar(
+            searchText: $findController.searchText,
+            isVisible: $showFindBar,
+            matchCount: findController.matchCount,
+            currentMatch: findController.currentMatch,
+            focusTrigger: findBarFocusTrigger,
+            onFindNext: { findController.findNext() },
+            onFindPrevious: { findController.findPrevious() },
+            onDismiss: { dismissFindBar() }
+        )
     }
 
     private var isKeyWindow: Bool {
@@ -189,6 +211,22 @@ struct DocumentWindowContent: View {
     private func dismissFindBar() {
         showFindBar = false
         findController.clearFind()
+    }
+
+    private func handleFileSelection(_ url: URL) {
+        guard url != state.fileURL else { return }
+
+        Task {
+            do {
+                try await state.loadFile(at: url)
+                // Update window title
+                if let window = NSApp.keyWindow {
+                    window.title = url.displayPath
+                }
+            } catch {
+                print("[DocumentView] Failed to load file: \(error)")
+            }
+        }
     }
 
     private func executePrint() {
@@ -308,5 +346,134 @@ private class PrintCompletionHandler: NSObject {
 
         let cleanupJS = printClasses.map { "document.body.classList.remove('\($0)');" }.joined()
         webView.evaluateJavaScript(cleanupJS, completionHandler: nil)
+    }
+}
+
+// MARK: - View Modifiers
+
+private struct NotificationModifiers: ViewModifier {
+    let checkIsKeyWindow: () -> Bool
+    @Binding var showSidebar: Bool
+    @Binding var showGutter: Bool
+    @Binding var showLineNumbers: Bool
+    @Binding var showGitIndicators: Bool
+    @Binding var showFindBar: Bool
+    @Binding var findBarFocusTrigger: UUID
+    let sidebarWidth: CGFloat
+    let onRefresh: () -> Void
+    let onFindNext: () -> Void
+    let onFindPrevious: () -> Void
+    let onPrint: () -> Void
+    let onExport: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
+                if checkIsKeyWindow() {
+                    toggleSidebarWithWindowResize()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleGutter)) { _ in
+                if checkIsKeyWindow() { showGutter.toggle() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleLineNumbers)) { _ in
+                if checkIsKeyWindow() { showLineNumbers.toggle() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleGitIndicators)) { _ in
+                if checkIsKeyWindow() { showGitIndicators.toggle() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
+                if checkIsKeyWindow() { onRefresh() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showFindBar)) { _ in
+                if checkIsKeyWindow() {
+                    showFindBar = true
+                    findBarFocusTrigger = UUID()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .findNext)) { _ in
+                if checkIsKeyWindow() && showFindBar { onFindNext() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .findPrevious)) { _ in
+                if checkIsKeyWindow() && showFindBar { onFindPrevious() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .printDocument)) { _ in
+                if checkIsKeyWindow() { onPrint() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .exportToPDF)) { _ in
+                if checkIsKeyWindow() { onExport() }
+            }
+    }
+
+    private func toggleSidebarWithWindowResize() {
+        guard let window = NSApp.keyWindow else {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showSidebar.toggle()
+            }
+            return
+        }
+
+        var frame = window.frame
+        let delta = sidebarWidth + 1  // +1 for divider
+
+        if showSidebar {
+            // Hiding sidebar - shrink window
+            frame.origin.x += delta
+            frame.size.width -= delta
+        } else {
+            // Showing sidebar - expand window
+            frame.origin.x -= delta
+            frame.size.width += delta
+        }
+
+        // Ensure window stays on screen
+        if let screen = window.screen {
+            let visibleFrame = screen.visibleFrame
+            if frame.origin.x < visibleFrame.origin.x {
+                frame.origin.x = visibleFrame.origin.x
+            }
+            if frame.maxX > visibleFrame.maxX {
+                frame.origin.x = visibleFrame.maxX - frame.size.width
+            }
+        }
+
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showSidebar.toggle()
+        }
+        window.setFrame(frame, display: true, animate: true)
+    }
+}
+
+private struct PersistenceModifiers: ViewModifier {
+    let fileURL: URL
+    let showGutter: Bool
+    let showLineNumbers: Bool
+    let showGitIndicators: Bool
+    let showSidebar: Bool
+    let sidebarWidth: CGFloat
+    let findSearchText: String
+    weak var appDelegate: AppDelegate?
+    let onFind: (String) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: showGutter) { _, newValue in
+                appDelegate?.saveGutterVisible(newValue, for: fileURL)
+            }
+            .onChange(of: showLineNumbers) { _, newValue in
+                appDelegate?.saveLineNumbersVisible(newValue, for: fileURL)
+            }
+            .onChange(of: showGitIndicators) { _, newValue in
+                appDelegate?.saveGitIndicatorsVisible(newValue, for: fileURL)
+            }
+            .onChange(of: showSidebar) { _, newValue in
+                appDelegate?.saveSidebarVisible(newValue, for: fileURL)
+            }
+            .onChange(of: sidebarWidth) { _, newValue in
+                appDelegate?.saveSidebarWidth(newValue, for: fileURL)
+            }
+            .onChange(of: findSearchText) { _, newValue in
+                onFind(newValue)
+            }
     }
 }

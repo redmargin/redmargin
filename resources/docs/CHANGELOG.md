@@ -2,6 +2,14 @@
 
 ## v0.78.0 (2026-01-25)
 
+### File Sidebar
+- Sidebar shows Markdown files from Git repo root (Cmd+1 to toggle)
+- Click files to navigate within the same window
+- Works for both local and remote documents
+- Collapsible folders with current file highlighted
+- Refresh button to update file list
+- Window resizes to keep document area constant when toggling sidebar
+
 ### View Menu Improvements
 - Per-document gutter, line numbers, and git indicators settings
 - View menu shows "Show/Hide" based on current document state

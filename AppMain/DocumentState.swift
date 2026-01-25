@@ -8,9 +8,8 @@ class DocumentState: ObservableObject {
     @Published var gitChanges: GitChangeResult?
     @Published var isRefreshing: Bool = false
     @Published var refreshToken: Int = 0  // Incremented on refresh to bust image cache
+    @Published private(set) var fileURL: URL
 
-    // We keep fileURL for now as it might be used by UI or other parts
-    let fileURL: URL
     private let fileProvider: FileProvider
 
     private var fileWatchToken: WatchToken?
@@ -96,6 +95,23 @@ class DocumentState: ObservableObject {
                 self.isRefreshing = false
             }
         }
+    }
+
+    /// Loads a different file in the same window
+    func loadFile(at url: URL) async throws {
+        // Read the new file content
+        let newContent = try await fileProvider.readFile(at: url.path)
+
+        // Update file URL and content
+        fileURL = url
+        content = newContent
+        gitChanges = nil
+        repoRoot = nil
+        refreshToken += 1
+
+        // Reset watchers for the new file
+        await setupFileWatcher()
+        await detectGitChanges()
     }
 
     private func detectGitChanges() async {

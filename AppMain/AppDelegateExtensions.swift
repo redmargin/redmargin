@@ -5,6 +5,7 @@ import RedmarginCore
 // MARK: - Notification Names
 
 extension Notification.Name {
+    static var toggleSidebar: Notification.Name { Notification.Name("RedMargin.toggleSidebar") }
     static var toggleLineNumbers: Notification.Name { Notification.Name("RedMargin.toggleLineNumbers") }
     static var toggleGutter: Notification.Name { Notification.Name("RedMargin.toggleGutter") }
     static var toggleGitIndicators: Notification.Name { Notification.Name("RedMargin.toggleGitIndicators") }
@@ -120,6 +121,46 @@ extension AppDelegate {
             window.delegate = self
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    /// Opens a remote document from sidebar navigation, reusing the existing connection
+    func openRemoteDocumentFromSidebar(host: String, path: String) async throws {
+        let location = RemoteLocation(host: host, path: path)
+
+        // Add to recent lists
+        await MainActor.run {
+            addToRecentRemoteLocations(location)
+        }
+
+        // Check if already open
+        if let existingWindow = remoteDocumentWindows[location] {
+            await MainActor.run {
+                existingWindow.makeKeyAndOrderFront(nil)
+            }
+            return
+        }
+
+        // Get existing connection from manager
+        let connection = try await SSHConnectionManager.shared.connection(for: host)
+
+        // Create file provider and read content
+        let fileProvider = RemoteFileProvider(connection: connection)
+        let content = try await fileProvider.readFile(at: path)
+
+        // Create window on main thread
+        await MainActor.run {
+            let documentView = RemoteDocumentWindowContent(
+                content: content,
+                location: location,
+                fileProvider: fileProvider,
+                appDelegate: self
+            )
+
+            let window = createRemoteWindow(for: location, rootView: documentView)
+            remoteDocumentWindows[location] = window
+            window.delegate = self
+            window.makeKeyAndOrderFront(nil)
         }
     }
 

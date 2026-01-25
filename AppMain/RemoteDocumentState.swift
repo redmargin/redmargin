@@ -20,8 +20,8 @@ class RemoteDocumentState: ObservableObject {
     /// When true, shows conflict resolution dialog
     @Published var showConflictDialog: Bool = false
 
-    let location: RemoteLocation
-    private let fileProvider: RemoteFileProvider
+    @Published private(set) var location: RemoteLocation
+    let fileProvider: RemoteFileProvider
 
     private var fileWatchToken: WatchToken?
     private var gitWatchToken: WatchToken?
@@ -262,6 +262,24 @@ class RemoteDocumentState: ObservableObject {
                 self.isRefreshing = false
             }
         }
+    }
+
+    /// Loads a different file in the same window
+    func loadFile(at path: String) async throws {
+        // Read the new file content
+        let newContent = try await fileProvider.readFile(at: path)
+
+        // Update location and content
+        location = RemoteLocation(host: location.host, path: path)
+        content = newContent
+        lastKnownServerContent = newContent
+        gitChanges = nil
+        repoRoot = nil
+        pendingToggle = nil
+
+        // Reset watchers for the new file
+        await setupFileWatcher()
+        await detectGitChanges()
     }
 
     private func detectGitChanges() async {

@@ -7,8 +7,11 @@ import RedmarginCore
 struct RemoteDocumentWindowContent: View {
     @StateObject private var state: RemoteDocumentState
     @StateObject private var findController = FindController()
+    @StateObject private var fileTreeProvider: RemoteFileTreeProvider
     @ObservedObject private var prefs = PreferencesManager.shared
     @Environment(\.colorScheme) private var systemColorScheme
+    @State private var showSidebar: Bool
+    @State private var sidebarWidth: CGFloat
     @State private var showGutter: Bool
     @State private var showLineNumbers: Bool = false
     @State private var showGitIndicators: Bool
@@ -34,16 +37,24 @@ struct RemoteDocumentWindowContent: View {
         content: String,
         location: RemoteLocation,
         fileProvider: RemoteFileProvider,
+        showSidebar: Bool? = nil,
+        sidebarWidth: CGFloat? = nil,
         appDelegate: AppDelegate? = nil
     ) {
         let prefs = PreferencesManager.shared
         self.location = location
         self.appDelegate = appDelegate
+        _showSidebar = State(initialValue: showSidebar ?? false)
+        _sidebarWidth = State(initialValue: sidebarWidth ?? 200)
         _showGutter = State(initialValue: prefs.showGutter)
         _showGitIndicators = State(initialValue: prefs.showGitIndicators)
         _state = StateObject(wrappedValue: RemoteDocumentState(
             content: content,
             location: location,
+            fileProvider: fileProvider
+        ))
+        _fileTreeProvider = StateObject(wrappedValue: RemoteFileTreeProvider(
+            currentFilePath: location.path,
             fileProvider: fileProvider
         ))
     }
@@ -53,6 +64,101 @@ struct RemoteDocumentWindowContent: View {
     }
 
     var body: some View {
+        splitViewContent
+            .frame(minWidth: 500, idealWidth: 750, minHeight: 400, idealHeight: 1000)
+            .modifier(RemoteNotificationModifiers(
+                checkIsKeyWindow: { [self] in self.isKeyWindow },
+                showSidebar: $showSidebar,
+                showGutter: $showGutter,
+                showLineNumbers: $showLineNumbers,
+                showGitIndicators: $showGitIndicators,
+                showFindBar: $showFindBar,
+                findBarFocusTrigger: $findBarFocusTrigger,
+                sidebarWidth: sidebarWidth,
+                onRefresh: { state.refresh() },
+                onFindNext: { findController.findNext() },
+                onFindPrevious: { findController.findPrevious() },
+                onPrint: executePrint,
+                onExport: executeExport
+            ))
+            .modifier(RemotePersistenceModifiers(
+                location: location,
+                showGutter: showGutter,
+                showLineNumbers: showLineNumbers,
+                showGitIndicators: showGitIndicators,
+                showSidebar: showSidebar,
+                sidebarWidth: sidebarWidth,
+                findSearchText: findController.searchText,
+                appDelegate: appDelegate,
+                onFind: { findController.find($0) }
+            ))
+            .onKeyPress(.escape) {
+                guard showFindBar else { return .ignored }
+                dismissFindBar()
+                return .handled
+            }
+            .alert("Remote File Changed", isPresented: $state.showConflictDialog) {
+                Button("Overwrite Remote") {
+                    state.resolveConflictKeepLocalToggle()
+                }
+                Button("Reload from Server", role: .destructive) {
+                    state.resolveConflictReloadFromServer()
+                }
+            } message: {
+                Text("""
+                    The file on the server changed while you were disconnected, \
+                    and you have a pending checkbox toggle. Choose how to resolve this conflict.
+                    """)
+            }
+            .onAppear {
+                loadPersistedSettings()
+            }
+    }
+
+    @ViewBuilder
+    private var splitViewContent: some View {
+        SidebarSplitView(
+            sidebar: { sidebarContent },
+            content: { mainContent },
+            isSidebarVisible: $showSidebar,
+            sidebarWidth: $sidebarWidth
+        )
+    }
+
+    @ViewBuilder
+    private var sidebarContent: some View {
+        SidebarView(
+            rootNodes: fileTreeProvider.rootNodes,
+            rootDirectory: fileTreeProvider.rootDirectory,
+            currentFileURL: URL(fileURLWithPath: state.location.path),
+            isLoading: fileTreeProvider.isLoading,
+            onFileSelected: { url in
+                handleFileSelection(url)
+            },
+            onRefresh: {
+                fileTreeProvider.refresh()
+            }
+        )
+    }
+
+    private func loadPersistedSettings() {
+        if let loaded = appDelegate?.loadGutterVisible(for: location) {
+            showGutter = loaded
+        }
+        showLineNumbers = appDelegate?.loadLineNumbersVisible(for: location) ?? false
+        if let loaded = appDelegate?.loadGitIndicatorsVisible(for: location) {
+            showGitIndicators = loaded
+        }
+        if let loaded = appDelegate?.loadSidebarVisible(for: location) {
+            showSidebar = loaded
+        }
+        if let loaded = appDelegate?.loadSidebarWidth(for: location) {
+            sidebarWidth = loaded
+        }
+    }
+
+    @ViewBuilder
+    private var mainContent: some View {
         ZStack(alignment: .top) {
             MarkdownWebView(
                 markdown: state.content,
@@ -117,92 +223,6 @@ struct RemoteDocumentWindowContent: View {
                 )
             }
         }
-        .frame(minWidth: 500, idealWidth: 750, minHeight: 400, idealHeight: 1000)
-        .onReceive(NotificationCenter.default.publisher(for: .toggleGutter)) { _ in
-            if isKeyWindow {
-                showGutter.toggle()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleLineNumbers)) { _ in
-            if isKeyWindow {
-                showLineNumbers.toggle()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleGitIndicators)) { _ in
-            if isKeyWindow {
-                showGitIndicators.toggle()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
-            if isKeyWindow {
-                state.refresh()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showFindBar)) { _ in
-            if isKeyWindow {
-                showFindBar = true
-                findBarFocusTrigger = UUID()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .findNext)) { _ in
-            if isKeyWindow && showFindBar {
-                findController.findNext()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .findPrevious)) { _ in
-            if isKeyWindow && showFindBar {
-                findController.findPrevious()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .printDocument)) { _ in
-            if isKeyWindow {
-                executePrint()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .exportToPDF)) { _ in
-            if isKeyWindow {
-                executeExport()
-            }
-        }
-        .onChange(of: findController.searchText) { _, newValue in
-            findController.find(newValue)
-        }
-        .onChange(of: showGutter) { _, newValue in
-            appDelegate?.saveGutterVisible(newValue, for: location)
-        }
-        .onChange(of: showLineNumbers) { _, newValue in
-            appDelegate?.saveLineNumbersVisible(newValue, for: location)
-        }
-        .onChange(of: showGitIndicators) { _, newValue in
-            appDelegate?.saveGitIndicatorsVisible(newValue, for: location)
-        }
-        .onAppear {
-            if let loaded = appDelegate?.loadGutterVisible(for: location) {
-                showGutter = loaded
-            }
-            showLineNumbers = appDelegate?.loadLineNumbersVisible(for: location) ?? false
-            if let loaded = appDelegate?.loadGitIndicatorsVisible(for: location) {
-                showGitIndicators = loaded
-            }
-        }
-        .onKeyPress(.escape) {
-            guard showFindBar else { return .ignored }
-            dismissFindBar()
-            return .handled
-        }
-        .alert("Remote File Changed", isPresented: $state.showConflictDialog) {
-            Button("Overwrite Remote") {
-                state.resolveConflictKeepLocalToggle()
-            }
-            Button("Reload from Server", role: .destructive) {
-                state.resolveConflictReloadFromServer()
-            }
-        } message: {
-            Text("""
-                The file on the server changed while you were disconnected, \
-                and you have a pending checkbox toggle. Choose how to resolve this conflict.
-                """)
-        }
     }
 
     @ViewBuilder
@@ -256,6 +276,24 @@ struct RemoteDocumentWindowContent: View {
     private func dismissFindBar() {
         showFindBar = false
         findController.clearFind()
+    }
+
+    private func handleFileSelection(_ url: URL) {
+        let selectedPath = url.path
+        guard selectedPath != state.location.path else { return }
+
+        Task {
+            do {
+                try await state.loadFile(at: selectedPath)
+                // Update window title
+                if let window = NSApp.keyWindow {
+                    let newLocation = RemoteLocation(host: state.location.host, path: selectedPath)
+                    window.title = newLocation.displayTitle
+                }
+            } catch {
+                print("[RemoteDocumentView] Failed to load file: \(error)")
+            }
+        }
     }
 
     private func executePrint() {
@@ -374,5 +412,134 @@ private class RemotePrintCompletionHandler: NSObject {
         webView.setValue(false, forKey: "drawsBackground")
         let cleanupJS = printClasses.map { "document.body.classList.remove('\($0)');" }.joined()
         webView.evaluateJavaScript(cleanupJS, completionHandler: nil)
+    }
+}
+
+// MARK: - View Modifiers
+
+private struct RemoteNotificationModifiers: ViewModifier {
+    let checkIsKeyWindow: () -> Bool
+    @Binding var showSidebar: Bool
+    @Binding var showGutter: Bool
+    @Binding var showLineNumbers: Bool
+    @Binding var showGitIndicators: Bool
+    @Binding var showFindBar: Bool
+    @Binding var findBarFocusTrigger: UUID
+    let sidebarWidth: CGFloat
+    let onRefresh: () -> Void
+    let onFindNext: () -> Void
+    let onFindPrevious: () -> Void
+    let onPrint: () -> Void
+    let onExport: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
+                if checkIsKeyWindow() {
+                    toggleSidebarWithWindowResize()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleGutter)) { _ in
+                if checkIsKeyWindow() { showGutter.toggle() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleLineNumbers)) { _ in
+                if checkIsKeyWindow() { showLineNumbers.toggle() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleGitIndicators)) { _ in
+                if checkIsKeyWindow() { showGitIndicators.toggle() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
+                if checkIsKeyWindow() { onRefresh() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showFindBar)) { _ in
+                if checkIsKeyWindow() {
+                    showFindBar = true
+                    findBarFocusTrigger = UUID()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .findNext)) { _ in
+                if checkIsKeyWindow() && showFindBar { onFindNext() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .findPrevious)) { _ in
+                if checkIsKeyWindow() && showFindBar { onFindPrevious() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .printDocument)) { _ in
+                if checkIsKeyWindow() { onPrint() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .exportToPDF)) { _ in
+                if checkIsKeyWindow() { onExport() }
+            }
+    }
+
+    private func toggleSidebarWithWindowResize() {
+        guard let window = NSApp.keyWindow else {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showSidebar.toggle()
+            }
+            return
+        }
+
+        var frame = window.frame
+        let delta = sidebarWidth + 1  // +1 for divider
+
+        if showSidebar {
+            // Hiding sidebar - shrink window
+            frame.origin.x += delta
+            frame.size.width -= delta
+        } else {
+            // Showing sidebar - expand window
+            frame.origin.x -= delta
+            frame.size.width += delta
+        }
+
+        // Ensure window stays on screen
+        if let screen = window.screen {
+            let visibleFrame = screen.visibleFrame
+            if frame.origin.x < visibleFrame.origin.x {
+                frame.origin.x = visibleFrame.origin.x
+            }
+            if frame.maxX > visibleFrame.maxX {
+                frame.origin.x = visibleFrame.maxX - frame.size.width
+            }
+        }
+
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showSidebar.toggle()
+        }
+        window.setFrame(frame, display: true, animate: true)
+    }
+}
+
+private struct RemotePersistenceModifiers: ViewModifier {
+    let location: RemoteLocation
+    let showGutter: Bool
+    let showLineNumbers: Bool
+    let showGitIndicators: Bool
+    let showSidebar: Bool
+    let sidebarWidth: CGFloat
+    let findSearchText: String
+    weak var appDelegate: AppDelegate?
+    let onFind: (String) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: showGutter) { _, newValue in
+                appDelegate?.saveGutterVisible(newValue, for: location)
+            }
+            .onChange(of: showLineNumbers) { _, newValue in
+                appDelegate?.saveLineNumbersVisible(newValue, for: location)
+            }
+            .onChange(of: showGitIndicators) { _, newValue in
+                appDelegate?.saveGitIndicatorsVisible(newValue, for: location)
+            }
+            .onChange(of: showSidebar) { _, newValue in
+                appDelegate?.saveSidebarVisible(newValue, for: location)
+            }
+            .onChange(of: sidebarWidth) { _, newValue in
+                appDelegate?.saveSidebarWidth(newValue, for: location)
+            }
+            .onChange(of: findSearchText) { _, newValue in
+                onFind(newValue)
+            }
     }
 }

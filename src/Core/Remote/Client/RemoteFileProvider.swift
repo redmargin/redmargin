@@ -110,6 +110,18 @@ public actor RemoteFileProvider: FileProvider {
         return response.payload.repoRoot
     }
 
+    public func listDirectory(at path: String) async throws -> [DirectoryEntry] {
+        let payload = ListDirectoryPayload(path: path)
+        let data = try await connection.send(type: RPCMessageType.listDirectory.rawValue, payload: payload, timeout: 30)
+        let response = try JSONDecoder().decode(RPCMessage<ListDirectoryResponsePayload>.self, from: data)
+
+        if let error = response.payload.error {
+            throw RemoteFileError(message: error, code: nil)
+        }
+
+        return response.payload.entries ?? []
+    }
+
     public func gitDiff(for path: String, repoRoot: String) async throws -> GitChangeResult {
         let payload = GitDiffPayload(path: path, repoRoot: repoRoot)
         let data = try await connection.send(type: RPCMessageType.gitDiff.rawValue, payload: payload, timeout: 20)

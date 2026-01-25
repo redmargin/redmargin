@@ -23,11 +23,12 @@ Add syntax highlighting via highlight.js, a minimal sidebar showing Markdown fil
 
 **Sidebar**
 - Toggle via View > Show Sidebar (Cmd-1) or hide via View > Hide Sidebar (Cmd-1)
-- Shows Markdown files (.md, .markdown) in current file's Git repo root
+- Shows hierarchical folder/file tree (like VS Code) of Markdown files (.md, .markdown) in current file's Git repo root
 - If file is not in a repo, shows Markdown files in the file's directory
+- Folders are collapsible, expand to show contents
 - Single-click opens file in current window
 - Current file highlighted in list
-- Sidebar state (visible/hidden, width) persists per-window
+- Sidebar state (visible/hidden, width) persists per-document
 - Remote files: sidebar shows remote directory listing via existing RPC
 
 ---
@@ -119,13 +120,13 @@ Add syntax highlighting via highlight.js, a minimal sidebar showing Markdown fil
 - [ ] Verify theme switching works correctly
 
 **Phase 2: Sidebar - Local Files**
-- [ ] Create FileTreeProvider class to enumerate .md files from directory
-- [ ] Create SidebarView SwiftUI component
-- [ ] Create SidebarSplitView wrapper using NSSplitViewController
-- [ ] Integrate into DocumentView
-- [ ] Add View menu items (Show/Hide Sidebar, Cmd-1)
-- [ ] Add directory watching for sidebar refresh
-- [ ] Persist sidebar visibility and width
+- [x] Create FileTreeProvider class to enumerate .md files from directory
+- [x] Create SidebarView SwiftUI component
+- [x] Create SidebarSplitView wrapper using NSSplitViewController
+- [x] Integrate into DocumentView
+- [x] Add View menu items (Show/Hide Sidebar, Cmd-1)
+- [x] Add directory watching for sidebar refresh
+- [x] Persist sidebar visibility and width
 - [ ] Test with repos of various sizes
 
 **Phase 3: Sidebar - Remote Files**

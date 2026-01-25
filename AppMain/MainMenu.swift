@@ -120,6 +120,16 @@ private func createViewMenu(target: AppDelegate) -> NSMenuItem {
     viewMenuDelegate = ViewMenuDelegate(appDelegate: target)
     viewMenu.delegate = viewMenuDelegate
 
+    let sidebarItem = NSMenuItem(
+        title: "Show Sidebar",
+        action: #selector(AppDelegate.toggleSidebar(_:)),
+        keyEquivalent: "1")
+    sidebarItem.target = target
+    sidebarItem.tag = ViewMenuTag.sidebar.rawValue
+    viewMenu.addItem(sidebarItem)
+
+    viewMenu.addItem(NSMenuItem.separator())
+
     let refreshItem = NSMenuItem(
         title: "Refresh", action: #selector(AppDelegate.refreshDocument(_:)), keyEquivalent: "r")
     refreshItem.target = target
@@ -157,6 +167,7 @@ private func createViewMenu(target: AppDelegate) -> NSMenuItem {
 }
 
 private enum ViewMenuTag: Int {
+    case sidebar = 99
     case gutter = 100
     case lineNumbers = 101
     case gitIndicators = 102
@@ -175,6 +186,7 @@ final class ViewMenuDelegate: NSObject, NSMenuDelegate {
         let prefs = PreferencesManager.shared
 
         // Determine state based on current document, falling back to preferences
+        var sidebarVisible = false
         var gutterVisible = prefs.showGutter
         var lineNumbersVisible = prefs.showLineNumbers
         var gitIndicatorsVisible = prefs.showGitIndicators
@@ -182,12 +194,14 @@ final class ViewMenuDelegate: NSObject, NSMenuDelegate {
         if let window = NSApp.keyWindow {
             if let hostingVC = window.contentViewController as? NSHostingController<DocumentWindowContent> {
                 let url = hostingVC.rootView.fileURL
+                sidebarVisible = appDelegate.loadSidebarVisible(for: url) ?? false
                 gutterVisible = appDelegate.loadGutterVisible(for: url) ?? prefs.showGutter
                 lineNumbersVisible = appDelegate.loadLineNumbersVisible(for: url)
                 gitIndicatorsVisible = appDelegate.loadGitIndicatorsVisible(for: url) ?? prefs.showGitIndicators
             } else if let hostingVC = window.contentViewController
                         as? NSHostingController<RemoteDocumentWindowContent> {
                 let location = hostingVC.rootView.location
+                sidebarVisible = appDelegate.loadSidebarVisible(for: location) ?? false
                 gutterVisible = appDelegate.loadGutterVisible(for: location) ?? prefs.showGutter
                 lineNumbersVisible = appDelegate.loadLineNumbersVisible(for: location)
                 gitIndicatorsVisible = appDelegate.loadGitIndicatorsVisible(for: location) ?? prefs.showGitIndicators
@@ -196,6 +210,8 @@ final class ViewMenuDelegate: NSObject, NSMenuDelegate {
 
         for item in menu.items {
             switch item.tag {
+            case ViewMenuTag.sidebar.rawValue:
+                item.title = sidebarVisible ? "Hide Sidebar" : "Show Sidebar"
             case ViewMenuTag.gutter.rawValue:
                 item.title = gutterVisible ? "Hide Gutter" : "Show Gutter"
             case ViewMenuTag.lineNumbers.rawValue:

@@ -39,6 +39,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private let remoteGutterKey = "RedMargin.RemoteDocumentGutter"
     private let gitIndicatorsKey = "RedMargin.DocumentGitIndicators"
     private let remoteGitIndicatorsKey = "RedMargin.RemoteDocumentGitIndicators"
+    private let sidebarVisibleKey = "RedMargin.DocumentSidebarVisible"
+    private let remoteSidebarVisibleKey = "RedMargin.RemoteDocumentSidebarVisible"
+    private let sidebarWidthKey = "RedMargin.DocumentSidebarWidth"
+    private let remoteSidebarWidthKey = "RedMargin.RemoteDocumentSidebarWidth"
     let maxRecentDocuments = 10
 
     @Published var recentDocuments: [URL] = []
@@ -270,6 +274,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             content: content,
             fileURL: url,
             initialScrollPosition: loadScrollPosition(for: url),
+            showSidebar: loadSidebarVisible(for: url),
+            sidebarWidth: loadSidebarWidth(for: url),
             showGutter: loadGutterVisible(for: url),
             showLineNumbers: loadLineNumbersVisible(for: url),
             showGitIndicators: loadGitIndicatorsVisible(for: url),
@@ -449,6 +455,58 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         return settings[location.storageKey]
     }
 
+    // MARK: - Per-Document Sidebar Persistence
+
+    func saveSidebarVisible(_ visible: Bool, for url: URL) {
+        var settings = UserDefaults.standard.dictionary(forKey: sidebarVisibleKey) as? [String: Bool] ?? [:]
+        settings[url.path] = visible
+        UserDefaults.standard.set(settings, forKey: sidebarVisibleKey)
+    }
+
+    func loadSidebarVisible(for url: URL) -> Bool? {
+        let settings = UserDefaults.standard.dictionary(forKey: sidebarVisibleKey) as? [String: Bool] ?? [:]
+        return settings[url.path]
+    }
+
+    func saveSidebarVisible(_ visible: Bool, for location: RemoteLocation) {
+        var settings = UserDefaults.standard.dictionary(forKey: remoteSidebarVisibleKey) as? [String: Bool] ?? [:]
+        settings[location.storageKey] = visible
+        UserDefaults.standard.set(settings, forKey: remoteSidebarVisibleKey)
+    }
+
+    func loadSidebarVisible(for location: RemoteLocation) -> Bool? {
+        let settings = UserDefaults.standard.dictionary(forKey: remoteSidebarVisibleKey) as? [String: Bool] ?? [:]
+        return settings[location.storageKey]
+    }
+
+    func saveSidebarWidth(_ width: CGFloat, for url: URL) {
+        var settings = UserDefaults.standard.dictionary(forKey: sidebarWidthKey) as? [String: Double] ?? [:]
+        settings[url.path] = Double(width)
+        UserDefaults.standard.set(settings, forKey: sidebarWidthKey)
+    }
+
+    func loadSidebarWidth(for url: URL) -> CGFloat? {
+        let settings = UserDefaults.standard.dictionary(forKey: sidebarWidthKey) as? [String: Double] ?? [:]
+        if let width = settings[url.path] {
+            return CGFloat(width)
+        }
+        return nil
+    }
+
+    func saveSidebarWidth(_ width: CGFloat, for location: RemoteLocation) {
+        var settings = UserDefaults.standard.dictionary(forKey: remoteSidebarWidthKey) as? [String: Double] ?? [:]
+        settings[location.storageKey] = Double(width)
+        UserDefaults.standard.set(settings, forKey: remoteSidebarWidthKey)
+    }
+
+    func loadSidebarWidth(for location: RemoteLocation) -> CGFloat? {
+        let settings = UserDefaults.standard.dictionary(forKey: remoteSidebarWidthKey) as? [String: Double] ?? [:]
+        if let width = settings[location.storageKey] {
+            return CGFloat(width)
+        }
+        return nil
+    }
+
     // MARK: - Menu Actions
 
     @objc func showPreferences(_ sender: Any?) {
@@ -507,6 +565,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     @objc func toggleGitIndicators(_ sender: Any?) {
         NotificationCenter.default.post(name: .toggleGitIndicators, object: nil)
+    }
+
+    @objc func toggleSidebar(_ sender: Any?) {
+        NotificationCenter.default.post(name: .toggleSidebar, object: nil)
     }
 }
 
