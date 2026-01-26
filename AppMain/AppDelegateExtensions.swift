@@ -113,6 +113,8 @@ extension AppDelegate {
                 content: content,
                 location: location,
                 fileProvider: fileProvider,
+                showSidebar: loadSidebarVisible(for: location),
+                sidebarWidth: loadSidebarWidth(for: location),
                 appDelegate: self
             )
 
@@ -172,16 +174,22 @@ extension AppDelegate {
         window.tabbingMode = NSWindow.TabbingMode.disallowed
         window.minSize = NSSize(width: 500, height: 400)
 
-        let size = NSSize(width: 950, height: 1100)
-        if let screen = NSScreen.main {
-            let origin = NSPoint(
-                x: screen.visibleFrame.midX - size.width / 2,
-                y: screen.visibleFrame.midY - size.height / 2
-            )
-            window.setFrame(NSRect(origin: origin, size: size), display: false)
-        } else {
-            window.setContentSize(size)
-            window.center()
+        let autosaveName = "remote:\(location.host):\(location.path)"
+        let hasSavedFrame = UserDefaults.standard.string(forKey: "NSWindow Frame \(autosaveName)") != nil
+        window.setFrameAutosaveName(autosaveName)
+
+        if !hasSavedFrame {
+            let size = NSSize(width: 950, height: 1100)
+            if let screen = NSScreen.main {
+                let origin = NSPoint(
+                    x: screen.visibleFrame.midX - size.width / 2,
+                    y: screen.visibleFrame.midY - size.height / 2
+                )
+                window.setFrame(NSRect(origin: origin, size: size), display: false)
+            } else {
+                window.setContentSize(size)
+                window.center()
+            }
         }
         return window
     }

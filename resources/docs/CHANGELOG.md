@@ -9,6 +9,7 @@
 - Collapsible folders with current file highlighted
 - Refresh button to update file list
 - Window resizes to keep document area constant when toggling sidebar
+- Sidebar state persists correctly after same-window navigation and app restart
 
 ### View Menu Improvements
 - Per-document gutter, line numbers, and git indicators settings

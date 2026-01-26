@@ -83,7 +83,7 @@ struct DocumentWindowContent: View {
                 onExport: executeExport
             ))
             .modifier(PersistenceModifiers(
-                fileURL: fileURL,
+                fileURL: state.fileURL,
                 showGutter: showGutter,
                 showLineNumbers: showLineNumbers,
                 showGitIndicators: showGitIndicators,
@@ -214,15 +214,20 @@ struct DocumentWindowContent: View {
     }
 
     private func handleFileSelection(_ url: URL) {
-        guard url != state.fileURL else { return }
+        let oldURL = state.fileURL
+        guard url != oldURL else { return }
 
         Task {
             do {
                 try await state.loadFile(at: url)
-                // Update window title
-                if let window = NSApp.keyWindow {
-                    window.title = url.displayPath
-                }
+                appDelegate?.updateWindowTracking(from: oldURL, to: url)
+
+                // Save current view settings for the new file
+                appDelegate?.saveSidebarVisible(showSidebar, for: url)
+                appDelegate?.saveSidebarWidth(sidebarWidth, for: url)
+                appDelegate?.saveGutterVisible(showGutter, for: url)
+                appDelegate?.saveLineNumbersVisible(showLineNumbers, for: url)
+                appDelegate?.saveGitIndicatorsVisible(showGitIndicators, for: url)
             } catch {
                 print("[DocumentView] Failed to load file: \(error)")
             }

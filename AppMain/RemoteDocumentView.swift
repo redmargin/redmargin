@@ -82,7 +82,7 @@ struct RemoteDocumentWindowContent: View {
                 onExport: executeExport
             ))
             .modifier(RemotePersistenceModifiers(
-                location: location,
+                location: state.location,
                 showGutter: showGutter,
                 showLineNumbers: showLineNumbers,
                 showGitIndicators: showGitIndicators,
@@ -142,17 +142,18 @@ struct RemoteDocumentWindowContent: View {
     }
 
     private func loadPersistedSettings() {
-        if let loaded = appDelegate?.loadGutterVisible(for: location) {
+        let loc = state.location
+        if let loaded = appDelegate?.loadGutterVisible(for: loc) {
             showGutter = loaded
         }
-        showLineNumbers = appDelegate?.loadLineNumbersVisible(for: location) ?? false
-        if let loaded = appDelegate?.loadGitIndicatorsVisible(for: location) {
+        showLineNumbers = appDelegate?.loadLineNumbersVisible(for: loc) ?? false
+        if let loaded = appDelegate?.loadGitIndicatorsVisible(for: loc) {
             showGitIndicators = loaded
         }
-        if let loaded = appDelegate?.loadSidebarVisible(for: location) {
+        if let loaded = appDelegate?.loadSidebarVisible(for: loc) {
             showSidebar = loaded
         }
-        if let loaded = appDelegate?.loadSidebarWidth(for: location) {
+        if let loaded = appDelegate?.loadSidebarWidth(for: loc) {
             sidebarWidth = loaded
         }
     }
@@ -280,16 +281,21 @@ struct RemoteDocumentWindowContent: View {
 
     private func handleFileSelection(_ url: URL) {
         let selectedPath = url.path
-        guard selectedPath != state.location.path else { return }
+        let oldLocation = state.location
+        guard selectedPath != oldLocation.path else { return }
 
         Task {
             do {
                 try await state.loadFile(at: selectedPath)
-                // Update window title
-                if let window = NSApp.keyWindow {
-                    let newLocation = RemoteLocation(host: state.location.host, path: selectedPath)
-                    window.title = newLocation.displayTitle
-                }
+                let newLocation = RemoteLocation(host: oldLocation.host, path: selectedPath)
+                appDelegate?.updateRemoteWindowTracking(from: oldLocation, to: newLocation)
+
+                // Save current view settings for the new location
+                appDelegate?.saveSidebarVisible(showSidebar, for: newLocation)
+                appDelegate?.saveSidebarWidth(sidebarWidth, for: newLocation)
+                appDelegate?.saveGutterVisible(showGutter, for: newLocation)
+                appDelegate?.saveLineNumbersVisible(showLineNumbers, for: newLocation)
+                appDelegate?.saveGitIndicatorsVisible(showGitIndicators, for: newLocation)
             } catch {
                 print("[RemoteDocumentView] Failed to load file: \(error)")
             }

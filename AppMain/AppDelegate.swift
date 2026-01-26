@@ -173,6 +173,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         return true
     }
 
+    // MARK: - Window Tracking Updates
+
+    /// Updates the window tracking when navigating to a different file in the same window
+    func updateWindowTracking(from oldURL: URL, to newURL: URL) {
+        guard let window = documentWindows.removeValue(forKey: oldURL) else { return }
+        documentWindows[newURL] = window
+        window.title = newURL.displayPath
+
+        // Save current frame under new name BEFORE changing autosave name
+        // This prevents setFrameAutosaveName from loading an old stale frame
+        let newAutosaveName = newURL.absoluteString
+        window.saveFrame(usingName: newAutosaveName)
+        window.setFrameAutosaveName(newAutosaveName)
+
+        addToRecentDocuments(newURL)
+    }
+
+    /// Updates the window tracking for remote documents when navigating
+    func updateRemoteWindowTracking(from oldLocation: RemoteLocation, to newLocation: RemoteLocation) {
+        guard let window = remoteDocumentWindows.removeValue(forKey: oldLocation) else { return }
+        remoteDocumentWindows[newLocation] = window
+        window.title = newLocation.displayTitle
+
+        // Save current frame under new name BEFORE changing autosave name
+        // This prevents setFrameAutosaveName from loading an old stale frame
+        let newAutosaveName = "remote:\(newLocation.host):\(newLocation.path)"
+        window.saveFrame(usingName: newAutosaveName)
+        window.setFrameAutosaveName(newAutosaveName)
+
+        addToRecentRemoteLocations(newLocation)
+    }
+
     // MARK: - State Persistence
 
     private func saveOpenURLs(_ urls: [URL]) {
