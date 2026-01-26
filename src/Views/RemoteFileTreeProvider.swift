@@ -11,6 +11,10 @@ public class RemoteFileTreeProvider: ObservableObject {
 
     private let currentFilePath: String
     private let fileProvider: RemoteFileProvider
+    private var expandedFolders: Set<String> = []
+
+    /// Callback when expanded folders change (path of root, set of expanded folder paths)
+    public var onExpandedFoldersChange: ((String, Set<String>) -> Void)?
 
     /// Directories to skip when enumerating files
     private static let ignoredDirectories: Set<String> = [
@@ -21,9 +25,10 @@ public class RemoteFileTreeProvider: ObservableObject {
     /// File extensions to include
     private static let markdownExtensions: Set<String> = ["md", "markdown"]
 
-    public init(currentFilePath: String, fileProvider: RemoteFileProvider) {
+    public init(currentFilePath: String, fileProvider: RemoteFileProvider, expandedFolders: Set<String> = []) {
         self.currentFilePath = currentFilePath
         self.fileProvider = fileProvider
+        self.expandedFolders = expandedFolders
         Task {
             await loadFiles()
         }
@@ -97,13 +102,20 @@ public class RemoteFileTreeProvider: ObservableObject {
 
                 // Only include directory if it has markdown files (directly or nested)
                 if !children.isEmpty {
+                    // Check if this folder should be expanded
+                    let shouldExpand = expandedFolders.contains(fullPath) || depth == 0
                     let node = FileTreeNode(
                         name: entry.name,
                         url: url,
                         isDirectory: true,
                         depth: depth,
-                        children: children
+                        children: children,
+                        isExpanded: shouldExpand
                     )
+                    // Set up callback for expansion changes
+                    node.onExpandedChange = { [weak self] path, expanded in
+                        self?.handleFolderExpansionChange(path: path, expanded: expanded)
+                    }
                     nodes.append(node)
                 }
             } else {
@@ -122,5 +134,37 @@ public class RemoteFileTreeProvider: ObservableObject {
         }
 
         return nodes
+    }
+
+    private func handleFolderExpansionChange(path: String, expanded: Bool) {
+        if expanded {
+            expandedFolders.insert(path)
+        } else {
+            expandedFolders.remove(path)
+        }
+
+        // Notify via callback
+        if let rootPath = rootDirectory {
+            onExpandedFoldersChange?(rootPath, expandedFolders)
+        }
+    }
+
+    /// Apply expanded folders state to existing nodes
+    public func applyExpandedFolders(_ folders: Set<String>) {
+        expandedFolders = folders
+        applyExpandedStateToNodes(rootNodes)
+    }
+
+    private func applyExpandedStateToNodes(_ nodes: [FileTreeNode]) {
+        for node in nodes where node.isDirectory {
+            // Temporarily remove callback to avoid triggering saves
+            let callback = node.onExpandedChange
+            node.onExpandedChange = nil
+            node.isExpanded = expandedFolders.contains(node.url.path) || node.depth == 0
+            node.onExpandedChange = callback
+
+            // Recursively apply to children
+            applyExpandedStateToNodes(node.children)
+        }
     }
 }

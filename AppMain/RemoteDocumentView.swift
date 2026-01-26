@@ -89,7 +89,6 @@ struct RemoteDocumentWindowContent: View {
                 showSidebar: showSidebar,
                 sidebarWidth: sidebarWidth,
                 findSearchText: findController.searchText,
-                appDelegate: appDelegate,
                 onFind: { findController.find($0) }
             ))
             .onKeyPress(.escape) {
@@ -142,19 +141,48 @@ struct RemoteDocumentWindowContent: View {
     }
 
     private func loadPersistedSettings() {
+        let settings = DocumentSettingsStorage.shared
         let loc = state.location
-        if let loaded = appDelegate?.loadGutterVisible(for: loc) {
+        if let loaded = settings.loadGutterVisible(for: loc) {
             showGutter = loaded
         }
-        showLineNumbers = appDelegate?.loadLineNumbersVisible(for: loc) ?? false
-        if let loaded = appDelegate?.loadGitIndicatorsVisible(for: loc) {
+        showLineNumbers = settings.loadLineNumbersVisible(for: loc)
+        if let loaded = settings.loadGitIndicatorsVisible(for: loc) {
             showGitIndicators = loaded
         }
-        if let loaded = appDelegate?.loadSidebarVisible(for: loc) {
+        if let loaded = settings.loadSidebarVisible(for: loc) {
             showSidebar = loaded
         }
-        if let loaded = appDelegate?.loadSidebarWidth(for: loc) {
+        if let loaded = settings.loadSidebarWidth(for: loc) {
             sidebarWidth = loaded
+        }
+
+        // Set up expanded folders persistence
+        setupExpandedFoldersPersistence()
+    }
+
+    private func setupExpandedFoldersPersistence() {
+        let settings = DocumentSettingsStorage.shared
+        let host = state.location.host
+
+        // Set up callback for saving expanded folders
+        fileTreeProvider.onExpandedFoldersChange = { rootPath, expandedPaths in
+            settings.saveExpandedFolders(expandedPaths, forRemoteHost: host, rootPath: rootPath)
+        }
+
+        // Load and apply saved expanded folders once rootDirectory is available
+        Task { @MainActor in
+            // Wait for FileTreeProvider to finish loading
+            while fileTreeProvider.isLoading {
+                try? await Task.sleep(nanoseconds: 50_000_000)  // 50ms
+            }
+
+            if let rootPath = fileTreeProvider.rootDirectory {
+                let expandedFolders = settings.loadExpandedFolders(forRemoteHost: host, rootPath: rootPath)
+                if !expandedFolders.isEmpty {
+                    fileTreeProvider.applyExpandedFolders(expandedFolders)
+                }
+            }
         }
     }
 
@@ -165,10 +193,10 @@ struct RemoteDocumentWindowContent: View {
                 markdown: state.content,
                 fileURL: URL(fileURLWithPath: location.path),
                 onCheckboxToggle: state.handleCheckboxToggle,
-                onScrollPositionChange: { [weak appDelegate] position in
-                    appDelegate?.saveScrollPosition(position, for: location)
+                onScrollPositionChange: { position in
+                    DocumentSettingsStorage.shared.saveScrollPosition(position, for: location)
                 },
-                initialScrollPosition: appDelegate?.loadScrollPosition(for: location) ?? 0,
+                initialScrollPosition: DocumentSettingsStorage.shared.loadScrollPosition(for: location),
                 showLineNumbers: showLineNumbers,
                 gitChanges: state.gitChanges,
                 findController: findController,
@@ -291,11 +319,12 @@ struct RemoteDocumentWindowContent: View {
                 appDelegate?.updateRemoteWindowTracking(from: oldLocation, to: newLocation)
 
                 // Save current view settings for the new location
-                appDelegate?.saveSidebarVisible(showSidebar, for: newLocation)
-                appDelegate?.saveSidebarWidth(sidebarWidth, for: newLocation)
-                appDelegate?.saveGutterVisible(showGutter, for: newLocation)
-                appDelegate?.saveLineNumbersVisible(showLineNumbers, for: newLocation)
-                appDelegate?.saveGitIndicatorsVisible(showGitIndicators, for: newLocation)
+                let settings = DocumentSettingsStorage.shared
+                settings.saveSidebarVisible(showSidebar, for: newLocation)
+                settings.saveSidebarWidth(sidebarWidth, for: newLocation)
+                settings.saveGutterVisible(showGutter, for: newLocation)
+                settings.saveLineNumbersVisible(showLineNumbers, for: newLocation)
+                settings.saveGitIndicatorsVisible(showGitIndicators, for: newLocation)
             } catch {
                 print("[RemoteDocumentView] Failed to load file: \(error)")
             }
@@ -524,25 +553,26 @@ private struct RemotePersistenceModifiers: ViewModifier {
     let showSidebar: Bool
     let sidebarWidth: CGFloat
     let findSearchText: String
-    weak var appDelegate: AppDelegate?
     let onFind: (String) -> Void
+
+    private let settings = DocumentSettingsStorage.shared
 
     func body(content: Content) -> some View {
         content
             .onChange(of: showGutter) { _, newValue in
-                appDelegate?.saveGutterVisible(newValue, for: location)
+                settings.saveGutterVisible(newValue, for: location)
             }
             .onChange(of: showLineNumbers) { _, newValue in
-                appDelegate?.saveLineNumbersVisible(newValue, for: location)
+                settings.saveLineNumbersVisible(newValue, for: location)
             }
             .onChange(of: showGitIndicators) { _, newValue in
-                appDelegate?.saveGitIndicatorsVisible(newValue, for: location)
+                settings.saveGitIndicatorsVisible(newValue, for: location)
             }
             .onChange(of: showSidebar) { _, newValue in
-                appDelegate?.saveSidebarVisible(newValue, for: location)
+                settings.saveSidebarVisible(newValue, for: location)
             }
             .onChange(of: sidebarWidth) { _, newValue in
-                appDelegate?.saveSidebarWidth(newValue, for: location)
+                settings.saveSidebarWidth(newValue, for: location)
             }
             .onChange(of: findSearchText) { _, newValue in
                 onFind(newValue)

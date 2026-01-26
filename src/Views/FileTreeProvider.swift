@@ -9,15 +9,31 @@ public class FileTreeNode: Identifiable, ObservableObject {
     public let isDirectory: Bool
     public let depth: Int
     @Published public var children: [FileTreeNode]
-    @Published public var isExpanded: Bool
+    @Published public var isExpanded: Bool {
+        didSet {
+            if isDirectory {
+                onExpandedChange?(url.path, isExpanded)
+            }
+        }
+    }
 
-    public init(name: String, url: URL, isDirectory: Bool, depth: Int, children: [FileTreeNode] = []) {
+    /// Callback when expansion state changes
+    var onExpandedChange: ((String, Bool) -> Void)?
+
+    public init(
+        name: String,
+        url: URL,
+        isDirectory: Bool,
+        depth: Int,
+        children: [FileTreeNode] = [],
+        isExpanded: Bool? = nil
+    ) {
         self.name = name
         self.url = url
         self.isDirectory = isDirectory
         self.depth = depth
         self.children = children
-        self.isExpanded = depth == 0  // Root level expanded by default
+        self.isExpanded = isExpanded ?? (depth == 0)  // Root level expanded by default
     }
 }
 
@@ -31,6 +47,10 @@ public class FileTreeProvider: ObservableObject {
 
     private let currentFileURL: URL
     private var directoryWatcher: DirectoryWatcher?
+    private var expandedFolders: Set<String> = []
+
+    /// Callback when expanded folders change (path of root, set of expanded folder paths)
+    public var onExpandedFoldersChange: ((String, Set<String>) -> Void)?
 
     /// Directories to skip when enumerating files
     private static let ignoredDirectories: Set<String> = [
@@ -41,8 +61,9 @@ public class FileTreeProvider: ObservableObject {
     /// File extensions to include
     private static let markdownExtensions: Set<String> = ["md", "markdown"]
 
-    public init(currentFileURL: URL) {
+    public init(currentFileURL: URL, expandedFolders: Set<String> = []) {
         self.currentFileURL = currentFileURL
+        self.expandedFolders = expandedFolders
         Task {
             await loadFiles()
         }
@@ -119,13 +140,20 @@ public class FileTreeProvider: ObservableObject {
 
                 // Only include directory if it has markdown files (directly or nested)
                 if !children.isEmpty {
+                    // Check if this folder should be expanded
+                    let shouldExpand = expandedFolders.contains(url.path) || depth == 0
                     let node = FileTreeNode(
                         name: name,
                         url: url,
                         isDirectory: true,
                         depth: depth,
-                        children: children
+                        children: children,
+                        isExpanded: shouldExpand
                     )
+                    // Set up callback for expansion changes
+                    node.onExpandedChange = { [weak self] path, expanded in
+                        self?.handleFolderExpansionChange(path: path, expanded: expanded)
+                    }
                     nodes.append(node)
                 }
             } else {
@@ -151,6 +179,38 @@ public class FileTreeProvider: ObservableObject {
             Task { @MainActor in
                 self?.refresh()
             }
+        }
+    }
+
+    private func handleFolderExpansionChange(path: String, expanded: Bool) {
+        if expanded {
+            expandedFolders.insert(path)
+        } else {
+            expandedFolders.remove(path)
+        }
+
+        // Notify via callback
+        if let rootPath = rootDirectory?.path {
+            onExpandedFoldersChange?(rootPath, expandedFolders)
+        }
+    }
+
+    /// Apply expanded folders state to existing nodes
+    public func applyExpandedFolders(_ folders: Set<String>) {
+        expandedFolders = folders
+        applyExpandedStateToNodes(rootNodes)
+    }
+
+    private func applyExpandedStateToNodes(_ nodes: [FileTreeNode]) {
+        for node in nodes where node.isDirectory {
+            // Temporarily remove callback to avoid triggering saves
+            let callback = node.onExpandedChange
+            node.onExpandedChange = nil
+            node.isExpanded = expandedFolders.contains(node.url.path) || node.depth == 0
+            node.onExpandedChange = callback
+
+            // Recursively apply to children
+            applyExpandedStateToNodes(node.children)
         }
     }
 }

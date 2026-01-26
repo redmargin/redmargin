@@ -31,19 +31,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     let recentRemoteLocationsKey = "RedMargin.RecentRemoteLocations"
     private let openRemoteLocationsKey = "RedMargin.OpenRemoteLocations"
     private let windowOrderKey = "RedMargin.WindowOrder"
-    private let scrollPositionsKey = "RedMargin.ScrollPositions"
-    private let remoteScrollPositionsKey = "RedMargin.RemoteScrollPositions"
-    private let lineNumbersKey = "RedMargin.DocumentLineNumbers"
-    private let remoteLineNumbersKey = "RedMargin.RemoteDocumentLineNumbers"
-    private let gutterKey = "RedMargin.DocumentGutter"
-    private let remoteGutterKey = "RedMargin.RemoteDocumentGutter"
-    private let gitIndicatorsKey = "RedMargin.DocumentGitIndicators"
-    private let remoteGitIndicatorsKey = "RedMargin.RemoteDocumentGitIndicators"
-    private let sidebarVisibleKey = "RedMargin.DocumentSidebarVisible"
-    private let remoteSidebarVisibleKey = "RedMargin.RemoteDocumentSidebarVisible"
-    private let sidebarWidthKey = "RedMargin.DocumentSidebarWidth"
-    private let remoteSidebarWidthKey = "RedMargin.RemoteDocumentSidebarWidth"
     let maxRecentDocuments = 10
+    let settings = DocumentSettingsStorage.shared
 
     @Published var recentDocuments: [URL] = []
     @Published var recentRemoteServers: [String] = []
@@ -305,14 +294,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let documentView = DocumentWindowContent(
             content: content,
             fileURL: url,
-            initialScrollPosition: loadScrollPosition(for: url),
-            showSidebar: loadSidebarVisible(for: url),
-            sidebarWidth: loadSidebarWidth(for: url),
-            showGutter: loadGutterVisible(for: url),
-            showLineNumbers: loadLineNumbersVisible(for: url),
-            showGitIndicators: loadGitIndicatorsVisible(for: url),
+            initialScrollPosition: settings.loadScrollPosition(for: url),
+            showSidebar: settings.loadSidebarVisible(for: url),
+            sidebarWidth: settings.loadSidebarWidth(for: url),
+            showGutter: settings.loadGutterVisible(for: url),
+            showLineNumbers: settings.loadLineNumbersVisible(for: url),
+            showGitIndicators: settings.loadGitIndicatorsVisible(for: url),
             appDelegate: self,
-            onScrollPositionChange: { [weak self] in self?.saveScrollPosition($0, for: url) }
+            onScrollPositionChange: { [weak self] in self?.settings.saveScrollPosition($0, for: url) }
         )
 
         let window = createWindow(for: url, rootView: documentView)
@@ -381,162 +370,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         guard let window = notification.object as? NSWindow else { return }
         documentWindows = documentWindows.filter { $0.value !== window }
         remoteDocumentWindows = remoteDocumentWindows.filter { $0.value !== window }
-    }
-
-    // MARK: - Scroll Position Persistence
-
-    private func saveScrollPosition(_ position: Double, for url: URL) {
-        var positions = UserDefaults.standard.dictionary(forKey: scrollPositionsKey) as? [String: Double] ?? [:]
-        positions[url.path] = position
-        UserDefaults.standard.set(positions, forKey: scrollPositionsKey)
-    }
-
-    private func loadScrollPosition(for url: URL) -> Double {
-        let positions = UserDefaults.standard.dictionary(forKey: scrollPositionsKey) as? [String: Double] ?? [:]
-        return positions[url.path] ?? 0
-    }
-
-    func saveScrollPosition(_ position: Double, for location: RemoteLocation) {
-        var positions = UserDefaults.standard.dictionary(
-            forKey: remoteScrollPositionsKey
-        ) as? [String: Double] ?? [:]
-        positions[location.storageKey] = position
-        UserDefaults.standard.set(positions, forKey: remoteScrollPositionsKey)
-    }
-
-    func loadScrollPosition(for location: RemoteLocation) -> Double {
-        let positions = UserDefaults.standard.dictionary(
-            forKey: remoteScrollPositionsKey
-        ) as? [String: Double] ?? [:]
-        return positions[location.storageKey] ?? 0
-    }
-
-    // MARK: - Per-Document Line Numbers Persistence
-
-    func saveLineNumbersVisible(_ visible: Bool, for url: URL) {
-        var settings = UserDefaults.standard.dictionary(forKey: lineNumbersKey) as? [String: Bool] ?? [:]
-        settings[url.path] = visible
-        UserDefaults.standard.set(settings, forKey: lineNumbersKey)
-    }
-
-    func loadLineNumbersVisible(for url: URL) -> Bool {
-        let settings = UserDefaults.standard.dictionary(forKey: lineNumbersKey) as? [String: Bool] ?? [:]
-        return settings[url.path] ?? false
-    }
-
-    func saveLineNumbersVisible(_ visible: Bool, for location: RemoteLocation) {
-        var settings = UserDefaults.standard.dictionary(
-            forKey: remoteLineNumbersKey
-        ) as? [String: Bool] ?? [:]
-        settings[location.storageKey] = visible
-        UserDefaults.standard.set(settings, forKey: remoteLineNumbersKey)
-    }
-
-    func loadLineNumbersVisible(for location: RemoteLocation) -> Bool {
-        let settings = UserDefaults.standard.dictionary(
-            forKey: remoteLineNumbersKey
-        ) as? [String: Bool] ?? [:]
-        return settings[location.storageKey] ?? false
-    }
-
-    // MARK: - Per-Document Gutter Persistence
-
-    func saveGutterVisible(_ visible: Bool, for url: URL) {
-        var settings = UserDefaults.standard.dictionary(forKey: gutterKey) as? [String: Bool] ?? [:]
-        settings[url.path] = visible
-        UserDefaults.standard.set(settings, forKey: gutterKey)
-    }
-
-    func loadGutterVisible(for url: URL) -> Bool? {
-        let settings = UserDefaults.standard.dictionary(forKey: gutterKey) as? [String: Bool] ?? [:]
-        return settings[url.path]
-    }
-
-    func saveGutterVisible(_ visible: Bool, for location: RemoteLocation) {
-        var settings = UserDefaults.standard.dictionary(forKey: remoteGutterKey) as? [String: Bool] ?? [:]
-        settings[location.storageKey] = visible
-        UserDefaults.standard.set(settings, forKey: remoteGutterKey)
-    }
-
-    func loadGutterVisible(for location: RemoteLocation) -> Bool? {
-        let settings = UserDefaults.standard.dictionary(forKey: remoteGutterKey) as? [String: Bool] ?? [:]
-        return settings[location.storageKey]
-    }
-
-    // MARK: - Per-Document Git Indicators Persistence
-
-    func saveGitIndicatorsVisible(_ visible: Bool, for url: URL) {
-        var settings = UserDefaults.standard.dictionary(forKey: gitIndicatorsKey) as? [String: Bool] ?? [:]
-        settings[url.path] = visible
-        UserDefaults.standard.set(settings, forKey: gitIndicatorsKey)
-    }
-
-    func loadGitIndicatorsVisible(for url: URL) -> Bool? {
-        let settings = UserDefaults.standard.dictionary(forKey: gitIndicatorsKey) as? [String: Bool] ?? [:]
-        return settings[url.path]
-    }
-
-    func saveGitIndicatorsVisible(_ visible: Bool, for location: RemoteLocation) {
-        var settings = UserDefaults.standard.dictionary(forKey: remoteGitIndicatorsKey) as? [String: Bool] ?? [:]
-        settings[location.storageKey] = visible
-        UserDefaults.standard.set(settings, forKey: remoteGitIndicatorsKey)
-    }
-
-    func loadGitIndicatorsVisible(for location: RemoteLocation) -> Bool? {
-        let settings = UserDefaults.standard.dictionary(forKey: remoteGitIndicatorsKey) as? [String: Bool] ?? [:]
-        return settings[location.storageKey]
-    }
-
-    // MARK: - Per-Document Sidebar Persistence
-
-    func saveSidebarVisible(_ visible: Bool, for url: URL) {
-        var settings = UserDefaults.standard.dictionary(forKey: sidebarVisibleKey) as? [String: Bool] ?? [:]
-        settings[url.path] = visible
-        UserDefaults.standard.set(settings, forKey: sidebarVisibleKey)
-    }
-
-    func loadSidebarVisible(for url: URL) -> Bool? {
-        let settings = UserDefaults.standard.dictionary(forKey: sidebarVisibleKey) as? [String: Bool] ?? [:]
-        return settings[url.path]
-    }
-
-    func saveSidebarVisible(_ visible: Bool, for location: RemoteLocation) {
-        var settings = UserDefaults.standard.dictionary(forKey: remoteSidebarVisibleKey) as? [String: Bool] ?? [:]
-        settings[location.storageKey] = visible
-        UserDefaults.standard.set(settings, forKey: remoteSidebarVisibleKey)
-    }
-
-    func loadSidebarVisible(for location: RemoteLocation) -> Bool? {
-        let settings = UserDefaults.standard.dictionary(forKey: remoteSidebarVisibleKey) as? [String: Bool] ?? [:]
-        return settings[location.storageKey]
-    }
-
-    func saveSidebarWidth(_ width: CGFloat, for url: URL) {
-        var settings = UserDefaults.standard.dictionary(forKey: sidebarWidthKey) as? [String: Double] ?? [:]
-        settings[url.path] = Double(width)
-        UserDefaults.standard.set(settings, forKey: sidebarWidthKey)
-    }
-
-    func loadSidebarWidth(for url: URL) -> CGFloat? {
-        let settings = UserDefaults.standard.dictionary(forKey: sidebarWidthKey) as? [String: Double] ?? [:]
-        if let width = settings[url.path] {
-            return CGFloat(width)
-        }
-        return nil
-    }
-
-    func saveSidebarWidth(_ width: CGFloat, for location: RemoteLocation) {
-        var settings = UserDefaults.standard.dictionary(forKey: remoteSidebarWidthKey) as? [String: Double] ?? [:]
-        settings[location.storageKey] = Double(width)
-        UserDefaults.standard.set(settings, forKey: remoteSidebarWidthKey)
-    }
-
-    func loadSidebarWidth(for location: RemoteLocation) -> CGFloat? {
-        let settings = UserDefaults.standard.dictionary(forKey: remoteSidebarWidthKey) as? [String: Double] ?? [:]
-        if let width = settings[location.storageKey] {
-            return CGFloat(width)
-        }
-        return nil
     }
 
     // MARK: - Menu Actions

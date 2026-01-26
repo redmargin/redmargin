@@ -113,8 +113,8 @@ extension AppDelegate {
                 content: content,
                 location: location,
                 fileProvider: fileProvider,
-                showSidebar: loadSidebarVisible(for: location),
-                sidebarWidth: loadSidebarWidth(for: location),
+                showSidebar: settings.loadSidebarVisible(for: location),
+                sidebarWidth: settings.loadSidebarWidth(for: location),
                 appDelegate: self
             )
 

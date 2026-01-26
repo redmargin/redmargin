@@ -90,7 +90,6 @@ struct DocumentWindowContent: View {
                 showSidebar: showSidebar,
                 sidebarWidth: sidebarWidth,
                 findSearchText: findController.searchText,
-                appDelegate: appDelegate,
                 onFind: { findController.find($0) }
             ))
             .onKeyPress(.escape) {
@@ -98,6 +97,33 @@ struct DocumentWindowContent: View {
                 dismissFindBar()
                 return .handled
             }
+            .onAppear {
+                setupExpandedFoldersPersistence()
+            }
+    }
+
+    private func setupExpandedFoldersPersistence() {
+        let settings = DocumentSettingsStorage.shared
+
+        // Set up callback for saving expanded folders
+        fileTreeProvider.onExpandedFoldersChange = { rootPath, expandedPaths in
+            settings.saveExpandedFolders(expandedPaths, for: rootPath)
+        }
+
+        // Load and apply saved expanded folders once rootDirectory is available
+        Task { @MainActor in
+            // Wait for FileTreeProvider to finish loading
+            while fileTreeProvider.isLoading {
+                try? await Task.sleep(nanoseconds: 50_000_000)  // 50ms
+            }
+
+            if let rootPath = fileTreeProvider.rootDirectory?.path {
+                let expandedFolders = settings.loadExpandedFolders(for: rootPath)
+                if !expandedFolders.isEmpty {
+                    fileTreeProvider.applyExpandedFolders(expandedFolders)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -223,11 +249,12 @@ struct DocumentWindowContent: View {
                 appDelegate?.updateWindowTracking(from: oldURL, to: url)
 
                 // Save current view settings for the new file
-                appDelegate?.saveSidebarVisible(showSidebar, for: url)
-                appDelegate?.saveSidebarWidth(sidebarWidth, for: url)
-                appDelegate?.saveGutterVisible(showGutter, for: url)
-                appDelegate?.saveLineNumbersVisible(showLineNumbers, for: url)
-                appDelegate?.saveGitIndicatorsVisible(showGitIndicators, for: url)
+                let settings = DocumentSettingsStorage.shared
+                settings.saveSidebarVisible(showSidebar, for: url)
+                settings.saveSidebarWidth(sidebarWidth, for: url)
+                settings.saveGutterVisible(showGutter, for: url)
+                settings.saveLineNumbersVisible(showLineNumbers, for: url)
+                settings.saveGitIndicatorsVisible(showGitIndicators, for: url)
             } catch {
                 print("[DocumentView] Failed to load file: \(error)")
             }
@@ -457,25 +484,26 @@ private struct PersistenceModifiers: ViewModifier {
     let showSidebar: Bool
     let sidebarWidth: CGFloat
     let findSearchText: String
-    weak var appDelegate: AppDelegate?
     let onFind: (String) -> Void
+
+    private let settings = DocumentSettingsStorage.shared
 
     func body(content: Content) -> some View {
         content
             .onChange(of: showGutter) { _, newValue in
-                appDelegate?.saveGutterVisible(newValue, for: fileURL)
+                settings.saveGutterVisible(newValue, for: fileURL)
             }
             .onChange(of: showLineNumbers) { _, newValue in
-                appDelegate?.saveLineNumbersVisible(newValue, for: fileURL)
+                settings.saveLineNumbersVisible(newValue, for: fileURL)
             }
             .onChange(of: showGitIndicators) { _, newValue in
-                appDelegate?.saveGitIndicatorsVisible(newValue, for: fileURL)
+                settings.saveGitIndicatorsVisible(newValue, for: fileURL)
             }
             .onChange(of: showSidebar) { _, newValue in
-                appDelegate?.saveSidebarVisible(newValue, for: fileURL)
+                settings.saveSidebarVisible(newValue, for: fileURL)
             }
             .onChange(of: sidebarWidth) { _, newValue in
-                appDelegate?.saveSidebarWidth(newValue, for: fileURL)
+                settings.saveSidebarWidth(newValue, for: fileURL)
             }
             .onChange(of: findSearchText) { _, newValue in
                 onFind(newValue)

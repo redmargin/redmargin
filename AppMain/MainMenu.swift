@@ -182,7 +182,7 @@ final class ViewMenuDelegate: NSObject, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        guard let appDelegate = appDelegate else { return }
+        guard appDelegate != nil else { return }
         let prefs = PreferencesManager.shared
 
         // Determine state based on current document, falling back to preferences
@@ -191,20 +191,21 @@ final class ViewMenuDelegate: NSObject, NSMenuDelegate {
         var lineNumbersVisible = prefs.showLineNumbers
         var gitIndicatorsVisible = prefs.showGitIndicators
 
+        let settings = DocumentSettingsStorage.shared
         if let window = NSApp.keyWindow {
             if let hostingVC = window.contentViewController as? NSHostingController<DocumentWindowContent> {
                 let url = hostingVC.rootView.fileURL
-                sidebarVisible = appDelegate.loadSidebarVisible(for: url) ?? false
-                gutterVisible = appDelegate.loadGutterVisible(for: url) ?? prefs.showGutter
-                lineNumbersVisible = appDelegate.loadLineNumbersVisible(for: url)
-                gitIndicatorsVisible = appDelegate.loadGitIndicatorsVisible(for: url) ?? prefs.showGitIndicators
+                sidebarVisible = settings.loadSidebarVisible(for: url) ?? false
+                gutterVisible = settings.loadGutterVisible(for: url) ?? prefs.showGutter
+                lineNumbersVisible = settings.loadLineNumbersVisible(for: url)
+                gitIndicatorsVisible = settings.loadGitIndicatorsVisible(for: url) ?? prefs.showGitIndicators
             } else if let hostingVC = window.contentViewController
                         as? NSHostingController<RemoteDocumentWindowContent> {
                 let location = hostingVC.rootView.location
-                sidebarVisible = appDelegate.loadSidebarVisible(for: location) ?? false
-                gutterVisible = appDelegate.loadGutterVisible(for: location) ?? prefs.showGutter
-                lineNumbersVisible = appDelegate.loadLineNumbersVisible(for: location)
-                gitIndicatorsVisible = appDelegate.loadGitIndicatorsVisible(for: location) ?? prefs.showGitIndicators
+                sidebarVisible = settings.loadSidebarVisible(for: location) ?? false
+                gutterVisible = settings.loadGutterVisible(for: location) ?? prefs.showGutter
+                lineNumbersVisible = settings.loadLineNumbersVisible(for: location)
+                gitIndicatorsVisible = settings.loadGitIndicatorsVisible(for: location) ?? prefs.showGitIndicators
             }
         }
 
