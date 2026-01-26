@@ -1,7 +1,7 @@
 # Version 1.0 Release
 
 ## Meta
-- Status: Draft
+- Status: Complete
 - Branch: feature/v1-release
 
 ---
@@ -116,8 +116,8 @@ Add syntax highlighting via highlight.js, a minimal sidebar showing Markdown fil
 - [x] Create WebRenderer/src/highlight.js wrapper
 - [x] Modify index.js to configure markdown-it with highlight function
 - [x] Import highlight CSS in light.css and dark.css
-- [ ] Test with code blocks in various languages
-- [ ] Verify theme switching works correctly
+- [x] Test with code blocks in various languages
+- [x] Verify theme switching works correctly
 
 **Phase 2: Sidebar - Local Files**
 - [x] Create FileTreeProvider class to enumerate .md files from directory
@@ -127,21 +127,21 @@ Add syntax highlighting via highlight.js, a minimal sidebar showing Markdown fil
 - [x] Add View menu items (Show/Hide Sidebar, Cmd-1)
 - [x] Add directory watching for sidebar refresh
 - [x] Persist sidebar visibility and width
-- [ ] Test with repos of various sizes
+- [x] Test with repos of various sizes
 
 **Phase 3: Sidebar - Remote Files**
-- [ ] Extend FileTreeProvider to support remote directory listing
-- [ ] Integrate into RemoteDocumentView
-- [ ] Handle connection state (show placeholder when disconnected)
-- [ ] Test remote sidebar navigation
+- [x] Extend FileTreeProvider to support remote directory listing
+- [x] Integrate into RemoteDocumentView
+- [x] Handle connection state (show placeholder when disconnected)
+- [x] Test remote sidebar navigation
 
 **Phase 4: Version Bump and Polish**
-- [ ] Update Info.plist version to 1.0.0
-- [ ] Update ServerDeployer version to 1.0.0
-- [ ] Update README status to v1.0.0
-- [ ] Add Cmd-1 to README keyboard shortcuts
-- [ ] Final testing of all new features
-- [ ] Update CHANGELOG.md with 1.0 release notes
+- [x] Update Info.plist version to 1.0.0
+- [x] Update ServerDeployer version to 1.0.0
+- [x] Update README status to v1.0.0
+- [x] Add Cmd-1 to README keyboard shortcuts
+- [x] Final testing of all new features
+- [x] Update CHANGELOG.md with 1.0 release notes
 
 ---
 
@@ -150,15 +150,15 @@ Add syntax highlighting via highlight.js, a minimal sidebar showing Markdown fil
 ### Automated Tests
 
 Tests in `Tests/SidebarTests.swift`:
-- [ ] `testFileTreeProviderFindsMarkdownFiles` - Directory with .md files returns correct list
-- [ ] `testFileTreeProviderIgnoresNonMarkdown` - .txt, .swift files excluded
-- [ ] `testFileTreeProviderUsesRepoRoot` - File in repo uses repo root, not file directory
-- [ ] `testFileTreeProviderFallsBackToDirectory` - File not in repo uses parent directory
+- [x] `testFileTreeProviderFindsMarkdownFiles` - Directory with .md files returns correct list
+- [x] `testFileTreeProviderIgnoresNonMarkdown` - .txt, .swift files excluded
+- [x] `testFileTreeProviderUsesRepoRoot` - File in repo uses repo root, not file directory
+- [x] `testFileTreeProviderFallsBackToDirectory` - File not in repo uses parent directory
 
 Tests in `WebRenderer/tests/highlight.test.js`:
-- [ ] `testPythonHighlighting` - Python code block has syntax classes
-- [ ] `testUnknownLanguageFallback` - Unknown language renders as plain code
-- [ ] `testNoLanguageSpecifier` - Code block without language renders correctly
+- [ ] `testPythonHighlighting` - Python code block has syntax classes (tested manually)
+- [ ] `testUnknownLanguageFallback` - Unknown language renders as plain code (tested manually)
+- [ ] `testNoLanguageSpecifier` - Code block without language renders correctly (tested manually)
 
 ### Test Log
 

@@ -65,7 +65,10 @@ The build script will:
 | Print | Cmd-P |
 | Preferences | Cmd-, |
 | Refresh | Cmd-R |
+| Toggle Sidebar | Cmd-1 |
 | Toggle Line Numbers | Cmd-L |
+| Toggle Gutter | Cmd-Option-G |
+| Toggle Git Indicators | Cmd-Shift-I |
 | Find | Cmd-F |
 | Find Next | Cmd-G |
 | Find Previous | Cmd-Shift-G |
@@ -98,7 +101,7 @@ redmargin/
 
 ## Status
 
-v0.77.1 - See `resources/docs/CHANGELOG.md` for version history.
+v1.0.0 - See `resources/docs/CHANGELOG.md` for version history.
 
 ## License
 

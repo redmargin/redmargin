@@ -1,7 +1,7 @@
 import Foundation
 
 public actor ServerDeployer {
-    private let version = "0.77.1" // Match current app version
+    private let version = "1.0.0" // Match current app version
     private let sshTimeout: TimeInterval = 15 // seconds
     private let scpTimeout: TimeInterval = 120 // seconds for upload (67MB binary)
 
