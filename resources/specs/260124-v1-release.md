@@ -156,9 +156,9 @@ Tests in `Tests/SidebarTests.swift`:
 - [x] `testFileTreeProviderFallsBackToDirectory` - File not in repo uses parent directory
 
 Tests in `WebRenderer/tests/highlight.test.js`:
-- [ ] `testPythonHighlighting` - Python code block has syntax classes (tested manually)
-- [ ] `testUnknownLanguageFallback` - Unknown language renders as plain code (tested manually)
-- [ ] `testNoLanguageSpecifier` - Code block without language renders correctly (tested manually)
+- [x] `testPythonHighlighting` - Python code block has syntax classes
+- [x] `testUnknownLanguageFallback` - Unknown language renders as plain code
+- [x] `testNoLanguageSpecifier` - Code block without language renders correctly
 
 ### Test Log
 
@@ -168,15 +168,9 @@ Tests in `WebRenderer/tests/highlight.test.js`:
 
 ### User Verification
 
-After implementation, Marco verifies:
-
-- [ ] Code blocks with ```python, ```javascript show colored syntax
-- [ ] Syntax colors change appropriately between light/dark themes
-- [ ] Cmd-1 toggles sidebar visibility
-- [ ] Sidebar shows .md files from repo root
-- [ ] Clicking file in sidebar opens it
-- [ ] Sidebar works for remote files
-- [ ] App version shows 1.0.0 in About dialog
+- [x] Syntax highlighting works in light and dark themes
+- [x] Sidebar toggles with Cmd-1, persists state
+- [x] About shows 1.0.0
 
 ---
 

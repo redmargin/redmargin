@@ -379,8 +379,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     }
 
     @objc func showAbout(_ sender: Any?) {
+        let description = "Markdown viewer with Git change indicators, syntax highlighting, " +
+            "file sidebar, remote file access over SSH, and PDF export."
         let credits = NSAttributedString(
-            string: "Markdown viewer with Git diff gutter.",
+            string: description,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: NSColor.secondaryLabelColor

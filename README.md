@@ -1,24 +1,23 @@
 # Redmargin
 
-Markdown viewer for macOS with Git diff gutter.
+Markdown viewer with Git change indicators, syntax highlighting, file sidebar, remote file access over SSH, and PDF export.
 
 > I built this for myself after trying various Markdown viewers and not finding one that fit how I work. Putting it out there in case it clicks for someone else too. Happy to hear feedback or accept contributions, though responses may be slow. Fork away if you'd like to take it somewhere new.
 
 ## Features
 
-- **Git gutter** - Shows changed/added/deleted lines compared to HEAD
-- **Live Markdown rendering** - View Markdown files as rendered HTML
-- **Remote files** - View Markdown on SSH servers (Cmd+Shift+O)
-- **PDF export** - Export to PDF with theme and gutter preserved (Cmd+E)
-- **Find in page** - Search text with match count and navigation (Cmd+F)
-- **Interactive checkboxes** - Click to toggle task list items, saves immediately
-- **Preferences** - Theme (light/dark/system), inline code colors, gutter visibility, remote images
-- **Print support** - Print rendered documents (Cmd+P) with configurable gutter/line number visibility
-- **Light/dark themes** - Follows system appearance automatically
-- **Line numbers** - Optional source line numbers aligned with rendered content
-- **Local images** - Relative image paths work correctly
-- **Per-document state** - Remembers scroll position and line number visibility per file
-- **Native macOS** - SwiftUI shell with WKWebView rendering
+- **Git change indicators** — Gutter shows added/modified/deleted lines compared to HEAD. Updates on commit or branch switch.
+- **Syntax highlighting** — Code blocks render with language-aware coloring. Supports Python, JavaScript, Swift, Rust, Go, and more.
+- **File sidebar** — Browse Markdown files in your repo (Cmd+1). Collapsible folders, current file highlighted.
+- **Remote file access over SSH** — Open Markdown on remote servers (Cmd+Shift+O). Git gutter, checkboxes, and sidebar all work remotely.
+- **PDF export** — Export with theme, gutter, and line numbers preserved (Cmd+E). Saves to Downloads.
+- **Find in page** — Search with match count and navigation (Cmd+F)
+- **Interactive checkboxes** — Click to toggle, saves immediately (local and remote)
+- **Print support** — Configurable gutter and line number visibility (Cmd+P)
+- **Per-document settings** — Each file remembers view preferences, scroll position, window size
+- **Light/dark themes** — Follows system appearance
+- **Line numbers** — Optional, aligned with rendered content
+- **Local images** — Relative paths work correctly
 
 ## Security
 

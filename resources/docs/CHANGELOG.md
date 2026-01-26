@@ -2,23 +2,32 @@
 
 ## v1.0.0 (2026-01-26)
 
+First stable release.
+
 ### Syntax Highlighting
 - Code blocks with language specifiers render with syntax coloring via highlight.js
-- Supports: Python, JavaScript, TypeScript, Swift, Rust, Go, Java, Bash, JSON, YAML, SQL, HTML, CSS, Markdown, and more
-- Theme-aware: light/dark themes have matching syntax color schemes
+- Supports Python, JavaScript, TypeScript, Swift, Rust, Go, Java, Bash, JSON, YAML, SQL, HTML, CSS, Markdown, and more
+- Theme-aware: light and dark themes have matching color schemes
+- Unsupported languages fall back gracefully to plain monospace
 
 ### File Sidebar
-- Shows Markdown files from Git repo root (Cmd+1 to toggle)
+- Browse Markdown files in your Git repo without leaving the app (Cmd+1 to toggle)
+- Falls back to file's directory when not in a Git repo
 - Hierarchical folder tree with collapsible directories
-- Click files to navigate within the same window
+- Current file highlighted, click to navigate within the same window
 - Works for both local and remote documents
-- Expanded folder state persists across app restarts
+- Auto-refreshes when files are added or removed
+- Folder expansion state persists across app restarts
 - Window resizes to keep document area constant when toggling
 
 ### Per-Document View Settings
-- Gutter, line numbers, git indicators, sidebar state saved per-document
-- View menu shows "Show/Hide" based on current document state
-- Extracted settings storage into dedicated DocumentSettingsStorage class
+- Gutter, line numbers, and git indicator visibility saved per file
+- View menu dynamically shows "Show/Hide" based on current document state
+- Sidebar visibility and width saved per document
+
+### Other Changes
+- About dialog updated with full feature description
+- Version bumped to 1.0.0 across app, server, and documentation
 
 ---
 
