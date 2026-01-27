@@ -1,39 +1,36 @@
 # Redmargin
 
-Markdown viewer with Git change indicators, syntax highlighting, file sidebar, remote file access over SSH, and PDF export.
-
-> I built this for myself after trying various Markdown viewers and not finding one that fit how I work. Putting it out there in case it clicks for someone else too. Happy to hear feedback or accept contributions, though responses may be slow. Fork away if you'd like to take it somewhere new.
+Markdown viewer for macOS with Git change indicators, remote file access over SSH, syntax highlighting, and PDF export.
 
 ## Features
 
-- **Git change indicators** — Gutter shows added/modified/deleted lines compared to HEAD. Updates on commit or branch switch.
+- **Git change indicators** — Gutter shows added, modified, and deleted lines compared to HEAD. Updates on commit or branch switch.
+- **Remote file access** — Open Markdown on remote servers via SSH (Cmd+Shift+O). Git gutter, checkboxes, and sidebar all work remotely.
+- **File sidebar** — Browse Markdown files in the repository or directory (Cmd+1). Collapsible folders, current file highlighted.
 - **Syntax highlighting** — Code blocks render with language-aware coloring. Supports Python, JavaScript, Swift, Rust, Go, and more.
-- **File sidebar** — Browse Markdown files in your repo (Cmd+1). Collapsible folders, current file highlighted.
-- **Remote file access over SSH** — Open Markdown on remote servers (Cmd+Shift+O). Git gutter, checkboxes, and sidebar all work remotely.
+- **Interactive checkboxes** — Click to toggle, saves immediately (local and remote).
+- **Find in page** — Search with match count and navigation (Cmd+F).
 - **PDF export** — Export with theme, gutter, and line numbers preserved (Cmd+E). Saves to Downloads.
-- **Find in page** — Search with match count and navigation (Cmd+F)
-- **Interactive checkboxes** — Click to toggle, saves immediately (local and remote)
-- **Print support** — Configurable gutter and line number visibility (Cmd+P)
-- **Per-document settings** — Each file remembers view preferences, scroll position, window size
-- **Light/dark themes** — Follows system appearance
-- **Line numbers** — Optional, aligned with rendered content
-- **Local images** — Relative paths work correctly
+- **Print support** — Configurable gutter and line number visibility (Cmd+P).
+- **Light/dark themes** — System, light, or dark (set in Preferences).
+- **Per-document settings** — Each file remembers view preferences, scroll position, and window size.
+- **Line numbers** — Optional display aligned with rendered content.
 
 ## Security
 
 Markdown files can contain inline HTML which creates XSS risks. Redmargin applies multiple layers of protection:
 
-- **HTML sanitization** - Allowlist-based sanitizer strips scripts, event handlers, and dangerous tags
-- **URL scheme allowlist** - Only http/https/mailto allowed in links; file:// and other schemes blocked
-- **Navigation policy** - External links open in system browser; file:// navigation blocked
-- **Remote loading blocked** - External resources blocked by default via WKContentRuleList (images configurable in Preferences)
-- **Safe data URIs only** - Only raster image formats (PNG, JPEG, GIF, WebP) allowed; SVG blocked (can contain scripts)
-- **Local images** - Images can be loaded from any path readable by the user (not restricted to document directory)
+- **HTML sanitization** — Allowlist-based sanitizer strips scripts, event handlers, and dangerous tags.
+- **URL scheme allowlist** — Only http/https/mailto allowed in links; file:// and other schemes blocked.
+- **Navigation policy** — External links open in system browser; file:// navigation blocked.
+- **Remote loading blocked** — External resources blocked by default via WKContentRuleList (images configurable in Preferences).
+- **Safe data URIs only** — Only raster image formats (PNG, JPEG, GIF, WebP) allowed; SVG blocked (can contain scripts).
+- **Local images** — Loadable from any path readable by the user, not restricted to document directory.
 
 ## Requirements
 
 - macOS 14.0+ (Sonoma)
-- Swift 5.9+ (Xcode Command Line Tools)
+- Xcode Command Line Tools
 
 ## Building
 
@@ -100,7 +97,7 @@ redmargin/
 
 ## Status
 
-v1.0.0 - See `resources/docs/CHANGELOG.md` for version history.
+v1.0.2 - See `resources/docs/CHANGELOG.md` for version history.
 
 ## License
 

@@ -14,6 +14,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Extract release notes from changelog
+        id: release_notes
+        run: |
+          # Extract version from tag (v1.0.1 -> 1.0.1)
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          # Extract latest changelog entry and format as release notes
+          BODY=$(awk '/^## v[0-9]/{if(found) exit; found=1; next} found{print}' resources/docs/CHANGELOG.md)
+
+          # Write to file for the release action
+          cat > RELEASE_NOTES.md << EOF
+          ## What's New in $VERSION
+
+          $BODY
+
+          ---
+
+          Redmargin is a Markdown viewer for macOS with Git diff gutter, remote file support via SSH, and PDF export.
+
+          **Requirements:** macOS 14.0 (Sonoma) or later
+          EOF
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:

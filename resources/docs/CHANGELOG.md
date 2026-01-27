@@ -1,9 +1,22 @@
 # Changelog
 
+## v1.0.2 (2026-01-27)
+
+### Bug Fixes
+- Images now load correctly when navigating between documents via sidebar
+
+### Improvements
+- README updated with clearer feature descriptions and accurate theme options
+
+---
+
 ## v1.0.1 (2026-01-27)
 
 ### Bug Fixes
 - Remote sidebar refresh button now shows loading indicator during refresh
+
+### Improvements
+- GitHub release workflow now auto-generates release notes from changelog
 
 ---
 

@@ -169,14 +169,14 @@ struct DocumentWindowContent: View {
     private var markdownView: some View {
         MarkdownWebView(
             markdown: state.content,
-            fileURL: fileURL,
+            fileURL: state.fileURL,
             onCheckboxToggle: state.handleCheckboxToggle,
             onScrollPositionChange: onScrollPositionChange,
-            onFirstRenderComplete: {
+            onFirstRenderComplete: { [state] in
                 NotificationCenter.default.post(
                     name: .windowContentReady,
                     object: nil,
-                    userInfo: ["fileURL": fileURL]
+                    userInfo: ["fileURL": state.fileURL as Any]
                 )
             },
             initialScrollPosition: initialScrollPosition,
@@ -291,7 +291,7 @@ struct DocumentWindowContent: View {
             printInfo.rightMargin = self.prefs.printMargin
 
             let printOperation = webView.printOperation(with: printInfo)
-            printOperation.jobTitle = self.fileURL.deletingPathExtension().lastPathComponent
+            printOperation.jobTitle = self.state.fileURL.deletingPathExtension().lastPathComponent
             printOperation.showsPrintPanel = true
             printOperation.showsProgressPanel = true
 
@@ -312,7 +312,7 @@ struct DocumentWindowContent: View {
         guard !isExporting else { return }
 
         isExporting = true
-        let filename = fileURL.deletingPathExtension().lastPathComponent
+        let filename = state.fileURL.deletingPathExtension().lastPathComponent
 
         PDFExporter.export(
             webView: webView,

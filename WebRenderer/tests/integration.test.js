@@ -148,12 +148,10 @@ test('testChangesNullHandling', () => {
 });
 
 test('testREADMELineMatching', () => {
-    // Test with actual README structure - line 9 is a list item
+    // Test with actual README structure - line 5 is a list item
     const markdown = `# Redmargin
 
 A native macOS Markdown viewer with live rendering.
-
-> **Note:** This is a personal project.
 
 ## Features
 
