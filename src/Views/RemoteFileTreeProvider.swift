@@ -60,7 +60,9 @@ public class RemoteFileTreeProvider: ObservableObject {
     public func refresh() {
         Task {
             guard let root = rootDirectory else { return }
+            isLoading = true
             rootNodes = await buildTree(from: root)
+            isLoading = false
         }
     }
 

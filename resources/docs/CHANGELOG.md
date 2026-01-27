@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.1 (2026-01-27)
+
+### Bug Fixes
+- Remote sidebar refresh button now shows loading indicator during refresh
+
+---
+
 ## v1.0.0 (2026-01-26)
 
 First stable release.
