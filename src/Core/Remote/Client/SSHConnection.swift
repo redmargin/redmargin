@@ -180,9 +180,15 @@ public actor SSHConnection {
                 group.cancelAll()
             } catch {
                 group.cancelAll()
-                // Clean up process if timeout
+                // Clean up process if timeout - clear file handle callbacks first
+                // to prevent race conditions with readabilityHandler closures
+                self.stderrPipe?.fileHandleForReading.readabilityHandler = nil
+                self.stdoutPipe?.fileHandleForReading.readabilityHandler = nil
                 self.process?.terminate()
                 self.process = nil
+                self.stdinPipe = nil
+                self.stdoutPipe = nil
+                self.stderrPipe = nil
                 throw error
             }
         }
@@ -451,12 +457,19 @@ public actor SSHConnection {
     }
 
     private func handleDisconnect() {
+        // Clear file handle callbacks first to prevent race conditions
+        stderrPipe?.fileHandleForReading.readabilityHandler = nil
+        stdoutPipe?.fileHandleForReading.readabilityHandler = nil
+
         // Clear pending requests - the polling loop will detect state change
         pendingRequestIds.removeAll()
         completedResponses.removeAll()
 
         process?.terminate()
         process = nil
+        stdinPipe = nil
+        stdoutPipe = nil
+        stderrPipe = nil
 
         if !isIntentionallyDisconnected {
             state = .reconnecting
@@ -489,8 +502,16 @@ public actor SSHConnection {
 
     public func disconnect() {
         isIntentionallyDisconnected = true
+
+        // Clear file handle callbacks first to prevent race conditions
+        stderrPipe?.fileHandleForReading.readabilityHandler = nil
+        stdoutPipe?.fileHandleForReading.readabilityHandler = nil
+
         process?.terminate()
         process = nil
+        stdinPipe = nil
+        stdoutPipe = nil
+        stderrPipe = nil
         state = .disconnected
 
         // Clear pending - polling loops will detect state change

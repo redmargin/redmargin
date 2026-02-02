@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.3 (2026-01-30)
+
+### Bug Fixes
+- Fixed crash during SSH reconnection caused by race condition between file handle callbacks and process termination
+
+---
+
 ## v1.0.2 (2026-01-27)
 
 ### Bug Fixes
