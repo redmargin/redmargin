@@ -60,7 +60,7 @@ struct RemoteDocumentWindowContent: View {
     }
 
     private var remoteBasePath: String {
-        (location.path as NSString).deletingLastPathComponent
+        (state.location.path as NSString).deletingLastPathComponent
     }
 
     var body: some View {
@@ -191,12 +191,12 @@ struct RemoteDocumentWindowContent: View {
         ZStack(alignment: .top) {
             MarkdownWebView(
                 markdown: state.content,
-                fileURL: URL(fileURLWithPath: location.path),
+                fileURL: URL(fileURLWithPath: state.location.path),
                 onCheckboxToggle: state.handleCheckboxToggle,
                 onScrollPositionChange: { position in
-                    DocumentSettingsStorage.shared.saveScrollPosition(position, for: location)
+                    DocumentSettingsStorage.shared.saveScrollPosition(position, for: state.location)
                 },
-                initialScrollPosition: DocumentSettingsStorage.shared.loadScrollPosition(for: location),
+                initialScrollPosition: DocumentSettingsStorage.shared.loadScrollPosition(for: state.location),
                 showLineNumbers: showLineNumbers,
                 gitChanges: state.gitChanges,
                 findController: findController,
@@ -359,7 +359,7 @@ struct RemoteDocumentWindowContent: View {
             printInfo.rightMargin = self.prefs.printMargin
 
             let printOperation = webView.printOperation(with: printInfo)
-            let filename = (self.location.path as NSString).lastPathComponent
+            let filename = (self.state.location.path as NSString).lastPathComponent
             printOperation.jobTitle = (filename as NSString).deletingPathExtension
             printOperation.showsPrintPanel = true
             printOperation.showsProgressPanel = true
@@ -381,7 +381,7 @@ struct RemoteDocumentWindowContent: View {
         guard !isExporting else { return }
 
         isExporting = true
-        let pathComponent = (location.path as NSString).lastPathComponent
+        let pathComponent = (state.location.path as NSString).lastPathComponent
         let filename = (pathComponent as NSString).deletingPathExtension
 
         PDFExporter.export(
