@@ -160,7 +160,34 @@ li > ul, li > ol {
     margin-right: 0.5em;
     width: 16px;
     height: 16px;
-    accent-color: var(--checkbox-checked);
+    appearance: none;
+    -webkit-appearance: none;
+    background: linear-gradient(to bottom, #ffffff, #f6f6f6);
+    border: 0.5px solid #a0a0a0;
+    border-radius: 4px;
+    box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    position: relative;
+    vertical-align: middle;
+    margin-top: -1px;
+}
+
+.task-list-item-checkbox:checked {
+    background: linear-gradient(to bottom, var(--checkbox-checked), color-mix(in srgb, var(--checkbox-checked) 90%, black));
+    border-color: color-mix(in srgb, var(--checkbox-checked) 85%, black);
+    box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.2);
+}
+
+.task-list-item-checkbox:checked::after {
+    content: '';
+    position: absolute;
+    left: 4.5px;
+    top: 1px;
+    width: 5px;
+    height: 8px;
+    border: solid #ffffff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
 }
 
 table {
