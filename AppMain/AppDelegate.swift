@@ -73,15 +73,55 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         if !savedRemoteLocations.isEmpty {
             print("[AppDelegate] Restoring \(savedRemoteLocations.count) remote documents")
             Task {
-                for location in savedRemoteLocations {
-                    print("[AppDelegate] Restoring: \(location.host):\(location.path)")
-                    do {
-                        let connection = SSHConnection(host: location.host)
-                        try await connection.connect()
-                        try await openRemoteDocument(connection: connection, path: location.path)
-                        print("[AppDelegate] Restored: \(location.path)")
-                    } catch {
-                        print("[AppDelegate] Failed to restore remote document \(location): \(error)")
+                var failedLocations: [RemoteLocation] = []
+                let retryDelays: [UInt64] = [0, 3_000_000_000, 5_000_000_000]  // 0s, 3s, 5s
+
+                // Group by host to share SSH connections
+                let locationsByHost = Dictionary(grouping: savedRemoteLocations, by: \.host)
+
+                for (host, locations) in locationsByHost {
+                    var connection: SSHConnection?
+
+                    for (attempt, delay) in retryDelays.enumerated() {
+                        if delay > 0 {
+                            try? await Task.sleep(nanoseconds: delay)
+                        }
+                        do {
+                            connection = try await SSHConnectionManager.shared.connection(for: host)
+                            break
+                        } catch {
+                            let maxAttempts = retryDelays.count
+                            print("[AppDelegate] Connection to \(host) failed " +
+                                  "(attempt \(attempt + 1)/\(maxAttempts)): \(error)")
+                        }
+                    }
+
+                    guard let conn = connection else {
+                        print("[AppDelegate] Giving up on \(host) after \(retryDelays.count) attempts")
+                        failedLocations.append(contentsOf: locations)
+                        continue
+                    }
+
+                    for location in locations {
+                        do {
+                            try await openRemoteDocument(connection: conn, path: location.path)
+                            print("[AppDelegate] Restored: \(location.path)")
+                        } catch {
+                            print("[AppDelegate] Failed to restore \(location): \(error)")
+                            failedLocations.append(location)
+                        }
+                    }
+                }
+
+                // Clear the restore key now that all attempts are done
+                UserDefaults.standard.removeObject(forKey: self.openRemoteLocationsKey)
+
+                // Save failed locations back so they're retried on next launch
+                if !failedLocations.isEmpty {
+                    let count = failedLocations.count
+                    print("[AppDelegate] \(count) remote documents failed to restore, saving for next launch")
+                    if let data = try? JSONEncoder().encode(failedLocations) {
+                        UserDefaults.standard.set(data, forKey: self.openRemoteLocationsKey)
                     }
                 }
             }
@@ -98,8 +138,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     private func restoreOpenRemoteLocations() -> [RemoteLocation] {
         guard let data = UserDefaults.standard.data(forKey: openRemoteLocationsKey) else { return [] }
-        // Clear after reading so we don't restore again if app crashes during restore
-        UserDefaults.standard.removeObject(forKey: openRemoteLocationsKey)
+        // Don't clear yet - cleared after restore completes so failed locations survive app restart
         return (try? JSONDecoder().decode([RemoteLocation].self, from: data)) ?? []
     }
 
@@ -129,12 +168,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Save remote locations BEFORE windows close (windowWillClose clears the dict)
-        let openRemoteLocations = Array(remoteDocumentWindows.keys)
-        print("[AppDelegate] applicationShouldTerminate: saving \(openRemoteLocations.count) remote locations")
-        if !openRemoteLocations.isEmpty {
-            if let data = try? JSONEncoder().encode(openRemoteLocations) {
+        var allRemoteLocations = Array(remoteDocumentWindows.keys)
+
+        // Merge in any locations that failed to restore (still pending in UserDefaults)
+        if let pendingData = UserDefaults.standard.data(forKey: openRemoteLocationsKey),
+           let pendingLocations = try? JSONDecoder().decode([RemoteLocation].self, from: pendingData) {
+            for location in pendingLocations where !allRemoteLocations.contains(location) {
+                allRemoteLocations.append(location)
+            }
+        }
+
+        print("[AppDelegate] applicationShouldTerminate: saving \(allRemoteLocations.count) remote locations")
+        if !allRemoteLocations.isEmpty {
+            if let data = try? JSONEncoder().encode(allRemoteLocations) {
                 UserDefaults.standard.set(data, forKey: openRemoteLocationsKey)
             }
+        } else {
+            UserDefaults.standard.removeObject(forKey: openRemoteLocationsKey)
         }
         return .terminateNow
     }

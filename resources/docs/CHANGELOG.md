@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+- Fixed remote documents failing to restore on app relaunch (SSH connections now retry with delays and share connections per host)
+
+---
+
 ## v1.0.3 (2026-01-30)
 
 ### Bug Fixes
