@@ -78,27 +78,18 @@ fi
 
 echo ""
 echo "Release prepared: $DMG_PATH"
+
+echo "==> Pushing main to public..."
+git push public main
+
+echo "==> Pushing tag v$VERSION..."
+git push public "v$VERSION"
+
+echo "==> Waiting for GitHub Actions to create release..."
+sleep 10
+
+echo "==> Uploading DMG..."
+gh release upload "v$VERSION" "$DMG_NAME" --repo redmargin/redmargin --clobber
+
 echo ""
-read -p "Push tag and upload DMG to GitHub? [y/N] " -n 1 -r
-echo ""
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "==> Pushing main to public..."
-    git push public main
-
-    echo "==> Pushing tag v$VERSION..."
-    git push public "v$VERSION"
-
-    echo "==> Waiting for GitHub Actions to create release..."
-    sleep 10
-
-    echo "==> Uploading DMG..."
-    gh release upload "v$VERSION" "$DMG_NAME" --repo redmargin/redmargin --clobber
-
-    echo ""
-    echo "Done! https://github.com/redmargin/redmargin/releases/tag/v$VERSION"
-else
-    echo "Skipped. To publish manually:"
-    echo "  git push public main"
-    echo "  git push public v$VERSION"
-    echo "  gh release upload v$VERSION $DMG_NAME --repo redmargin/redmargin --clobber"
-fi
+echo "Done! https://github.com/redmargin/redmargin/releases/tag/v$VERSION"
