@@ -2,21 +2,22 @@
 
 ## Unreleased
 
-### Bug Fixes
-- Fixed remote documents failing to restore on app relaunch (SSH connections now retry with delays and share connections per host)
-- Fixed sidebar refresh button being too small and conflicting with divider hit target
+---
+
+## v1.1.0 (2026-02-08)
 
 ### Improvements
 - Table column widths now intelligently sized using min-content/max-content measurement (no mid-word breaks, short columns stay tight, long columns get proportional space)
 - Remote file list refresh now uses single RPC call instead of one per directory
 - Remote file open faster: batched server deployment checks, cached git repo detection, parallelized init
 
----
-
-## v1.0.3 (2026-01-30)
-
 ### Bug Fixes
+- Fixed remote documents failing to restore on app relaunch (SSH connections now retry with delays and share connections per host)
+- Fixed sidebar refresh button being too small and conflicting with divider hit target
+- Fixed PDF export and print using wrong filename for remote files
+- Fixed checkbox color changing to white when window loses focus
 - Fixed crash during SSH reconnection caused by race condition between file handle callbacks and process termination
+- Fixed frontmost window not preserving on relaunch
 
 ---
 
