@@ -191,15 +191,15 @@ li > ul, li > ol {
 }
 
 table {
-    width: 100%;
     border-collapse: collapse;
+    width: 100%;
     margin: 0 0 1em 0;
     font-size: 0.95em;
 }
 
 th, td {
     border: 1px solid var(--table-border);
-    padding: 8px 12px;
+    padding: 6px 13px;
     text-align: left;
 }
 
@@ -210,6 +210,10 @@ th {
 
 tr:nth-child(even) {
     background: var(--table-stripe);
+}
+
+td code, th code {
+    padding: 0.1em 0.2em;
 }
 
 hr {

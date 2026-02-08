@@ -30,8 +30,8 @@
         'img': ['src', 'alt', 'title', 'width', 'height'],
         'input': ['type', 'checked', 'disabled'],
         'label': ['for'],
-        'th': ['colspan', 'rowspan', 'scope'],
-        'td': ['colspan', 'rowspan'],
+        'th': ['colspan', 'rowspan', 'scope', 'style'],
+        'td': ['colspan', 'rowspan', 'style'],
         'col': ['span'],
         'colgroup': ['span'],
         'abbr': ['title'],
@@ -216,6 +216,15 @@
             if (!isAllowed) {
                 attrsToRemove.push(attr.name);
                 continue;
+            }
+
+            // Validate style attribute on table cells (only text-align allowed)
+            if (attrName === 'style' && (tagName === 'th' || tagName === 'td')) {
+                const style = attr.value.toLowerCase().replace(/\s/g, '');
+                if (!/^text-align:(left|center|right);?$/.test(style)) {
+                    attrsToRemove.push(attr.name);
+                    continue;
+                }
             }
 
             // Validate URLs in href and src using allowlist

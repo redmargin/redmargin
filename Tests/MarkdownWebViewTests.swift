@@ -133,6 +133,103 @@ final class MarkdownWebViewTests: XCTestCase {
 
         wait(for: [verifyExpectation], timeout: 5.0)
     }
+
+    func testTableColumnWidthsAreCompact() throws {
+        let loadExpectation = XCTestExpectation(description: "WebView loads")
+
+        let rendererURL = webRendererURL
+            .appendingPathComponent("src")
+            .appendingPathComponent("renderer.html")
+
+        navigationDelegate.onFinish = { loadExpectation.fulfill() }
+        navigationDelegate.onError = { error in
+            XCTFail("Navigation failed: \(error)")
+            loadExpectation.fulfill()
+        }
+
+        let accessURL = URL(fileURLWithPath: "/")
+        webView.loadFileURL(rendererURL, allowingReadAccessTo: accessURL)
+        wait(for: [loadExpectation], timeout: 10.0)
+
+        // Render a table with a short "Yes" column and a long notes column
+        let markdown = """
+        | Action | Sort | Adds | Source | Notes |
+        | --- | --- | --- | --- | --- |
+        | Drag reorder | `Date/Time` or `Name` | Yes | `Manual` | Saved from the resulting order; duplicates skipped |
+        | Switch sort | any | No | n/a | Sorting does not add history entries |
+        """
+
+        let renderExpectation = XCTestExpectation(description: "Render completes")
+        let payload: [String: Any] = [
+            "markdown": markdown,
+            "options": ["theme": "dark", "basePath": ""]
+        ]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            XCTFail("Failed to serialize JSON")
+            return
+        }
+        let escapedJSON = jsonString
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let script = "window.App.render(JSON.parse('\(escapedJSON)'))"
+
+        webView.evaluateJavaScript(script) { _, error in
+            XCTAssertNil(error, "Render error: \(String(describing: error))")
+            renderExpectation.fulfill()
+        }
+        wait(for: [renderExpectation], timeout: 5.0)
+
+        let widthExpectation = XCTestExpectation(description: "Measure column widths")
+        let measureJS = """
+        (function() {
+            var row = document.querySelector('tbody tr');
+            if (!row) return JSON.stringify({error: 'no row found'});
+            var widths = [];
+            for (var i = 0; i < row.cells.length; i++) {
+                widths.push(Math.round(row.cells[i].getBoundingClientRect().width));
+            }
+            var cw = document.getElementById('content-container').clientWidth;
+            return JSON.stringify({widths: widths, container: cw});
+        })()
+        """
+
+        webView.evaluateJavaScript(measureJS) { result, error in
+            XCTAssertNil(error, "Measure error: \(String(describing: error))")
+            guard let jsonStr = result as? String,
+                  let data = jsonStr.data(using: .utf8),
+                  let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let widths = parsed["widths"] as? [Int] else {
+                XCTFail("Failed to parse widths: \(String(describing: result))")
+                widthExpectation.fulfill()
+                return
+            }
+
+            // Column 2 (index 2) is "Adds" with content "Yes"/"No" — should be compact
+            let addsWidth = widths[2]
+            let containerWidth = parsed["container"] as? Int ?? 800
+
+            // "Yes" column must be under 100px (it only needs ~50px for content + padding)
+            XCTAssertLessThan(addsWidth, 100,
+                "Short 'Adds' column should be compact, got \(addsWidth)px. All widths: \(widths)")
+
+            // "Yes" column should be the narrowest
+            XCTAssertEqual(addsWidth, widths.min()!,
+                "Adds column should be narrowest. All widths: \(widths)")
+
+            // Widest column gets proportional share, not more than 55%
+            let maxWidth = widths.max()!
+            XCTAssertLessThan(Double(maxWidth) / Double(containerWidth), 0.55,
+                "No single column should dominate. Max=\(maxWidth) of \(containerWidth). All widths: \(widths)")
+
+            // Short column should be less than half the widest column
+            XCTAssertLessThan(Double(addsWidth) / Double(maxWidth), 0.5,
+                "Short column should be much narrower than widest. Adds=\(addsWidth), Max=\(maxWidth)")
+
+            widthExpectation.fulfill()
+        }
+        wait(for: [widthExpectation], timeout: 5.0)
+    }
 }
 
 final class RemoteAssetSchemeHandlerTests: XCTestCase {

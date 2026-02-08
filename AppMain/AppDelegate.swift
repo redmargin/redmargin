@@ -31,6 +31,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     let recentRemoteLocationsKey = "RedMargin.RecentRemoteLocations"
     private let openRemoteLocationsKey = "RedMargin.OpenRemoteLocations"
     private let windowOrderKey = "RedMargin.WindowOrder"
+    private let frontmostWindowKey = "RedMargin.FrontmostWindow"
     let maxRecentDocuments = 10
     let settings = DocumentSettingsStorage.shared
 
@@ -124,7 +125,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
                         UserDefaults.standard.set(data, forKey: self.openRemoteLocationsKey)
                     }
                 }
+
+                // Restore frontmost window after all remote docs are loaded
+                await MainActor.run {
+                    self.restoreFrontmostWindow()
+                }
             }
+        }
+
+        // If no remote docs to restore, restore frontmost now
+        if savedRemoteLocations.isEmpty {
+            restoreFrontmostWindow()
         }
 
         if savedURLs.isEmpty && savedRemoteLocations.isEmpty && !launchedWithFiles {
@@ -151,6 +162,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
                 documentWindows.first { $0.value === window }?.key
             }
         UserDefaults.standard.set(orderedURLs.map { $0.path }, forKey: windowOrderKey)
+
+        // Save frontmost window (local or remote)
+        if let frontWindow = NSApp.orderedWindows.first {
+            if let localURL = documentWindows.first(where: { $0.value === frontWindow })?.key {
+                UserDefaults.standard.set(localURL.path, forKey: frontmostWindowKey)
+            } else if let loc = remoteDocumentWindows.first(where: { $0.value === frontWindow })?.key {
+                UserDefaults.standard.set("remote:\(loc.host):\(loc.path)", forKey: frontmostWindowKey)
+            }
+        }
 
         // Note: Remote locations are saved in applicationShouldTerminate (before windows close)
 
@@ -187,6 +207,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             UserDefaults.standard.removeObject(forKey: openRemoteLocationsKey)
         }
         return .terminateNow
+    }
+
+    private func restoreFrontmostWindow() {
+        guard let saved = UserDefaults.standard.string(forKey: frontmostWindowKey) else { return }
+        UserDefaults.standard.removeObject(forKey: frontmostWindowKey)
+
+        if saved.hasPrefix("remote:") {
+            // Parse "remote:host:path"
+            let rest = String(saved.dropFirst("remote:".count))
+            if let colonIdx = rest.firstIndex(of: ":") {
+                let host = String(rest[rest.startIndex..<colonIdx])
+                let path = String(rest[rest.index(after: colonIdx)...])
+                let location = RemoteLocation(host: host, path: path)
+                if let window = remoteDocumentWindows[location] {
+                    window.makeKeyAndOrderFront(nil)
+                }
+            }
+        } else {
+            let url = URL(fileURLWithPath: saved)
+            if let window = documentWindows[url] {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

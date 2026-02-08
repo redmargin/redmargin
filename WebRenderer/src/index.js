@@ -43,6 +43,111 @@
         document.body.classList.add(`theme-${theme}`);
     }
 
+    /**
+     * Optimize table column widths: short-content columns stay tight,
+     * all others share remaining space proportionally to their content.
+     * Uses colgroup + table-layout: fixed for precise control.
+     */
+    function optimizeTableWidths(container) {
+        var tables = container.querySelectorAll('table');
+        for (var t = 0; t < tables.length; t++) {
+            var table = tables[t];
+            var rows = table.querySelectorAll('tr');
+            if (rows.length === 0) continue;
+
+            var numCols = rows[0].cells.length;
+            if (numCols <= 1) continue;
+
+            var availWidth = container.clientWidth;
+            if (availWidth <= 0) continue;
+
+            // Temporarily set nowrap + auto width to measure natural content widths
+            var origWidth = table.style.width;
+            table.style.width = 'auto';
+            var allCells = table.querySelectorAll('th, td');
+            for (var c = 0; c < allCells.length; c++) {
+                allCells[c].style.whiteSpace = 'nowrap';
+            }
+            void table.offsetHeight;
+
+            var colWidths = new Array(numCols).fill(0);
+            for (var r = 0; r < rows.length; r++) {
+                for (var i = 0; i < rows[r].cells.length && i < numCols; i++) {
+                    var w = rows[r].cells[i].scrollWidth;
+                    if (w > colWidths[i]) colWidths[i] = w;
+                }
+            }
+
+            // Restore
+            for (var c = 0; c < allCells.length; c++) {
+                allCells[c].style.whiteSpace = '';
+            }
+
+            var totalNatural = 0;
+            for (var i = 0; i < numCols; i++) totalNatural += colWidths[i];
+
+            if (totalNatural <= availWidth) {
+                table.style.width = 'auto';
+                continue;
+            }
+
+            // Short columns (under 100px) get their exact natural width.
+            // Everything else shares remaining space proportionally.
+            var shortThreshold = 100;
+            var fixedTotal = 0;
+            var flexTotal = 0;
+            var isFixed = [];
+
+            for (var i = 0; i < numCols; i++) {
+                if (colWidths[i] <= shortThreshold) {
+                    isFixed.push(true);
+                    fixedTotal += colWidths[i];
+                } else {
+                    isFixed.push(false);
+                    flexTotal += colWidths[i];
+                }
+            }
+
+            // If everything is "short", just pick widest as flex
+            if (flexTotal === 0) {
+                var maxIdx = 0;
+                for (var i = 1; i < numCols; i++) {
+                    if (colWidths[i] > colWidths[maxIdx]) maxIdx = i;
+                }
+                isFixed[maxIdx] = false;
+                fixedTotal -= colWidths[maxIdx];
+                flexTotal = colWidths[maxIdx];
+            }
+
+            var flexSpace = availWidth - fixedTotal;
+
+            var colgroup = document.createElement('colgroup');
+            for (var i = 0; i < numCols; i++) {
+                var col = document.createElement('col');
+                if (isFixed[i]) {
+                    col.style.width = colWidths[i] + 'px';
+                } else {
+                    var share = Math.round((colWidths[i] / flexTotal) * flexSpace);
+                    col.style.width = Math.max(share, 40) + 'px';
+                }
+                colgroup.appendChild(col);
+            }
+
+            var existing = table.querySelector('colgroup');
+            if (existing) existing.remove();
+            table.insertBefore(colgroup, table.firstChild);
+
+            // Headers should never wrap
+            var headers = table.querySelectorAll('th');
+            for (var h = 0; h < headers.length; h++) {
+                headers[h].style.whiteSpace = 'nowrap';
+            }
+
+            table.style.tableLayout = 'fixed';
+            table.style.width = '100%';
+        }
+    }
+
     function resolveImagePaths(html, basePath, cacheBust) {
         if (!basePath) return html;
 
@@ -120,6 +225,7 @@
             const container = document.getElementById('content-container');
             if (container) {
                 container.innerHTML = html;
+                optimizeTableWidths(container);
             }
 
             // Use requestAnimationFrame to ensure DOM is updated
