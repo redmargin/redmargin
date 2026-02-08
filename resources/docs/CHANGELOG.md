@@ -7,6 +7,7 @@
 - Fixed sidebar refresh button being too small and conflicting with divider hit target
 
 ### Improvements
+- Table column widths now intelligently sized using min-content/max-content measurement (no mid-word breaks, short columns stay tight, long columns get proportional space)
 - Remote file list refresh now uses single RPC call instead of one per directory
 - Remote file open faster: batched server deployment checks, cached git repo detection, parallelized init
 

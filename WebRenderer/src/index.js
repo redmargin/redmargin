@@ -44,9 +44,10 @@
     }
 
     /**
-     * Optimize table column widths: short-content columns stay tight,
-     * all others share remaining space proportionally to their content.
-     * Uses colgroup + table-layout: fixed for precise control.
+     * Optimize table column widths using min-content/max-content measurement.
+     * Each column starts at its min-content width (longest word — no mid-word
+     * breaks anywhere), then extra space is distributed proportionally to each
+     * column's growth potential (max-content minus min-content).
      */
     function optimizeTableWidths(container) {
         var tables = container.querySelectorAll('table');
@@ -61,87 +62,82 @@
             var availWidth = container.clientWidth;
             if (availWidth <= 0) continue;
 
-            // Temporarily set nowrap + auto width to measure natural content widths
-            var origWidth = table.style.width;
-            table.style.width = 'auto';
             var allCells = table.querySelectorAll('th, td');
+
+            // Phase 1: Measure max-content (nowrap) widths per column
+            table.style.tableLayout = 'auto';
+            table.style.width = 'auto';
             for (var c = 0; c < allCells.length; c++) {
                 allCells[c].style.whiteSpace = 'nowrap';
             }
             void table.offsetHeight;
 
-            var colWidths = new Array(numCols).fill(0);
+            var maxContent = new Array(numCols).fill(0);
             for (var r = 0; r < rows.length; r++) {
                 for (var i = 0; i < rows[r].cells.length && i < numCols; i++) {
                     var w = rows[r].cells[i].scrollWidth;
-                    if (w > colWidths[i]) colWidths[i] = w;
+                    if (w > maxContent[i]) maxContent[i] = w;
                 }
             }
 
-            // Restore
+            // Phase 2: Measure min-content (longest word) widths per column
             for (var c = 0; c < allCells.length; c++) {
                 allCells[c].style.whiteSpace = '';
             }
+            table.style.width = '0px';
+            void table.offsetHeight;
 
-            var totalNatural = 0;
-            for (var i = 0; i < numCols; i++) totalNatural += colWidths[i];
+            var minContent = new Array(numCols).fill(0);
+            for (var r = 0; r < rows.length; r++) {
+                for (var i = 0; i < rows[r].cells.length && i < numCols; i++) {
+                    var w = rows[r].cells[i].scrollWidth;
+                    if (w > minContent[i]) minContent[i] = w;
+                }
+            }
 
-            if (totalNatural <= availWidth) {
+            // Reset table styles
+            table.style.width = '';
+            table.style.tableLayout = '';
+
+            var totalMaxContent = 0;
+            var totalMinContent = 0;
+            for (var i = 0; i < numCols; i++) {
+                totalMaxContent += maxContent[i];
+                totalMinContent += minContent[i];
+            }
+
+            // Everything fits without wrapping — use auto layout
+            if (totalMaxContent <= availWidth) {
                 table.style.width = 'auto';
                 continue;
             }
 
-            // Short columns (under 100px) get their exact natural width.
-            // Everything else shares remaining space proportionally.
-            var shortThreshold = 100;
-            var fixedTotal = 0;
-            var flexTotal = 0;
-            var isFixed = [];
-
-            for (var i = 0; i < numCols; i++) {
-                if (colWidths[i] <= shortThreshold) {
-                    isFixed.push(true);
-                    fixedTotal += colWidths[i];
-                } else {
-                    isFixed.push(false);
-                    flexTotal += colWidths[i];
-                }
+            // Even min-content exceeds container — let browser handle it
+            if (totalMinContent >= availWidth) {
+                table.style.width = '100%';
+                continue;
             }
 
-            // If everything is "short", just pick widest as flex
-            if (flexTotal === 0) {
-                var maxIdx = 0;
-                for (var i = 1; i < numCols; i++) {
-                    if (colWidths[i] > colWidths[maxIdx]) maxIdx = i;
-                }
-                isFixed[maxIdx] = false;
-                fixedTotal -= colWidths[maxIdx];
-                flexTotal = colWidths[maxIdx];
-            }
-
-            var flexSpace = availWidth - fixedTotal;
+            // Phase 3: Distribute space. Start at min-content, distribute
+            // extra space proportionally to each column's growth potential.
+            var extraSpace = availWidth - totalMinContent;
+            var totalGrowth = totalMaxContent - totalMinContent;
 
             var colgroup = document.createElement('colgroup');
             for (var i = 0; i < numCols; i++) {
                 var col = document.createElement('col');
-                if (isFixed[i]) {
-                    col.style.width = colWidths[i] + 'px';
-                } else {
-                    var share = Math.round((colWidths[i] / flexTotal) * flexSpace);
-                    col.style.width = Math.max(share, 40) + 'px';
+                var width = minContent[i];
+                if (totalGrowth > 0) {
+                    var growth = maxContent[i] - minContent[i];
+                    width += Math.round((growth / totalGrowth) * extraSpace);
                 }
+                col.style.width = width + 'px';
                 colgroup.appendChild(col);
             }
 
             var existing = table.querySelector('colgroup');
             if (existing) existing.remove();
             table.insertBefore(colgroup, table.firstChild);
-
-            // Headers should never wrap
-            var headers = table.querySelectorAll('th');
-            for (var h = 0; h < headers.length; h++) {
-                headers[h].style.whiteSpace = 'nowrap';
-            }
 
             table.style.tableLayout = 'fixed';
             table.style.width = '100%';
