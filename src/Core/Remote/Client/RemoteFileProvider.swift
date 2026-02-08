@@ -20,6 +20,7 @@ public actor RemoteFileProvider: FileProvider {
     private let connection: SSHConnection
     private var watchers: [WatchToken: WatchCallback] = [:]
     private var remoteTokens: [WatchToken: String] = [:] // Local Token -> Remote Token String
+    private var gitRepoCache: [String: String?] = [:]
 
     /// Access to connection state changes for UI updates
     public nonisolated var stateChanges: AsyncStream<SSHConnectionState> {
@@ -104,10 +105,29 @@ public actor RemoteFileProvider: FileProvider {
     }
 
     public func detectGitRepo(for path: String) async throws -> String? {
+        if let cached = gitRepoCache[path] {
+            return cached
+        }
         let payload = GitDetectRepoPayload(path: path)
-        let data = try await connection.send(type: RPCMessageType.gitDetectRepo.rawValue, payload: payload, timeout: 20)
-        let response = try JSONDecoder().decode(RPCMessage<GitDetectRepoResponsePayload>.self, from: data)
+        let data = try await connection.send(
+            type: RPCMessageType.gitDetectRepo.rawValue, payload: payload, timeout: 20)
+        let response = try JSONDecoder().decode(
+            RPCMessage<GitDetectRepoResponsePayload>.self, from: data)
+        gitRepoCache[path] = response.payload.repoRoot
         return response.payload.repoRoot
+    }
+
+    public func findMarkdownFiles(in path: String) async throws -> [String] {
+        let payload = FindMarkdownFilesPayload(path: path)
+        let msgType = RPCMessageType.findMarkdownFiles.rawValue
+        let data = try await connection.send(type: msgType, payload: payload, timeout: 30)
+        let response = try JSONDecoder().decode(RPCMessage<FindMarkdownFilesResponsePayload>.self, from: data)
+
+        if let error = response.payload.error {
+            throw RemoteFileError(message: error, code: nil)
+        }
+
+        return response.payload.files ?? []
     }
 
     public func listDirectory(at path: String) async throws -> [DirectoryEntry] {

@@ -40,8 +40,10 @@ public struct SidebarView: View {
                     Spacer()
                     Button(action: onRefresh) {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 10))
+                            .font(.system(size: 12))
                             .foregroundColor(.secondary)
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .help("Refresh file list")

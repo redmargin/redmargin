@@ -44,8 +44,9 @@ class RemoteDocumentState: ObservableObject {
         self.location = location
         self.fileProvider = fileProvider
         Task {
-            await setupFileWatcher()
-            await detectGitChanges()
+            async let watcher: Void = setupFileWatcher()
+            async let git: Void = detectGitChanges()
+            _ = await (watcher, git)
             await startObservingConnectionState()
         }
     }

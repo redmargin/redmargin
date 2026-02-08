@@ -23,6 +23,8 @@ class RPCHandler {
                 return try await handleHello(data)
             case .listDirectory:
                 return try await handleListDirectory(data)
+            case .findMarkdownFiles:
+                return try await handleFindMarkdownFiles(data)
             case .readFile:
                 return try await handleReadFile(data)
             case .readAsset:
@@ -69,6 +71,16 @@ class RPCHandler {
         return try RPCStreamHandler.encode(
             id: msg.id,
             type: RPCMessageType.listDirectoryResponse.rawValue,
+            payload: responsePayload
+        )
+    }
+
+    private func handleFindMarkdownFiles(_ data: Data) async throws -> Data {
+        let msg = try JSONDecoder().decode(RPCMessage<FindMarkdownFilesPayload>.self, from: data)
+        let responsePayload = await fileOperations.findMarkdownFiles(path: msg.payload.path)
+        return try RPCStreamHandler.encode(
+            id: msg.id,
+            type: RPCMessageType.findMarkdownFilesResponse.rawValue,
             payload: responsePayload
         )
     }

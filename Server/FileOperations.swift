@@ -44,6 +44,53 @@ actor FileOperations {
         }
     }
 
+    func findMarkdownFiles(path: String) -> FindMarkdownFilesResponsePayload {
+        let ignoredDirectories: Set<String> = [
+            ".git", "node_modules", ".build", "build", "DerivedData",
+            ".cache", ".npm", "vendor", "Pods", ".svn", ".hg"
+        ]
+        let markdownExtensions: Set<String> = ["md", "markdown"]
+
+        let expandedPath = NSString(string: path).expandingTildeInPath
+        let rootURL = URL(fileURLWithPath: expandedPath)
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return FindMarkdownFilesResponsePayload(files: nil, error: "Cannot enumerate directory")
+        }
+
+        var files: [String] = []
+        let rootPath = rootURL.path
+        let rootPrefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+
+        while let itemURL = enumerator.nextObject() as? URL {
+            let resourceValues = try? itemURL.resourceValues(forKeys: [.isDirectoryKey])
+            let isDirectory = resourceValues?.isDirectory ?? false
+
+            if isDirectory {
+                if ignoredDirectories.contains(itemURL.lastPathComponent) {
+                    enumerator.skipDescendants()
+                }
+            } else {
+                let ext = itemURL.pathExtension.lowercased()
+                if markdownExtensions.contains(ext) {
+                    let fullPath = itemURL.path
+                    if fullPath.hasPrefix(rootPrefix) {
+                        files.append(String(fullPath.dropFirst(rootPrefix.count)))
+                    } else {
+                        files.append(fullPath)
+                    }
+                }
+            }
+        }
+
+        files.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        return FindMarkdownFilesResponsePayload(files: files, error: nil)
+    }
+
     func readFile(path: String) -> ReadFileResponsePayload {
         do {
             let url = URL(fileURLWithPath: path)

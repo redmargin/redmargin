@@ -4,6 +4,11 @@
 
 ### Bug Fixes
 - Fixed remote documents failing to restore on app relaunch (SSH connections now retry with delays and share connections per host)
+- Fixed sidebar refresh button being too small and conflicting with divider hit target
+
+### Improvements
+- Remote file list refresh now uses single RPC call instead of one per directory
+- Remote file open faster: batched server deployment checks, cached git repo detection, parallelized init
 
 ---
 

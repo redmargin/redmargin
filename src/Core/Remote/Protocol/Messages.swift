@@ -23,6 +23,8 @@ public enum RPCMessageType: String, Codable {
     case watchGitRepo = "WatchGitRepo"
     case watchGitRepoResponse = "WatchGitRepoResponse"
     case gitChanged = "GitChanged"
+    case findMarkdownFiles = "FindMarkdownFiles"
+    case findMarkdownFilesResponse = "FindMarkdownFilesResponse"
 }
 
 // MARK: - Handshake
@@ -253,5 +255,25 @@ public struct GitChangedPayload: Codable {
 
     public init(repoRoot: String) {
         self.repoRoot = repoRoot
+    }
+}
+
+// MARK: - Find Markdown Files
+
+public struct FindMarkdownFilesPayload: Codable {
+    public let path: String
+
+    public init(path: String) {
+        self.path = path
+    }
+}
+
+public struct FindMarkdownFilesResponsePayload: Codable {
+    public let files: [String]?
+    public let error: String?
+
+    public init(files: [String]?, error: String?) {
+        self.files = files
+        self.error = error
     }
 }

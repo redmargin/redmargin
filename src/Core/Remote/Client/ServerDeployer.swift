@@ -16,33 +16,54 @@ public actor ServerDeployer {
         host: String,
         onProgress: (@Sendable (String) -> Void)? = nil
     ) async throws -> String {
-        // 1. Detect remote OS and architecture
+        // 1. Single SSH call to detect platform, check binary, and get hash
         onProgress?("Checking")
-        let (osName, arch) = try await detectRemotePlatform(host: host)
         let remoteBinaryPath = "~/.redmargin-server/redmargin-server-\(version)"
+        let combinedCmd = """
+            uname -sm; \
+            test -x \(remoteBinaryPath) && echo EXISTS || echo MISSING; \
+            md5sum \(remoteBinaryPath) 2>/dev/null | cut -d' ' -f1 || echo NOHASH
+            """
+        let checkResult = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: sshOptions + [host, combinedCmd],
+            timeout: sshTimeout
+        )
+        if checkResult.exitCode != 0 {
+            throw ServerDeployerError.connectionFailed(checkResult.stderr)
+        }
 
-        // 2. Find local binary first (needed for hash comparison)
+        let lines = checkResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: "\n")
+        guard lines.count >= 2 else {
+            throw ServerDeployerError.connectionFailed("Unexpected output from remote check")
+        }
+
+        // Parse uname output
+        let unameParts = lines[0].split(separator: " ")
+        guard unameParts.count >= 2 else {
+            throw ServerDeployerError.unsupportedArchitecture(lines[0])
+        }
+        let osName = String(unameParts[0])
+        let arch = String(unameParts[1])
+
+        // 2. Find local binary
         guard let localBinaryURL = findLocalBinary(osName: osName, arch: arch) else {
             throw ServerDeployerError.unsupportedArchitecture("\(osName) \(arch)")
         }
 
-        // 3. Check if already deployed AND hash matches local binary
-        let checkResult = try await ProcessRunner.run(
-            executable: "ssh",
-            arguments: sshOptions + [host, "test -x \(remoteBinaryPath)"],
-            timeout: sshTimeout
-        )
-        if checkResult.exitCode == 0 {
-            // Binary exists - check if it matches local version
-            onProgress?("Verifying server on")
-            let needsUpdate = await binaryNeedsUpdate(
-                host: host, remotePath: remoteBinaryPath, localURL: localBinaryURL)
-            if !needsUpdate {
+        // 3. Check deployment status from combined output
+        let binaryExists = lines.count > 1 && lines[1] == "EXISTS"
+        let remoteHash = lines.count > 2 ? lines[2] : "NOHASH"
+
+        if binaryExists && remoteHash != "NOHASH" {
+            let localHash = md5Hash(of: localBinaryURL)
+            if localHash == remoteHash {
                 print("[ServerDeployer] Server already deployed and up-to-date at \(remoteBinaryPath)")
                 onProgress?("Connecting to")
                 return remoteBinaryPath
             }
-            print("[ServerDeployer] Server binary outdated, redeploying...")
+            print("[ServerDeployer] Hash mismatch: local=\(localHash ?? "nil") remote=\(remoteHash)")
         }
 
         print("[ServerDeployer] Deploying \(localBinaryURL.lastPathComponent) to \(host)...")

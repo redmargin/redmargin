@@ -16,15 +16,6 @@ public class RemoteFileTreeProvider: ObservableObject {
     /// Callback when expanded folders change (path of root, set of expanded folder paths)
     public var onExpandedFoldersChange: ((String, Set<String>) -> Void)?
 
-    /// Directories to skip when enumerating files
-    private static let ignoredDirectories: Set<String> = [
-        ".git", "node_modules", ".build", "build", "DerivedData",
-        ".cache", ".npm", "vendor", "Pods", ".svn", ".hg"
-    ]
-
-    /// File extensions to include
-    private static let markdownExtensions: Set<String> = ["md", "markdown"]
-
     public init(currentFilePath: String, fileProvider: RemoteFileProvider, expandedFolders: Set<String> = []) {
         self.currentFilePath = currentFilePath
         self.fileProvider = fileProvider
@@ -66,8 +57,25 @@ public class RemoteFileTreeProvider: ObservableObject {
         }
     }
 
+    /// Directories to skip when enumerating files (used by legacy recursive fallback)
+    private static let ignoredDirectories: Set<String> = [
+        ".git", "node_modules", ".build", "build", "DerivedData",
+        ".cache", ".npm", "vendor", "Pods", ".svn", ".hg"
+    ]
+
+    /// File extensions to include (used by legacy recursive fallback)
+    private static let markdownExtensions: Set<String> = ["md", "markdown"]
+
     private func buildTree(from directory: String) async -> [FileTreeNode] {
-        return await buildTreeRecursive(at: directory, depth: 0)
+        // Try single-call approach (requires server with FindMarkdownFiles support)
+        do {
+            let paths = try await fileProvider.findMarkdownFiles(in: directory)
+            return buildTreeFromPaths(paths, rootPath: directory)
+        } catch {
+            // Fall back to recursive listing for older servers
+            print("[RemoteFileTreeProvider] FindMarkdownFiles not available, falling back to recursive listing")
+            return await buildTreeRecursive(at: directory, depth: 0)
+        }
     }
 
     private func buildTreeRecursive(at directory: String, depth: Int) async -> [FileTreeNode] {
@@ -81,10 +89,9 @@ public class RemoteFileTreeProvider: ObservableObject {
             return []
         }
 
-        // Sort: directories first, then alphabetically
         let sorted = entries.sorted { lhs, rhs in
             if lhs.isDirectory != rhs.isDirectory {
-                return lhs.isDirectory  // Directories first
+                return lhs.isDirectory
             }
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
@@ -94,17 +101,10 @@ public class RemoteFileTreeProvider: ObservableObject {
             let url = URL(fileURLWithPath: fullPath)
 
             if entry.isDirectory {
-                // Skip ignored directories
-                if Self.ignoredDirectories.contains(entry.name) {
-                    continue
-                }
+                if Self.ignoredDirectories.contains(entry.name) { continue }
 
-                // Recursively get children
                 let children = await buildTreeRecursive(at: fullPath, depth: depth + 1)
-
-                // Only include directory if it has markdown files (directly or nested)
                 if !children.isEmpty {
-                    // Check if this folder should be expanded
                     let shouldExpand = expandedFolders.contains(fullPath) || depth == 0
                     let node = FileTreeNode(
                         name: entry.name,
@@ -114,14 +114,12 @@ public class RemoteFileTreeProvider: ObservableObject {
                         children: children,
                         isExpanded: shouldExpand
                     )
-                    // Set up callback for expansion changes
                     node.onExpandedChange = { [weak self] path, expanded in
                         self?.handleFolderExpansionChange(path: path, expanded: expanded)
                     }
                     nodes.append(node)
                 }
             } else {
-                // Check if it's a markdown file
                 let ext = (entry.name as NSString).pathExtension.lowercased()
                 if Self.markdownExtensions.contains(ext) {
                     let node = FileTreeNode(
@@ -133,6 +131,73 @@ public class RemoteFileTreeProvider: ObservableObject {
                     nodes.append(node)
                 }
             }
+        }
+
+        return nodes
+    }
+
+    /// Builds a hierarchical tree from a flat list of relative file paths.
+    /// Uses a trie to group files into their directory structure.
+    private func buildTreeFromPaths(_ relativePaths: [String], rootPath: String) -> [FileTreeNode] {
+        // Build intermediate trie from flat paths
+        let root = PathTrie()
+        for path in relativePaths {
+            let components = path.split(separator: "/").map(String.init)
+            var current = root
+            for (index, component) in components.enumerated() {
+                if index == components.count - 1 {
+                    current.files.append(component)
+                } else {
+                    if current.subdirs[component] == nil {
+                        current.subdirs[component] = PathTrie()
+                    }
+                    current = current.subdirs[component]!
+                }
+            }
+        }
+
+        return convertTrieToNodes(root, parentPath: rootPath, depth: 0)
+    }
+
+    private func convertTrieToNodes(_ trie: PathTrie, parentPath: String, depth: Int) -> [FileTreeNode] {
+        var nodes: [FileTreeNode] = []
+
+        // Directories first, sorted
+        let sortedDirNames = trie.subdirs.keys.sorted {
+            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+        }
+
+        for dirName in sortedDirNames {
+            let dirContent = trie.subdirs[dirName]!
+            let fullPath = (parentPath as NSString).appendingPathComponent(dirName)
+            let url = URL(fileURLWithPath: fullPath)
+            let children = convertTrieToNodes(dirContent, parentPath: fullPath, depth: depth + 1)
+
+            let shouldExpand = expandedFolders.contains(fullPath) || depth == 0
+            let node = FileTreeNode(
+                name: dirName,
+                url: url,
+                isDirectory: true,
+                depth: depth,
+                children: children,
+                isExpanded: shouldExpand
+            )
+            node.onExpandedChange = { [weak self] path, expanded in
+                self?.handleFolderExpansionChange(path: path, expanded: expanded)
+            }
+            nodes.append(node)
+        }
+
+        // Files, sorted
+        let sortedFiles = trie.files.sorted {
+            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+        }
+
+        for fileName in sortedFiles {
+            let fullPath = (parentPath as NSString).appendingPathComponent(fileName)
+            let url = URL(fileURLWithPath: fullPath)
+            let node = FileTreeNode(name: fileName, url: url, isDirectory: false, depth: depth)
+            nodes.append(node)
         }
 
         return nodes
@@ -169,4 +234,10 @@ public class RemoteFileTreeProvider: ObservableObject {
             applyExpandedStateToNodes(node.children)
         }
     }
+}
+
+/// Intermediate trie node for building file tree from flat paths
+private class PathTrie {
+    var subdirs: [String: PathTrie] = [:]
+    var files: [String] = []
 }
