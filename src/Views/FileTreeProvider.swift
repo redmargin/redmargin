@@ -45,9 +45,10 @@ public class FileTreeProvider: ObservableObject {
     @Published public private(set) var rootDirectory: URL?
     @Published public private(set) var isLoading = false
 
-    private let currentFileURL: URL
+    private let currentFileURL: URL?
     private var directoryWatcher: DirectoryWatcher?
     private var expandedFolders: Set<String> = []
+    private let autoExpandRoot: Bool
 
     /// Callback when expanded folders change (path of root, set of expanded folder paths)
     public var onExpandedFoldersChange: ((String, Set<String>) -> Void)?
@@ -64,13 +65,27 @@ public class FileTreeProvider: ObservableObject {
     public init(currentFileURL: URL, expandedFolders: Set<String> = []) {
         self.currentFileURL = currentFileURL
         self.expandedFolders = expandedFolders
+        self.autoExpandRoot = true
         Task {
             await loadFiles()
         }
     }
 
+    /// Initialize with a root directory directly, skipping git detection.
+    /// Root-level folders start collapsed (only `expandedFolders` are expanded).
+    public init(rootDirectory: URL, expandedFolders: Set<String> = []) {
+        self.currentFileURL = nil
+        self.expandedFolders = expandedFolders
+        self.autoExpandRoot = false
+        self.rootDirectory = rootDirectory
+        self.rootNodes = buildTree(from: rootDirectory)
+        setupDirectoryWatcher(for: rootDirectory)
+    }
+
     /// Loads markdown files from the appropriate root directory
     public func loadFiles() async {
+        guard let currentFileURL else { return }
+
         isLoading = true
         defer { isLoading = false }
 
@@ -141,7 +156,7 @@ public class FileTreeProvider: ObservableObject {
                 // Only include directory if it has markdown files (directly or nested)
                 if !children.isEmpty {
                     // Check if this folder should be expanded
-                    let shouldExpand = expandedFolders.contains(url.path) || depth == 0
+                    let shouldExpand = expandedFolders.contains(url.path) || (autoExpandRoot && depth == 0)
                     let node = FileTreeNode(
                         name: name,
                         url: url,
@@ -206,7 +221,7 @@ public class FileTreeProvider: ObservableObject {
             // Temporarily remove callback to avoid triggering saves
             let callback = node.onExpandedChange
             node.onExpandedChange = nil
-            node.isExpanded = expandedFolders.contains(node.url.path) || node.depth == 0
+            node.isExpanded = expandedFolders.contains(node.url.path) || (autoExpandRoot && node.depth == 0)
             node.onExpandedChange = callback
 
             // Recursively apply to children

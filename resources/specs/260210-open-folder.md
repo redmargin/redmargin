@@ -1,7 +1,7 @@
 # Open Folder Support
 
 ## Meta
-- Status: Draft
+- Status: Implemented
 - Branch: feature/open-folder
 
 ---
@@ -94,28 +94,28 @@ The open panel changes from `canChooseDirectories = false` to `true` and removes
 ### Implementation Plan
 
 **Phase 1: FileTreeProvider directory initializer**
-- [ ] Add `init(rootDirectory: URL, expandedFolders: Set<String> = [])` to `FileTreeProvider`
-- [ ] This initializer sets `rootDirectory` directly and calls `buildTree()` + `setupDirectoryWatcher()` without git detection
+- [x] Add `init(rootDirectory: URL, expandedFolders: Set<String> = [])` to `FileTreeProvider`
+- [x] This initializer sets `rootDirectory` directly and calls `buildTree()` + `setupDirectoryWatcher()` without git detection
 
 **Phase 2: FolderWindowContent view**
-- [ ] Create `AppMain/FolderWindowContent.swift`
-- [ ] Welcome view: centered Redmargin app icon (from `NSApp.applicationIconImage`) + "Select a file" text in `.secondary` color
-- [ ] Wire up `SidebarSplitView` with `SidebarView` using the new `FileTreeProvider` init
-- [ ] Implement file selection: on click, load file content, create `DocumentState`, swap welcome view for `MarkdownWebView`
-- [ ] Wire up notification modifiers (toggles, find bar, print, export) — disable print/export when no file selected
-- [ ] Expanded folders persistence (reuse existing `setupExpandedFoldersPersistence` pattern)
+- [x] Create `AppMain/FolderWindowContent.swift`
+- [x] Welcome view: centered Redmargin app icon (from `NSApp.applicationIconImage`) + "Select a file" text in `.secondary` color
+- [x] Wire up `SidebarSplitView` with `SidebarView` using the new `FileTreeProvider` init
+- [x] Implement file selection: on click, load file content, create `DocumentState`, swap welcome view for `MarkdownWebView`
+- [x] Wire up notification modifiers (toggles, find bar, print, export) — disable print/export when no file selected
+- [x] Expanded folders persistence (reuse existing `setupExpandedFoldersPersistence` pattern)
 
 **Phase 3: AppDelegate folder support**
-- [ ] Add `folderWindows` dictionary and `openFolder(_ url: URL)` method
-- [ ] Modify open panel: `canChooseDirectories = true`, detect folder selection and route to `openFolder()`
-- [ ] Handle folder URLs in `application(_:open:)` and `openFile()`
-- [ ] `windowWillClose`: clean up `folderWindows`
-- [ ] `updateFolderWindowTracking()` for migrating folder window to document window on file selection
+- [x] Add `folderWindows` dictionary and `openFolder(_ url: URL)` method
+- [x] Modify open panel: `canChooseDirectories = true`, detect folder selection and route to `openFolder()`
+- [x] Handle folder URLs in `application(_:open:)` and `openFile()`
+- [x] `windowWillClose`: clean up `folderWindows`
+- [x] `updateFolderWindowFile()` for tracking selected file in folder window
 
 **Phase 4: Persistence and Info.plist**
-- [ ] Add `public.folder` to `CFBundleDocumentTypes` in `build/Info.plist`
-- [ ] Save/restore open folder URLs on quit/launch (separate UserDefaults key)
-- [ ] Track which file was selected in a folder window so it can be restored
+- [x] Add `public.folder` to `CFBundleDocumentTypes` in `build/Info.plist`
+- [x] Save/restore open folder URLs on quit/launch (separate UserDefaults key)
+- [x] Track which file was selected in a folder window so it can be restored
 
 ---
 
@@ -125,9 +125,9 @@ Tests in `Tests/`. Results logged in `Tests/TEST_LOG.md`.
 
 ### Unit Tests (`Tests/FileTreeProviderTests.swift`)
 
-- [ ] `testDirectoryInitializer` - FileTreeProvider initialized with root directory sets rootDirectory and builds tree without git detection
-- [ ] `testDirectoryInitializerExcludesIgnored` - Ignored directories (.git, node_modules, etc.) are excluded when using directory initializer
-- [ ] `testDirectoryInitializerOnlyMarkdown` - Only .md and .markdown files appear in tree from directory initializer
+- [x] `testDirectoryInitializer` - FileTreeProvider initialized with root directory sets rootDirectory and builds tree without git detection
+- [x] `testDirectoryInitializerExcludesIgnored` - Ignored directories (.git, node_modules, etc.) are excluded when using directory initializer
+- [x] `testDirectoryInitializerOnlyMarkdown` - Only .md and .markdown files appear in tree from directory initializer
 
 ### Integration Tests
 

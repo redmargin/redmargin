@@ -157,6 +157,74 @@ final class SidebarTests: XCTestCase {
         XCTAssertTrue(allNames.contains("reference.md"))
     }
 
+    // MARK: - Directory Initializer Tests
+
+    func testDirectoryInitializer() async throws {
+        // Create test files
+        try "# Test 1".write(to: tempDir.appendingPathComponent("file1.md"), atomically: true, encoding: .utf8)
+        try "# Test 2".write(to: tempDir.appendingPathComponent("file2.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+
+        let rootDirectory = await provider.rootDirectory
+        let rootNodes = await provider.rootNodes
+        let fileNames = rootNodes.map { $0.name }.sorted()
+
+        // Should use the provided directory directly (no git detection)
+        XCTAssertEqual(
+            rootDirectory?.standardizedFileURL.path,
+            tempDir.standardizedFileURL.path
+        )
+        XCTAssertEqual(fileNames, ["file1.md", "file2.md"])
+    }
+
+    func testDirectoryInitializerExcludesIgnored() async throws {
+        // Create ignored directories with markdown files
+        let gitDir = tempDir.appendingPathComponent(".git")
+        try FileManager.default.createDirectory(at: gitDir, withIntermediateDirectories: true)
+        try "# Hidden".write(to: gitDir.appendingPathComponent("hidden.md"), atomically: true, encoding: .utf8)
+
+        let nodeDir = tempDir.appendingPathComponent("node_modules")
+        try FileManager.default.createDirectory(at: nodeDir, withIntermediateDirectories: true)
+        try "# Node".write(to: nodeDir.appendingPathComponent("package.md"), atomically: true, encoding: .utf8)
+
+        let buildDir = tempDir.appendingPathComponent(".build")
+        try FileManager.default.createDirectory(at: buildDir, withIntermediateDirectories: true)
+        try "# Build".write(to: buildDir.appendingPathComponent("build.md"), atomically: true, encoding: .utf8)
+
+        // Create visible file
+        try "# Visible".write(to: tempDir.appendingPathComponent("visible.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+
+        let rootNodes = await provider.rootNodes
+        let allNames = collectAllNames(rootNodes)
+
+        XCTAssertTrue(allNames.contains("visible.md"))
+        XCTAssertFalse(allNames.contains("hidden.md"))
+        XCTAssertFalse(allNames.contains("package.md"))
+        XCTAssertFalse(allNames.contains("build.md"))
+        XCTAssertFalse(allNames.contains(".git"))
+        XCTAssertFalse(allNames.contains("node_modules"))
+        XCTAssertFalse(allNames.contains(".build"))
+    }
+
+    func testDirectoryInitializerOnlyMarkdown() async throws {
+        // Create mixed file types
+        try "# Markdown".write(to: tempDir.appendingPathComponent("readme.md"), atomically: true, encoding: .utf8)
+        try "# Also MD".write(to: tempDir.appendingPathComponent("notes.markdown"), atomically: true, encoding: .utf8)
+        try "Plain text".write(to: tempDir.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+        try "Swift code".write(to: tempDir.appendingPathComponent("main.swift"), atomically: true, encoding: .utf8)
+        try "{}".write(to: tempDir.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+
+        let rootNodes = await provider.rootNodes
+        let fileNames = rootNodes.map { $0.name }.sorted()
+
+        XCTAssertEqual(fileNames, ["notes.markdown", "readme.md"])
+    }
+
     // MARK: - FileTreeNode Tests
 
     func testFileTreeNodeExpansionCallback() async throws {

@@ -287,6 +287,12 @@ final class RecentDocumentsMenuDelegate: NSObject, NSMenuDelegate {
                 title: url.displayPath, action: #selector(openRecentDocument(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = url
+            // Show folder icon for directory entries
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                item.image = NSImage(systemSymbolName: "folder.fill", accessibilityDescription: "Folder")
+                item.image?.size = NSSize(width: 16, height: 16)
+            }
             menu.addItem(item)
         }
 
@@ -341,7 +347,13 @@ final class RecentDocumentsMenuDelegate: NSObject, NSMenuDelegate {
             return
         }
 
-        appDelegate.openDocument(url)
+        var isDir: ObjCBool = false
+        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+        if isDir.boolValue {
+            appDelegate.openFolder(url)
+        } else {
+            appDelegate.openDocument(url)
+        }
     }
 
     @objc private func openRecentRemoteLocation(_ sender: NSMenuItem) {

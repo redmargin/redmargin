@@ -9,6 +9,9 @@ import RedmarginCore
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     private var documentWindows: [URL: NSWindow] = [:]
     var remoteDocumentWindows: [RemoteLocation: NSWindow] = [:]
+    private var folderWindows: [URL: NSWindow] = [:]
+    /// Tracks which file is selected in each folder window (folder URL -> file URL)
+    private var folderSelectedFiles: [URL: URL] = [:]
     private var launchedWithFiles = false
     private var launchURLs: [URL] = []
 
@@ -20,7 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [Self.markdownType, .plainText]
         panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = true
         panel.styleMask.insert(.resizable)
         return panel
     }()
@@ -30,6 +33,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     let recentRemoteKey = "RedMargin.RecentRemoteConnections"
     let recentRemoteLocationsKey = "RedMargin.RecentRemoteLocations"
     private let openRemoteLocationsKey = "RedMargin.OpenRemoteLocations"
+    private let savedFolderURLsKey = "RedMargin.OpenFolderURLs"
+    private let folderSelectedFilesKey = "RedMargin.FolderSelectedFiles"
     private let windowOrderKey = "RedMargin.WindowOrder"
     private let frontmostWindowKey = "RedMargin.FrontmostWindow"
     let maxRecentDocuments = 10
@@ -55,6 +60,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
         let savedURLs = restoreSavedURLs()
         let savedRemoteLocations = restoreOpenRemoteLocations()
+        let savedFolderURLs = restoreSavedFolderURLs()
 
         if !savedURLs.isEmpty {
             let orderedPaths = UserDefaults.standard.stringArray(forKey: windowOrderKey) ?? []
@@ -68,6 +74,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             for url in allURLsOrdered.reversed() {
                 openDocument(url)
             }
+        }
+
+        // Restore folder windows
+        for url in savedFolderURLs {
+            openFolder(url)
         }
 
         // Restore remote documents
@@ -138,7 +149,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             restoreFrontmostWindow()
         }
 
-        if savedURLs.isEmpty && savedRemoteLocations.isEmpty && !launchedWithFiles {
+        if savedURLs.isEmpty && savedRemoteLocations.isEmpty && savedFolderURLs.isEmpty && !launchedWithFiles {
             showOpenPanel()
         }
 
@@ -157,18 +168,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let urls = Array(documentWindows.keys)
         saveOpenURLs(urls)
 
+        // Save open folder URLs and their selected files
+        let folderURLs = Array(folderWindows.keys)
+        UserDefaults.standard.set(folderURLs.map { $0.path }, forKey: savedFolderURLsKey)
+        var selectedFilesDict: [String: String] = [:]
+        for (folderURL, fileURL) in folderSelectedFiles {
+            selectedFilesDict[folderURL.path] = fileURL.path
+        }
+        if !selectedFilesDict.isEmpty {
+            UserDefaults.standard.set(selectedFilesDict, forKey: folderSelectedFilesKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: folderSelectedFilesKey)
+        }
+
         let orderedURLs = NSApp.orderedWindows
             .compactMap { window -> URL? in
                 documentWindows.first { $0.value === window }?.key
             }
         UserDefaults.standard.set(orderedURLs.map { $0.path }, forKey: windowOrderKey)
 
-        // Save frontmost window (local or remote)
+        // Save frontmost window (local, remote, or folder)
         if let frontWindow = NSApp.orderedWindows.first {
             if let localURL = documentWindows.first(where: { $0.value === frontWindow })?.key {
                 UserDefaults.standard.set(localURL.path, forKey: frontmostWindowKey)
             } else if let loc = remoteDocumentWindows.first(where: { $0.value === frontWindow })?.key {
                 UserDefaults.standard.set("remote:\(loc.host):\(loc.path)", forKey: frontmostWindowKey)
+            } else if let folderURL = folderWindows.first(where: { $0.value === frontWindow })?.key {
+                UserDefaults.standard.set("folder:\(folderURL.path)", forKey: frontmostWindowKey)
             }
         }
 
@@ -224,6 +250,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
                     window.makeKeyAndOrderFront(nil)
                 }
             }
+        } else if saved.hasPrefix("folder:") {
+            let path = String(saved.dropFirst("folder:".count))
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            if let window = folderWindows[url] {
+                window.makeKeyAndOrderFront(nil)
+            }
         } else {
             let url = URL(fileURLWithPath: saved)
             if let window = documentWindows[url] {
@@ -244,14 +276,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     func application(_ application: NSApplication, open urls: [URL]) {
         launchedWithFiles = true
         launchURLs = urls
-        urls.forEach { openDocument($0) }
+        for url in urls {
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+            if isDir.boolValue {
+                openFolder(url)
+            } else {
+                openDocument(url)
+            }
+        }
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
         let url = URL(fileURLWithPath: filename)
         launchedWithFiles = true
         launchURLs = [url]
-        openDocument(url)
+        var isDir: ObjCBool = false
+        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+        if isDir.boolValue {
+            openFolder(url)
+        } else {
+            openDocument(url)
+        }
         return true
     }
 
@@ -307,6 +353,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         }
     }
 
+    private func restoreSavedFolderURLs() -> [URL] {
+        guard let paths = UserDefaults.standard.stringArray(forKey: savedFolderURLsKey) else { return [] }
+        UserDefaults.standard.removeObject(forKey: savedFolderURLsKey)
+        return paths.compactMap { path -> URL? in
+            let url = URL(fileURLWithPath: path)
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir),
+                  isDir.boolValue else { return nil }
+            if let resolvedURL = BookmarkManager.shared.resolveBookmark(for: url) {
+                if BookmarkManager.shared.startAccessing(resolvedURL) {
+                    return resolvedURL
+                }
+            }
+            return url
+        }
+    }
+
     // MARK: - Recent Documents
 
     func addToRecentDocuments(_ url: URL) {
@@ -357,11 +420,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             panel.directoryURL = activeURL.deletingLastPathComponent()
         }
 
+        // Temporarily clear allowedContentTypes so folders aren't grayed out,
+        // then restore after panel closes
+        panel.allowedContentTypes = []
+
         NSApp.activate(ignoringOtherApps: true)
 
         let completionHandler: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            panel.allowedContentTypes = [Self.markdownType, .plainText]
+
             if response == .OK, let url = panel.url {
-                self?.openDocument(url)
+                var isDir: ObjCBool = false
+                FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+                if isDir.boolValue {
+                    self?.openFolder(url)
+                } else {
+                    self?.openDocument(url)
+                }
             }
         }
 
@@ -429,6 +504,70 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         }
     }
 
+    // MARK: - Folder Management
+
+    func openFolder(_ url: URL) {
+        let standardized = url.standardizedFileURL
+        addToRecentDocuments(standardized)
+
+        if let existingWindow = folderWindows[standardized] {
+            existingWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        BookmarkManager.shared.createBookmark(for: standardized)
+
+        let folderView = FolderWindowContent(
+            folderURL: standardized,
+            appDelegate: self
+        )
+
+        let window = createFolderWindow(for: standardized, rootView: folderView)
+        folderWindows[standardized] = window
+        window.delegate = self
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func createFolderWindow(for url: URL, rootView: FolderWindowContent) -> NSWindow {
+        let window = NSWindow(contentViewController: NSHostingController(rootView: rootView))
+        window.title = url.displayPath
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.collectionBehavior = .fullScreenNone
+        window.tabbingMode = .disallowed
+        window.minSize = NSSize(width: 500, height: 400)
+
+        let autosaveName = "folder:\(url.path)"
+        let hasSavedFrame = UserDefaults.standard.string(forKey: "NSWindow Frame \(autosaveName)") != nil
+        window.setFrameAutosaveName(autosaveName)
+
+        if !hasSavedFrame {
+            let size = NSSize(width: 950, height: 1100)
+            if let screen = NSScreen.main {
+                let origin = NSPoint(
+                    x: screen.visibleFrame.midX - size.width / 2,
+                    y: screen.visibleFrame.midY - size.height / 2
+                )
+                window.setFrame(NSRect(origin: origin, size: size), display: false)
+            } else {
+                window.setContentSize(size)
+                window.center()
+            }
+        }
+        return window
+    }
+
+    /// Called by FolderWindowContent when a file is selected
+    func updateFolderWindowFile(folder folderURL: URL, to fileURL: URL?) {
+        let standardized = folderURL.standardizedFileURL
+        if let fileURL {
+            folderSelectedFiles[standardized] = fileURL
+        } else {
+            folderSelectedFiles.removeValue(forKey: standardized)
+        }
+    }
+
     private func createWindow(for url: URL, rootView: DocumentWindowContent) -> NSWindow {
         let window = NSWindow(contentViewController: NSHostingController(rootView: rootView))
         window.title = url.displayPath
@@ -461,8 +600,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        if let folderURL = folderWindows.first(where: { $0.value === window })?.key {
+            folderSelectedFiles.removeValue(forKey: folderURL)
+        }
         documentWindows = documentWindows.filter { $0.value !== window }
         remoteDocumentWindows = remoteDocumentWindows.filter { $0.value !== window }
+        folderWindows = folderWindows.filter { $0.value !== window }
     }
 
     // MARK: - Menu Actions
