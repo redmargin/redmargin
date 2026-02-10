@@ -35,14 +35,18 @@ struct FolderWindowContent: View {
         }
     }
 
+    private let initialSelectedFile: URL?
+
     init(
         folderURL: URL,
+        initialSelectedFile: URL? = nil,
         showSidebar: Bool? = nil,
         sidebarWidth: CGFloat? = nil,
         appDelegate: AppDelegate? = nil
     ) {
         let prefs = PreferencesManager.shared
         self.folderURL = folderURL
+        self.initialSelectedFile = initialSelectedFile
         _fileTreeProvider = StateObject(wrappedValue: FileTreeProvider(rootDirectory: folderURL))
         _showSidebar = State(initialValue: showSidebar ?? true)
         _sidebarWidth = State(initialValue: sidebarWidth ?? 200)
@@ -79,6 +83,12 @@ struct FolderWindowContent: View {
             .onAppear {
                 setupExpandedFoldersPersistence()
             }
+            .onChange(of: showSidebar) { _, newValue in
+                DocumentSettingsStorage.shared.saveSidebarVisible(newValue, for: folderURL)
+            }
+            .onChange(of: sidebarWidth) { _, newValue in
+                DocumentSettingsStorage.shared.saveSidebarWidth(newValue, for: folderURL)
+            }
     }
 
     private func setupExpandedFoldersPersistence() {
@@ -98,6 +108,12 @@ struct FolderWindowContent: View {
                 if !expandedFolders.isEmpty {
                     fileTreeProvider.applyExpandedFolders(expandedFolders)
                 }
+            }
+
+            // Restore previously selected file
+            if let fileURL = initialSelectedFile,
+               FileManager.default.fileExists(atPath: fileURL.path) {
+                handleFileSelection(fileURL)
             }
         }
     }

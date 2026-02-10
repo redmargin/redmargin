@@ -67,6 +67,15 @@ public actor SSHConnection {
         return state == .connected && process?.isRunning == true
     }
 
+    /// Forces an immediate reconnection by killing the current SSH process.
+    /// Used when the system wakes from sleep and the TCP connection is likely dead
+    /// but the process hasn't detected it yet.
+    public func forceReconnect() {
+        guard state == .connected || state == .connecting else { return }
+        print("[SSHConnection] Force reconnect (wake from sleep)")
+        handleDisconnect()
+    }
+
     private var homeDirectory: String?
 
     public func getHomeDirectory() async throws -> String {

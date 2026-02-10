@@ -116,6 +116,13 @@ The open panel changes from `canChooseDirectories = false` to `true` and removes
 - [x] Add `public.folder` to `CFBundleDocumentTypes` in `build/Info.plist`
 - [x] Save/restore open folder URLs on quit/launch (separate UserDefaults key)
 - [x] Track which file was selected in a folder window so it can be restored
+- [x] Restore selected file on relaunch (pass saved file through `openFolder` → `FolderWindowContent`)
+- [x] Persist sidebar width and visibility per folder (save on change, restore on reopen)
+
+**Phase 5: SSH sleep/wake reconnection**
+- [x] Add `forceReconnect()` to `SSHConnection` — kills SSH process, triggers existing reconnect flow
+- [x] Add `forceReconnectAll()` to `SSHConnectionManager`
+- [x] Listen for `NSWorkspace.didWakeNotification` in `AppDelegate`, call `forceReconnectAll()` on wake
 
 ---
 
@@ -129,16 +136,29 @@ Tests in `Tests/`. Results logged in `Tests/TEST_LOG.md`.
 - [x] `testDirectoryInitializerExcludesIgnored` - Ignored directories (.git, node_modules, etc.) are excluded when using directory initializer
 - [x] `testDirectoryInitializerOnlyMarkdown` - Only .md and .markdown files appear in tree from directory initializer
 
-### Integration Tests
+### Persistence Tests (`Tests/SidebarTests.swift`)
 
-- [ ] `testOpenFolderCreatesWindow` - Calling `openFolder()` creates a window tracked in `folderWindows`
-- [ ] `testOpenFolderDeduplication` - Opening the same folder twice brings existing window to front
-- [ ] `testFolderDetectionInOpenURLs` - Directory URLs passed to `application(_:open:)` route to `openFolder()`
+- [x] `testFolderSidebarWidthPersistence` - Sidebar width saves and loads per folder URL
+- [x] `testFolderSidebarVisibilityPersistence` - Sidebar visibility saves and loads per folder URL
+- [x] `testFolderSelectedFilePersistence` - Selected file mapping round-trips through UserDefaults
+- [x] `testMultipleFolderSettingsIndependent` - Different folders maintain independent settings
+
+### SSH Reconnection Tests (`Tests/SSHConnectionTests.swift`)
+
+- [x] `testForceReconnectOnConnectedConnection` - Force reconnect transitions to reconnecting then re-establishes
+- [x] `testForceReconnectOnDisconnectedConnectionIsNoop` - Force reconnect on disconnected connection is a no-op
+- [x] `testForceReconnectAllViaManager` - Manager reconnects all connections
+
+### Integration Tests (`Tests/SidebarTests.swift`)
+
+- [x] `testOpenFolderCreatesWindow` - Calling `openFolder()` creates a window tracked in `folderWindows`
+- [x] `testOpenFolderDeduplication` - Opening the same folder twice brings existing window to front
+- [x] `testFolderDetectionInOpenURLs` - Directory URLs route to `openFolder()`, not `openDocument()`
 
 ### Manual Verification (Marco)
 
-- [ ] Open a folder via File > Open — sidebar shows markdown files, content area shows welcome view with app icon
-- [ ] Click a file in sidebar — markdown renders, window title updates
-- [ ] `open -a Redmargin ~/dev` from Terminal opens folder window
-- [ ] Drop a folder on dock icon — opens folder window
-- [ ] Quit and relaunch — folder window restores (with or without selected file)
+- [x] Open a folder via File > Open — sidebar shows markdown files, content area shows welcome view with app icon
+- [x] Click a file in sidebar — markdown renders, window title updates
+- [x] `open -a Redmargin ~/dev` from Terminal opens folder window
+- [x] Drop a folder on dock icon — opens folder window
+- [x] Quit and relaunch — folder window restores (with or without selected file)

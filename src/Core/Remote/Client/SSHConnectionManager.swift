@@ -39,4 +39,12 @@ public actor SSHConnectionManager {
             await connection.disconnect()
         }
     }
+
+    /// Forces all connections to reconnect immediately.
+    /// Called on system wake from sleep when TCP connections are likely dead.
+    public func forceReconnectAll() async {
+        for connection in connections.values {
+            await connection.forceReconnect()
+        }
+    }
 }

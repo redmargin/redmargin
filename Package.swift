@@ -32,7 +32,7 @@ let package = Package(
         ),
         .testTarget(
             name: "RedmarginTests",
-            dependencies: ["RedmarginLib", "RedmarginCore"],
+            dependencies: ["Redmargin", "RedmarginLib", "RedmarginCore"],
             path: "Tests",
             exclude: ["Fixtures", "Scripts", "TEST_LOG.md"]
         )
