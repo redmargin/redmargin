@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### New Features
+- Open folders directly via File > Open, drag-and-drop, or `open -a Redmargin ~/path/to/folder`
+- Folder windows show sidebar with markdown file tree and a welcome view until a file is selected
+- Folder windows persist and restore on relaunch (including selected file, sidebar width, and sidebar visibility)
+
+### Bug Fixes
+- Fixed remote documents not reconnecting after Mac wakes from sleep (forced SSH reconnection on wake)
+- Fixed flaky sidebar tests caused by race conditions with async file tree loading
+
 ---
 
 ## v1.1.0 (2026-02-08)

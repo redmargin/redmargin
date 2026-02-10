@@ -1,7 +1,7 @@
 # Open Folder Support
 
 ## Meta
-- Status: Draft
+- Status: Implemented
 - Branch: feature/open-folder
 
 ---
@@ -94,28 +94,35 @@ The open panel changes from `canChooseDirectories = false` to `true` and removes
 ### Implementation Plan
 
 **Phase 1: FileTreeProvider directory initializer**
-- [ ] Add `init(rootDirectory: URL, expandedFolders: Set<String> = [])` to `FileTreeProvider`
-- [ ] This initializer sets `rootDirectory` directly and calls `buildTree()` + `setupDirectoryWatcher()` without git detection
+- [x] Add `init(rootDirectory: URL, expandedFolders: Set<String> = [])` to `FileTreeProvider`
+- [x] This initializer sets `rootDirectory` directly and calls `buildTree()` + `setupDirectoryWatcher()` without git detection
 
 **Phase 2: FolderWindowContent view**
-- [ ] Create `AppMain/FolderWindowContent.swift`
-- [ ] Welcome view: centered Redmargin app icon (from `NSApp.applicationIconImage`) + "Select a file" text in `.secondary` color
-- [ ] Wire up `SidebarSplitView` with `SidebarView` using the new `FileTreeProvider` init
-- [ ] Implement file selection: on click, load file content, create `DocumentState`, swap welcome view for `MarkdownWebView`
-- [ ] Wire up notification modifiers (toggles, find bar, print, export) — disable print/export when no file selected
-- [ ] Expanded folders persistence (reuse existing `setupExpandedFoldersPersistence` pattern)
+- [x] Create `AppMain/FolderWindowContent.swift`
+- [x] Welcome view: centered Redmargin app icon (from `NSApp.applicationIconImage`) + "Select a file" text in `.secondary` color
+- [x] Wire up `SidebarSplitView` with `SidebarView` using the new `FileTreeProvider` init
+- [x] Implement file selection: on click, load file content, create `DocumentState`, swap welcome view for `MarkdownWebView`
+- [x] Wire up notification modifiers (toggles, find bar, print, export) — disable print/export when no file selected
+- [x] Expanded folders persistence (reuse existing `setupExpandedFoldersPersistence` pattern)
 
 **Phase 3: AppDelegate folder support**
-- [ ] Add `folderWindows` dictionary and `openFolder(_ url: URL)` method
-- [ ] Modify open panel: `canChooseDirectories = true`, detect folder selection and route to `openFolder()`
-- [ ] Handle folder URLs in `application(_:open:)` and `openFile()`
-- [ ] `windowWillClose`: clean up `folderWindows`
-- [ ] `updateFolderWindowTracking()` for migrating folder window to document window on file selection
+- [x] Add `folderWindows` dictionary and `openFolder(_ url: URL)` method
+- [x] Modify open panel: `canChooseDirectories = true`, detect folder selection and route to `openFolder()`
+- [x] Handle folder URLs in `application(_:open:)` and `openFile()`
+- [x] `windowWillClose`: clean up `folderWindows`
+- [x] `updateFolderWindowFile()` for tracking selected file in folder window
 
 **Phase 4: Persistence and Info.plist**
-- [ ] Add `public.folder` to `CFBundleDocumentTypes` in `build/Info.plist`
-- [ ] Save/restore open folder URLs on quit/launch (separate UserDefaults key)
-- [ ] Track which file was selected in a folder window so it can be restored
+- [x] Add `public.folder` to `CFBundleDocumentTypes` in `build/Info.plist`
+- [x] Save/restore open folder URLs on quit/launch (separate UserDefaults key)
+- [x] Track which file was selected in a folder window so it can be restored
+- [x] Restore selected file on relaunch (pass saved file through `openFolder` → `FolderWindowContent`)
+- [x] Persist sidebar width and visibility per folder (save on change, restore on reopen)
+
+**Phase 5: SSH sleep/wake reconnection**
+- [x] Add `forceReconnect()` to `SSHConnection` — kills SSH process, triggers existing reconnect flow
+- [x] Add `forceReconnectAll()` to `SSHConnectionManager`
+- [x] Listen for `NSWorkspace.didWakeNotification` in `AppDelegate`, call `forceReconnectAll()` on wake
 
 ---
 
@@ -125,20 +132,33 @@ Tests in `Tests/`. Results logged in `Tests/TEST_LOG.md`.
 
 ### Unit Tests (`Tests/FileTreeProviderTests.swift`)
 
-- [ ] `testDirectoryInitializer` - FileTreeProvider initialized with root directory sets rootDirectory and builds tree without git detection
-- [ ] `testDirectoryInitializerExcludesIgnored` - Ignored directories (.git, node_modules, etc.) are excluded when using directory initializer
-- [ ] `testDirectoryInitializerOnlyMarkdown` - Only .md and .markdown files appear in tree from directory initializer
+- [x] `testDirectoryInitializer` - FileTreeProvider initialized with root directory sets rootDirectory and builds tree without git detection
+- [x] `testDirectoryInitializerExcludesIgnored` - Ignored directories (.git, node_modules, etc.) are excluded when using directory initializer
+- [x] `testDirectoryInitializerOnlyMarkdown` - Only .md and .markdown files appear in tree from directory initializer
 
-### Integration Tests
+### Persistence Tests (`Tests/SidebarTests.swift`)
 
-- [ ] `testOpenFolderCreatesWindow` - Calling `openFolder()` creates a window tracked in `folderWindows`
-- [ ] `testOpenFolderDeduplication` - Opening the same folder twice brings existing window to front
-- [ ] `testFolderDetectionInOpenURLs` - Directory URLs passed to `application(_:open:)` route to `openFolder()`
+- [x] `testFolderSidebarWidthPersistence` - Sidebar width saves and loads per folder URL
+- [x] `testFolderSidebarVisibilityPersistence` - Sidebar visibility saves and loads per folder URL
+- [x] `testFolderSelectedFilePersistence` - Selected file mapping round-trips through UserDefaults
+- [x] `testMultipleFolderSettingsIndependent` - Different folders maintain independent settings
+
+### SSH Reconnection Tests (`Tests/SSHConnectionTests.swift`)
+
+- [x] `testForceReconnectOnConnectedConnection` - Force reconnect transitions to reconnecting then re-establishes
+- [x] `testForceReconnectOnDisconnectedConnectionIsNoop` - Force reconnect on disconnected connection is a no-op
+- [x] `testForceReconnectAllViaManager` - Manager reconnects all connections
+
+### Integration Tests (`Tests/SidebarTests.swift`)
+
+- [x] `testOpenFolderCreatesWindow` - Calling `openFolder()` creates a window tracked in `folderWindows`
+- [x] `testOpenFolderDeduplication` - Opening the same folder twice brings existing window to front
+- [x] `testFolderDetectionInOpenURLs` - Directory URLs route to `openFolder()`, not `openDocument()`
 
 ### Manual Verification (Marco)
 
-- [ ] Open a folder via File > Open — sidebar shows markdown files, content area shows welcome view with app icon
-- [ ] Click a file in sidebar — markdown renders, window title updates
-- [ ] `open -a Redmargin ~/dev` from Terminal opens folder window
-- [ ] Drop a folder on dock icon — opens folder window
-- [ ] Quit and relaunch — folder window restores (with or without selected file)
+- [x] Open a folder via File > Open — sidebar shows markdown files, content area shows welcome view with app icon
+- [x] Click a file in sidebar — markdown renders, window title updates
+- [x] `open -a Redmargin ~/dev` from Terminal opens folder window
+- [x] Drop a folder on dock icon — opens folder window
+- [x] Quit and relaunch — folder window restores (with or without selected file)

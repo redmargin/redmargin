@@ -1,4 +1,6 @@
 import XCTest
+import AppKit
+@testable import Redmargin
 @testable import RedmarginLib
 @testable import RedmarginCore
 
@@ -26,9 +28,7 @@ final class SidebarTests: XCTestCase {
         try "# Test 2".write(to: tempDir.appendingPathComponent("file2.markdown"), atomically: true, encoding: .utf8)
 
         let provider = await FileTreeProvider(currentFileURL: tempDir.appendingPathComponent("file1.md"))
-
-        // Wait for loading
-        try await Task.sleep(nanoseconds: 200_000_000)
+        try await waitForProvider(provider)
 
         let rootNodes = await provider.rootNodes
         let fileNames = rootNodes.map { $0.name }.sorted()
@@ -43,8 +43,7 @@ final class SidebarTests: XCTestCase {
         try "Swift code".write(to: tempDir.appendingPathComponent("main.swift"), atomically: true, encoding: .utf8)
 
         let provider = await FileTreeProvider(currentFileURL: tempDir.appendingPathComponent("readme.md"))
-
-        try await Task.sleep(nanoseconds: 200_000_000)
+        try await waitForProvider(provider)
 
         let rootNodes = await provider.rootNodes
         let fileNames = rootNodes.map { $0.name }
@@ -78,8 +77,7 @@ final class SidebarTests: XCTestCase {
 
         // Create provider from file in subdirectory
         let provider = await FileTreeProvider(currentFileURL: subDir.appendingPathComponent("guide.md"))
-
-        try await Task.sleep(nanoseconds: 300_000_000)
+        try await waitForProvider(provider)
 
         let rootDirectory = await provider.rootDirectory
 
@@ -96,8 +94,7 @@ final class SidebarTests: XCTestCase {
         try "# Test".write(to: tempDir.appendingPathComponent("test.md"), atomically: true, encoding: .utf8)
 
         let provider = await FileTreeProvider(currentFileURL: tempDir.appendingPathComponent("test.md"))
-
-        try await Task.sleep(nanoseconds: 200_000_000)
+        try await waitForProvider(provider)
 
         let rootDirectory = await provider.rootDirectory
 
@@ -120,8 +117,7 @@ final class SidebarTests: XCTestCase {
         try "# Visible".write(to: tempDir.appendingPathComponent("visible.md"), atomically: true, encoding: .utf8)
 
         let provider = await FileTreeProvider(currentFileURL: tempDir.appendingPathComponent("visible.md"))
-
-        try await Task.sleep(nanoseconds: 200_000_000)
+        try await waitForProvider(provider)
 
         let rootNodes = await provider.rootNodes
         let allNames = collectAllNames(rootNodes)
@@ -144,8 +140,7 @@ final class SidebarTests: XCTestCase {
         try "# API".write(to: apiDir.appendingPathComponent("reference.md"), atomically: true, encoding: .utf8)
 
         let provider = await FileTreeProvider(currentFileURL: tempDir.appendingPathComponent("README.md"))
-
-        try await Task.sleep(nanoseconds: 200_000_000)
+        try await waitForProvider(provider)
 
         let rootNodes = await provider.rootNodes
         let allNames = collectAllNames(rootNodes)
@@ -155,6 +150,74 @@ final class SidebarTests: XCTestCase {
         XCTAssertTrue(allNames.contains("guide.md"))
         XCTAssertTrue(allNames.contains("api"))
         XCTAssertTrue(allNames.contains("reference.md"))
+    }
+
+    // MARK: - Directory Initializer Tests
+
+    func testDirectoryInitializer() async throws {
+        // Create test files
+        try "# Test 1".write(to: tempDir.appendingPathComponent("file1.md"), atomically: true, encoding: .utf8)
+        try "# Test 2".write(to: tempDir.appendingPathComponent("file2.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+
+        let rootDirectory = await provider.rootDirectory
+        let rootNodes = await provider.rootNodes
+        let fileNames = rootNodes.map { $0.name }.sorted()
+
+        // Should use the provided directory directly (no git detection)
+        XCTAssertEqual(
+            rootDirectory?.standardizedFileURL.path,
+            tempDir.standardizedFileURL.path
+        )
+        XCTAssertEqual(fileNames, ["file1.md", "file2.md"])
+    }
+
+    func testDirectoryInitializerExcludesIgnored() async throws {
+        // Create ignored directories with markdown files
+        let gitDir = tempDir.appendingPathComponent(".git")
+        try FileManager.default.createDirectory(at: gitDir, withIntermediateDirectories: true)
+        try "# Hidden".write(to: gitDir.appendingPathComponent("hidden.md"), atomically: true, encoding: .utf8)
+
+        let nodeDir = tempDir.appendingPathComponent("node_modules")
+        try FileManager.default.createDirectory(at: nodeDir, withIntermediateDirectories: true)
+        try "# Node".write(to: nodeDir.appendingPathComponent("package.md"), atomically: true, encoding: .utf8)
+
+        let buildDir = tempDir.appendingPathComponent(".build")
+        try FileManager.default.createDirectory(at: buildDir, withIntermediateDirectories: true)
+        try "# Build".write(to: buildDir.appendingPathComponent("build.md"), atomically: true, encoding: .utf8)
+
+        // Create visible file
+        try "# Visible".write(to: tempDir.appendingPathComponent("visible.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+
+        let rootNodes = await provider.rootNodes
+        let allNames = collectAllNames(rootNodes)
+
+        XCTAssertTrue(allNames.contains("visible.md"))
+        XCTAssertFalse(allNames.contains("hidden.md"))
+        XCTAssertFalse(allNames.contains("package.md"))
+        XCTAssertFalse(allNames.contains("build.md"))
+        XCTAssertFalse(allNames.contains(".git"))
+        XCTAssertFalse(allNames.contains("node_modules"))
+        XCTAssertFalse(allNames.contains(".build"))
+    }
+
+    func testDirectoryInitializerOnlyMarkdown() async throws {
+        // Create mixed file types
+        try "# Markdown".write(to: tempDir.appendingPathComponent("readme.md"), atomically: true, encoding: .utf8)
+        try "# Also MD".write(to: tempDir.appendingPathComponent("notes.markdown"), atomically: true, encoding: .utf8)
+        try "Plain text".write(to: tempDir.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+        try "Swift code".write(to: tempDir.appendingPathComponent("main.swift"), atomically: true, encoding: .utf8)
+        try "{}".write(to: tempDir.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+
+        let rootNodes = await provider.rootNodes
+        let fileNames = rootNodes.map { $0.name }.sorted()
+
+        XCTAssertEqual(fileNames, ["notes.markdown", "readme.md"])
     }
 
     // MARK: - FileTreeNode Tests
@@ -203,7 +266,191 @@ final class SidebarTests: XCTestCase {
         XCTAssertFalse(childNode.isExpanded)
     }
 
+    // MARK: - Folder Settings Persistence Tests
+
+    func testFolderSidebarWidthPersistence() {
+        let key = "RedMargin.DocumentSidebarWidth"
+        let folderPath = tempDir!.path
+
+        // No saved width initially
+        let initial = UserDefaults.standard.dictionary(forKey: key) as? [String: Double] ?? [:]
+        XCTAssertNil(initial[folderPath])
+
+        // Save width
+        var settings: [String: Double] = [folderPath: 275.0]
+        UserDefaults.standard.set(settings, forKey: key)
+
+        // Load it back
+        let loaded = UserDefaults.standard.dictionary(forKey: key) as? [String: Double] ?? [:]
+        XCTAssertEqual(loaded[folderPath], 275.0)
+
+        // Update width
+        settings[folderPath] = 350.0
+        UserDefaults.standard.set(settings, forKey: key)
+        let updated = UserDefaults.standard.dictionary(forKey: key) as? [String: Double] ?? [:]
+        XCTAssertEqual(updated[folderPath], 350.0)
+
+        // Clean up
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+
+    func testFolderSidebarVisibilityPersistence() {
+        let key = "RedMargin.DocumentSidebarVisible"
+        let folderPath = tempDir!.path
+
+        // No saved visibility initially
+        let initial = UserDefaults.standard.dictionary(forKey: key) as? [String: Bool] ?? [:]
+        XCTAssertNil(initial[folderPath])
+
+        // Save hidden state
+        var settings: [String: Bool] = [folderPath: false]
+        UserDefaults.standard.set(settings, forKey: key)
+        let hidden = UserDefaults.standard.dictionary(forKey: key) as? [String: Bool] ?? [:]
+        XCTAssertEqual(hidden[folderPath], false)
+
+        // Save visible state
+        settings[folderPath] = true
+        UserDefaults.standard.set(settings, forKey: key)
+        let visible = UserDefaults.standard.dictionary(forKey: key) as? [String: Bool] ?? [:]
+        XCTAssertEqual(visible[folderPath], true)
+
+        // Clean up
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+
+    func testFolderSelectedFilePersistence() {
+        let key = "RedMargin.FolderSelectedFiles"
+        let folderPath = tempDir!.path
+        let filePath = tempDir!.appendingPathComponent("readme.md").path
+
+        // Save selected file mapping
+        let savedDict: [String: String] = [folderPath: filePath]
+        UserDefaults.standard.set(savedDict, forKey: key)
+
+        // Load it back
+        let loaded = UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
+        XCTAssertEqual(loaded[folderPath], filePath)
+
+        // Clean up
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+
+    func testMultipleFolderSettingsIndependent() {
+        let widthKey = "RedMargin.DocumentSidebarWidth"
+        let visibleKey = "RedMargin.DocumentSidebarVisible"
+        let selectedKey = "RedMargin.FolderSelectedFiles"
+
+        let folder1 = tempDir!.path
+        let folder2 = tempDir!.appendingPathComponent("subfolder").path
+
+        // Save different settings for each folder
+        UserDefaults.standard.set([folder1: 200.0, folder2: 350.0], forKey: widthKey)
+        UserDefaults.standard.set([folder1: true, folder2: false], forKey: visibleKey)
+        UserDefaults.standard.set([
+            folder1: "\(folder1)/readme.md",
+            folder2: "\(folder2)/notes.md"
+        ], forKey: selectedKey)
+
+        // Verify each folder's settings are independent
+        let widths = UserDefaults.standard.dictionary(forKey: widthKey) as? [String: Double] ?? [:]
+        XCTAssertEqual(widths[folder1], 200.0)
+        XCTAssertEqual(widths[folder2], 350.0)
+
+        let visible = UserDefaults.standard.dictionary(forKey: visibleKey) as? [String: Bool] ?? [:]
+        XCTAssertEqual(visible[folder1], true)
+        XCTAssertEqual(visible[folder2], false)
+
+        let selected = UserDefaults.standard.dictionary(forKey: selectedKey) as? [String: String] ?? [:]
+        XCTAssertEqual(selected[folder1], "\(folder1)/readme.md")
+        XCTAssertEqual(selected[folder2], "\(folder2)/notes.md")
+
+        // Clean up
+        UserDefaults.standard.removeObject(forKey: widthKey)
+        UserDefaults.standard.removeObject(forKey: visibleKey)
+        UserDefaults.standard.removeObject(forKey: selectedKey)
+    }
+
+    // MARK: - Folder Window Integration Tests
+
+    @MainActor
+    func testOpenFolderCreatesWindow() throws {
+        let appDelegate = AppDelegate()
+
+        appDelegate.openFolder(tempDir)
+
+        let standardized = tempDir.standardizedFileURL
+        let window = appDelegate.folderWindows[standardized]
+        XCTAssertNotNil(window, "openFolder should create a window tracked in folderWindows")
+
+        // Clean up
+        window?.close()
+    }
+
+    @MainActor
+    func testOpenFolderDeduplication() throws {
+        let appDelegate = AppDelegate()
+
+        appDelegate.openFolder(tempDir)
+        let standardized = tempDir.standardizedFileURL
+        let firstWindow = appDelegate.folderWindows[standardized]
+        XCTAssertNotNil(firstWindow)
+
+        // Open same folder again
+        appDelegate.openFolder(tempDir)
+        let secondWindow = appDelegate.folderWindows[standardized]
+
+        XCTAssertTrue(firstWindow === secondWindow, "Opening the same folder twice should reuse the existing window")
+        XCTAssertEqual(appDelegate.folderWindows.count, 1, "Should only have one folder window")
+
+        // Clean up
+        firstWindow?.close()
+    }
+
+    @MainActor
+    func testFolderDetectionInOpenURLs() throws {
+        let appDelegate = AppDelegate()
+
+        // Verify directory detection routes to openFolder (not openDocument)
+        // This replicates the logic in application(_:open:)
+        var isDir: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: tempDir.path, isDirectory: &isDir)
+        XCTAssertTrue(exists)
+        XCTAssertTrue(isDir.boolValue, "tempDir should be detected as a directory")
+
+        // Route to openFolder as application(_:open:) would
+        appDelegate.openFolder(tempDir)
+
+        let standardized = tempDir.standardizedFileURL
+        XCTAssertNotNil(
+            appDelegate.folderWindows[standardized],
+            "Directory URL should be routed to openFolder"
+        )
+        // Verify it's NOT tracked as a document window
+        XCTAssertTrue(
+            appDelegate.remoteDocumentWindows.isEmpty,
+            "Directory should not create a document window"
+        )
+
+        // Clean up
+        appDelegate.folderWindows[standardized]?.close()
+    }
+
     // MARK: - Helpers
+
+    /// Waits for a FileTreeProvider to finish its async loading, with a timeout.
+    private func waitForProvider(_ provider: FileTreeProvider, timeout: TimeInterval = 5) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        // Wait for loading to start
+        try await Task.sleep(nanoseconds: 50_000_000)
+        // Then wait for it to finish
+        while await provider.isLoading {
+            if Date() > deadline {
+                XCTFail("FileTreeProvider loading timed out after \(timeout)s")
+                return
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+    }
 
     private func collectAllNames(_ nodes: [FileTreeNode]) -> Set<String> {
         var names = Set<String>()

@@ -81,4 +81,71 @@ final class SSHConnectionTests: XCTestCase {
             throw XCTSkip("SSH to localhost failed: \(error)")
         }
     }
+
+    func testForceReconnectOnConnectedConnection() async throws {
+        let connection = SSHConnection(host: "localhost")
+
+        do {
+            try await connection.connect()
+        } catch {
+            throw XCTSkip("SSH to localhost failed: \(error)")
+        }
+
+        let isAliveBefore = await connection.isAlive()
+        XCTAssertTrue(isAliveBefore, "Connection should be alive before forceReconnect")
+
+        // Force reconnect should kill the process and trigger reconnection
+        await connection.forceReconnect()
+
+        let stateAfter = await connection.getState()
+        XCTAssertEqual(stateAfter, .reconnecting, "State should be reconnecting after forceReconnect")
+
+        // Wait for automatic reconnection (exponential backoff starts at 1s)
+        try await Task.sleep(nanoseconds: 3_000_000_000)
+
+        let stateReconnected = await connection.getState()
+        XCTAssertEqual(stateReconnected, .connected, "Connection should be re-established after forceReconnect")
+
+        await connection.disconnect()
+    }
+
+    func testForceReconnectOnDisconnectedConnectionIsNoop() async throws {
+        let connection = SSHConnection(host: "localhost")
+
+        // Never connected — forceReconnect should be a no-op
+        let stateBefore = await connection.getState()
+        XCTAssertEqual(stateBefore, .disconnected)
+
+        await connection.forceReconnect()
+
+        let stateAfter = await connection.getState()
+        XCTAssertEqual(stateAfter, .disconnected, "forceReconnect on disconnected connection should be a no-op")
+    }
+
+    func testForceReconnectAllViaManager() async throws {
+        let manager = SSHConnectionManager.shared
+
+        do {
+            _ = try await manager.connection(for: "localhost")
+        } catch {
+            throw XCTSkip("SSH to localhost failed: \(error)")
+        }
+
+        // Force reconnect all connections
+        await manager.forceReconnectAll()
+
+        // Wait for reconnection
+        try await Task.sleep(nanoseconds: 3_000_000_000)
+
+        // Verify we can still use the connection (it reconnected)
+        do {
+            let conn = try await manager.connection(for: "localhost")
+            let alive = await conn.isAlive()
+            XCTAssertTrue(alive, "Connection should be alive after forceReconnectAll")
+        } catch {
+            XCTFail("Connection should be usable after forceReconnectAll: \(error)")
+        }
+
+        await manager.disconnect(host: "localhost")
+    }
 }

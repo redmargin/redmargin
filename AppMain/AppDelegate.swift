@@ -9,6 +9,9 @@ import RedmarginCore
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     private var documentWindows: [URL: NSWindow] = [:]
     var remoteDocumentWindows: [RemoteLocation: NSWindow] = [:]
+    var folderWindows: [URL: NSWindow] = [:]
+    /// Tracks which file is selected in each folder window (folder URL -> file URL)
+    var folderSelectedFiles: [URL: URL] = [:]
     private var launchedWithFiles = false
     private var launchURLs: [URL] = []
 
@@ -20,7 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [Self.markdownType, .plainText]
         panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = true
         panel.styleMask.insert(.resizable)
         return panel
     }()
@@ -29,7 +32,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private let recentURLsKey = "RedMargin.RecentDocumentURLs"
     let recentRemoteKey = "RedMargin.RecentRemoteConnections"
     let recentRemoteLocationsKey = "RedMargin.RecentRemoteLocations"
-    private let openRemoteLocationsKey = "RedMargin.OpenRemoteLocations"
+    let openRemoteLocationsKey = "RedMargin.OpenRemoteLocations"
+    private let savedFolderURLsKey = "RedMargin.OpenFolderURLs"
+    private let folderSelectedFilesKey = "RedMargin.FolderSelectedFiles"
     private let windowOrderKey = "RedMargin.WindowOrder"
     private let frontmostWindowKey = "RedMargin.FrontmostWindow"
     let maxRecentDocuments = 10
@@ -53,8 +58,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         BookmarkManager.shared.cleanupStaleBookmarks()
         _ = openPanel  // Pre-initialize to avoid delay on first open
 
+        // Reconnect SSH connections after system wakes from sleep
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleSystemWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+
         let savedURLs = restoreSavedURLs()
         let savedRemoteLocations = restoreOpenRemoteLocations()
+        let savedFolderURLs = restoreSavedFolderURLs()
 
         if !savedURLs.isEmpty {
             let orderedPaths = UserDefaults.standard.stringArray(forKey: windowOrderKey) ?? []
@@ -70,75 +84,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             }
         }
 
-        // Restore remote documents
-        if !savedRemoteLocations.isEmpty {
-            print("[AppDelegate] Restoring \(savedRemoteLocations.count) remote documents")
-            Task {
-                var failedLocations: [RemoteLocation] = []
-                let retryDelays: [UInt64] = [0, 3_000_000_000, 5_000_000_000]  // 0s, 3s, 5s
-
-                // Group by host to share SSH connections
-                let locationsByHost = Dictionary(grouping: savedRemoteLocations, by: \.host)
-
-                for (host, locations) in locationsByHost {
-                    var connection: SSHConnection?
-
-                    for (attempt, delay) in retryDelays.enumerated() {
-                        if delay > 0 {
-                            try? await Task.sleep(nanoseconds: delay)
-                        }
-                        do {
-                            connection = try await SSHConnectionManager.shared.connection(for: host)
-                            break
-                        } catch {
-                            let maxAttempts = retryDelays.count
-                            print("[AppDelegate] Connection to \(host) failed " +
-                                  "(attempt \(attempt + 1)/\(maxAttempts)): \(error)")
-                        }
-                    }
-
-                    guard let conn = connection else {
-                        print("[AppDelegate] Giving up on \(host) after \(retryDelays.count) attempts")
-                        failedLocations.append(contentsOf: locations)
-                        continue
-                    }
-
-                    for location in locations {
-                        do {
-                            try await openRemoteDocument(connection: conn, path: location.path)
-                            print("[AppDelegate] Restored: \(location.path)")
-                        } catch {
-                            print("[AppDelegate] Failed to restore \(location): \(error)")
-                            failedLocations.append(location)
-                        }
-                    }
-                }
-
-                // Clear the restore key now that all attempts are done
-                UserDefaults.standard.removeObject(forKey: self.openRemoteLocationsKey)
-
-                // Save failed locations back so they're retried on next launch
-                if !failedLocations.isEmpty {
-                    let count = failedLocations.count
-                    print("[AppDelegate] \(count) remote documents failed to restore, saving for next launch")
-                    if let data = try? JSONEncoder().encode(failedLocations) {
-                        UserDefaults.standard.set(data, forKey: self.openRemoteLocationsKey)
-                    }
-                }
-
-                // Restore frontmost window after all remote docs are loaded
-                await MainActor.run {
-                    self.restoreFrontmostWindow()
-                }
-            }
+        // Restore folder windows with their previously selected files
+        let savedSelectedFiles = UserDefaults.standard.dictionary(forKey: folderSelectedFilesKey)
+            as? [String: String] ?? [:]
+        for url in savedFolderURLs {
+            let selectedFile = savedSelectedFiles[url.path].map { URL(fileURLWithPath: $0) }
+            openFolder(url, selectedFile: selectedFile)
         }
 
-        // If no remote docs to restore, restore frontmost now
-        if savedRemoteLocations.isEmpty {
+        // Restore remote documents
+        if !savedRemoteLocations.isEmpty {
+            restoreRemoteDocuments(savedRemoteLocations)
+        } else {
             restoreFrontmostWindow()
         }
 
-        if savedURLs.isEmpty && savedRemoteLocations.isEmpty && !launchedWithFiles {
+        if savedURLs.isEmpty && savedRemoteLocations.isEmpty && savedFolderURLs.isEmpty && !launchedWithFiles {
             showOpenPanel()
         }
 
@@ -157,18 +118,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let urls = Array(documentWindows.keys)
         saveOpenURLs(urls)
 
+        // Save open folder URLs and their selected files
+        let folderURLs = Array(folderWindows.keys)
+        UserDefaults.standard.set(folderURLs.map { $0.path }, forKey: savedFolderURLsKey)
+        var selectedFilesDict: [String: String] = [:]
+        for (folderURL, fileURL) in folderSelectedFiles {
+            selectedFilesDict[folderURL.path] = fileURL.path
+        }
+        if !selectedFilesDict.isEmpty {
+            UserDefaults.standard.set(selectedFilesDict, forKey: folderSelectedFilesKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: folderSelectedFilesKey)
+        }
+
         let orderedURLs = NSApp.orderedWindows
             .compactMap { window -> URL? in
                 documentWindows.first { $0.value === window }?.key
             }
         UserDefaults.standard.set(orderedURLs.map { $0.path }, forKey: windowOrderKey)
 
-        // Save frontmost window (local or remote)
+        // Save frontmost window (local, remote, or folder)
         if let frontWindow = NSApp.orderedWindows.first {
             if let localURL = documentWindows.first(where: { $0.value === frontWindow })?.key {
                 UserDefaults.standard.set(localURL.path, forKey: frontmostWindowKey)
             } else if let loc = remoteDocumentWindows.first(where: { $0.value === frontWindow })?.key {
                 UserDefaults.standard.set("remote:\(loc.host):\(loc.path)", forKey: frontmostWindowKey)
+            } else if let folderURL = folderWindows.first(where: { $0.value === frontWindow })?.key {
+                UserDefaults.standard.set("folder:\(folderURL.path)", forKey: frontmostWindowKey)
             }
         }
 
@@ -209,7 +185,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         return .terminateNow
     }
 
-    private func restoreFrontmostWindow() {
+    func restoreFrontmostWindow() {
         guard let saved = UserDefaults.standard.string(forKey: frontmostWindowKey) else { return }
         UserDefaults.standard.removeObject(forKey: frontmostWindowKey)
 
@@ -224,11 +200,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
                     window.makeKeyAndOrderFront(nil)
                 }
             }
+        } else if saved.hasPrefix("folder:") {
+            let path = String(saved.dropFirst("folder:".count))
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            if let window = folderWindows[url] {
+                window.makeKeyAndOrderFront(nil)
+            }
         } else {
             let url = URL(fileURLWithPath: saved)
             if let window = documentWindows[url] {
                 window.makeKeyAndOrderFront(nil)
             }
+        }
+    }
+
+    @objc private func handleSystemWake(_ notification: Notification) {
+        print("[AppDelegate] System woke from sleep, forcing SSH reconnection")
+        Task {
+            await SSHConnectionManager.shared.forceReconnectAll()
         }
     }
 
@@ -244,14 +233,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     func application(_ application: NSApplication, open urls: [URL]) {
         launchedWithFiles = true
         launchURLs = urls
-        urls.forEach { openDocument($0) }
+        for url in urls {
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+            if isDir.boolValue {
+                openFolder(url)
+            } else {
+                openDocument(url)
+            }
+        }
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
         let url = URL(fileURLWithPath: filename)
         launchedWithFiles = true
         launchURLs = [url]
-        openDocument(url)
+        var isDir: ObjCBool = false
+        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+        if isDir.boolValue {
+            openFolder(url)
+        } else {
+            openDocument(url)
+        }
         return true
     }
 
@@ -307,6 +310,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         }
     }
 
+    private func restoreSavedFolderURLs() -> [URL] {
+        guard let paths = UserDefaults.standard.stringArray(forKey: savedFolderURLsKey) else { return [] }
+        UserDefaults.standard.removeObject(forKey: savedFolderURLsKey)
+        return paths.compactMap { path -> URL? in
+            let url = URL(fileURLWithPath: path)
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir),
+                  isDir.boolValue else { return nil }
+            if let resolvedURL = BookmarkManager.shared.resolveBookmark(for: url) {
+                if BookmarkManager.shared.startAccessing(resolvedURL) {
+                    return resolvedURL
+                }
+            }
+            return url
+        }
+    }
+
     // MARK: - Recent Documents
 
     func addToRecentDocuments(_ url: URL) {
@@ -357,11 +377,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             panel.directoryURL = activeURL.deletingLastPathComponent()
         }
 
+        // Temporarily clear allowedContentTypes so folders aren't grayed out,
+        // then restore after panel closes
+        panel.allowedContentTypes = []
+
         NSApp.activate(ignoringOtherApps: true)
 
         let completionHandler: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            panel.allowedContentTypes = [Self.markdownType, .plainText]
+
             if response == .OK, let url = panel.url {
-                self?.openDocument(url)
+                var isDir: ObjCBool = false
+                FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+                if isDir.boolValue {
+                    self?.openFolder(url)
+                } else {
+                    self?.openDocument(url)
+                }
             }
         }
 
@@ -461,75 +493,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        if let folderURL = folderWindows.first(where: { $0.value === window })?.key {
+            folderSelectedFiles.removeValue(forKey: folderURL)
+        }
         documentWindows = documentWindows.filter { $0.value !== window }
         remoteDocumentWindows = remoteDocumentWindows.filter { $0.value !== window }
+        folderWindows = folderWindows.filter { $0.value !== window }
     }
 
-    // MARK: - Menu Actions
-
-    @objc func showPreferences(_ sender: Any?) {
-        PreferencesWindowController.shared.showWindow(nil)
-    }
-
-    @objc func showAbout(_ sender: Any?) {
-        let description = "Markdown viewer with Git change indicators, syntax highlighting, " +
-            "file sidebar, remote file access over SSH, and PDF export."
-        let credits = NSAttributedString(
-            string: description,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: NSColor.secondaryLabelColor
-            ]
-        )
-
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationIcon: NSApp.applicationIconImage as Any,
-            .applicationName: "Redmargin",
-            .applicationVersion: "1.1.0",
-            .version: "",
-            .credits: credits
-        ])
-    }
-
-    @objc func printDocument(_ sender: Any?) {
-        NotificationCenter.default.post(name: .printDocument, object: nil)
-    }
-
-    @objc func exportDocument(_ sender: Any?) {
-        NotificationCenter.default.post(name: .exportToPDF, object: nil)
-    }
-
-    @objc func showFindBar(_ sender: Any?) {
-        NotificationCenter.default.post(name: .showFindBar, object: nil)
-    }
-
-    @objc func findNext(_ sender: Any?) {
-        NotificationCenter.default.post(name: .findNext, object: nil)
-    }
-
-    @objc func findPrevious(_ sender: Any?) {
-        NotificationCenter.default.post(name: .findPrevious, object: nil)
-    }
-
-    @objc func refreshDocument(_ sender: Any?) {
-        NotificationCenter.default.post(name: .refreshDocument, object: nil)
-    }
-
-    @objc func toggleLineNumbers(_ sender: Any?) {
-        NotificationCenter.default.post(name: .toggleLineNumbers, object: nil)
-    }
-
-    @objc func toggleGutter(_ sender: Any?) {
-        NotificationCenter.default.post(name: .toggleGutter, object: nil)
-    }
-
-    @objc func toggleGitIndicators(_ sender: Any?) {
-        NotificationCenter.default.post(name: .toggleGitIndicators, object: nil)
-    }
-
-    @objc func toggleSidebar(_ sender: Any?) {
-        NotificationCenter.default.post(name: .toggleSidebar, object: nil)
-    }
 }
 
 // Helper to avoid sendable closure warning with notification observer
