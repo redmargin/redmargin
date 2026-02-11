@@ -239,27 +239,34 @@ struct FolderWindowContent: View {
     private func handleFileSelection(_ url: URL) {
         guard url != selectedFileURL else { return }
 
-        // Update selection immediately so the sidebar reflects the click
-        selectedFileURL = url
-        appDelegate?.updateFolderWindowFile(folder: folderURL, to: url)
-        if let window = NSApp.keyWindow {
-            window.title = url.displayPath
-        }
-
         if let existingState = documentState {
             // Cancel any in-flight load before starting a new one
             loadFileTask?.cancel()
             loadFileTask = Task {
                 do {
                     try await existingState.loadFile(at: url)
+                    // Set selectedFileURL AFTER loadFile completes so the @State
+                    // change triggers a re-render that picks up the new content.
+                    // (documentState is @State, not @ObservedObject, so SwiftUI
+                    // doesn't observe its @Published property changes directly.)
+                    selectedFileURL = url
+                    appDelegate?.updateFolderWindowFile(folder: folderURL, to: url)
+                    if let window = NSApp.keyWindow {
+                        window.title = url.displayPath
+                    }
                 } catch {
                     print("[FolderWindowContent] Failed to load file: \(error)")
                 }
             }
         } else {
-            // First file selection — create DocumentState
+            // First file selection — create DocumentState (synchronous)
             let content = (try? String(contentsOf: url, encoding: .utf8)) ?? "Error loading file"
             documentState = DocumentState(content: content, fileURL: url)
+            selectedFileURL = url
+            appDelegate?.updateFolderWindowFile(folder: folderURL, to: url)
+            if let window = NSApp.keyWindow {
+                window.title = url.displayPath
+            }
         }
     }
 
