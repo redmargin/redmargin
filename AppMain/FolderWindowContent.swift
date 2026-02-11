@@ -20,6 +20,7 @@ struct FolderWindowContent: View {
     @State private var showFindBar: Bool = false
     @State private var findBarFocusTrigger: UUID = UUID()
     @State private var isExporting: Bool = false
+    @State private var loadFileTask: Task<Void, Never>?
 
     let folderURL: URL
     weak var appDelegate: AppDelegate?
@@ -238,18 +239,19 @@ struct FolderWindowContent: View {
     private func handleFileSelection(_ url: URL) {
         guard url != selectedFileURL else { return }
 
+        // Update selection immediately so the sidebar reflects the click
+        selectedFileURL = url
+        appDelegate?.updateFolderWindowFile(folder: folderURL, to: url)
+        if let window = NSApp.keyWindow {
+            window.title = url.displayPath
+        }
+
         if let existingState = documentState {
-            // Navigate to new file in same window
-            Task {
+            // Cancel any in-flight load before starting a new one
+            loadFileTask?.cancel()
+            loadFileTask = Task {
                 do {
                     try await existingState.loadFile(at: url)
-                    selectedFileURL = url
-                    appDelegate?.updateFolderWindowFile(folder: folderURL, to: url)
-
-                    // Update window title
-                    if let window = NSApp.keyWindow {
-                        window.title = url.displayPath
-                    }
                 } catch {
                     print("[FolderWindowContent] Failed to load file: \(error)")
                 }
@@ -258,13 +260,6 @@ struct FolderWindowContent: View {
             // First file selection — create DocumentState
             let content = (try? String(contentsOf: url, encoding: .utf8)) ?? "Error loading file"
             documentState = DocumentState(content: content, fileURL: url)
-            selectedFileURL = url
-            appDelegate?.updateFolderWindowFile(folder: folderURL, to: url)
-
-            // Update window title
-            if let window = NSApp.keyWindow {
-                window.title = url.displayPath
-            }
         }
     }
 

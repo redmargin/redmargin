@@ -61,14 +61,25 @@ public class FileWatcher {
             fileDescriptor = -1
         }
 
-        // Delay to let file system settle after atomic write
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+        retryStartWatching(attempt: 1)
+    }
+
+    private static let maxRetries = 5
+    private static let retryDelays: [Double] = [0.1, 0.2, 0.5, 1.0, 2.0]
+
+    private func retryStartWatching(attempt: Int) {
+        let delay = FileWatcher.retryDelays[min(attempt - 1, FileWatcher.retryDelays.count - 1)]
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self = self else { return }
             if self.startWatching() {
-                print("[FileWatcher] Restarted watching: \(self.url.path)")
+                print("[FileWatcher] Restarted watching (attempt \(attempt)): \(self.url.path)")
                 self.onChange()
+            } else if attempt < FileWatcher.maxRetries {
+                print("[FileWatcher] Retry \(attempt)/\(FileWatcher.maxRetries) failed, retrying: \(self.url.path)")
+                self.retryStartWatching(attempt: attempt + 1)
             } else {
-                print("[FileWatcher] Failed to restart watching: \(self.url.path)")
+                print("[FileWatcher] Failed to restart after \(FileWatcher.maxRetries) attempts: \(self.url.path)")
             }
         }
     }

@@ -18,6 +18,7 @@ class DocumentState: ObservableObject {
 
     private var repoRoot: String?
     private var gitChangeTask: Task<Void, Never>?
+    private var reloadTask: Task<Void, Never>?
 
     init(content: String, fileURL: URL, fileProvider: FileProvider = LocalFileProvider()) {
         self.content = content
@@ -58,23 +59,24 @@ class DocumentState: ObservableObject {
         }
 
         print("[DocumentState] reloadContent called for \(fileURL.lastPathComponent)")
-        Task {
+
+        // Cancel any in-flight reload to avoid out-of-order updates
+        reloadTask?.cancel()
+        reloadTask = Task {
             do {
                 let newContent = try await fileProvider.readFile(at: fileURL.path)
-                // Update on MainActor
-                await MainActor.run {
-                    guard newContent != content else {
-                        print("[DocumentState] Content unchanged, skipping update")
-                        return
-                    }
-                    print("[DocumentState] Content changed, updating (\(newContent.count) chars)")
-                    content = newContent
-                    Task {
-                        await detectGitChanges()
-                    }
+                guard !Task.isCancelled else { return }
+                guard newContent != content else {
+                    print("[DocumentState] Content unchanged, skipping update")
+                    return
                 }
+                print("[DocumentState] Content changed, updating (\(newContent.count) chars)")
+                content = newContent
+                await detectGitChanges()
             } catch {
-                print("[DocumentState] Failed to read file: \(error)")
+                if !Task.isCancelled {
+                    print("[DocumentState] Failed to read file: \(error)")
+                }
             }
         }
     }
