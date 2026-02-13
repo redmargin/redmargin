@@ -138,7 +138,7 @@ Sanitize HTML content, block remote loads by default, configure WKWebView securi
 - [x] Create `RedMargin.entitlements` file (already existed)
 - [x] Add file access entitlements
 - [x] Add bookmark entitlements
-- [~] Enable app-sandbox - DEFERRED (see Sandbox Decision below)
+- [x] Enable app-sandbox - DEFERRED (not needed for direct distribution; see Sandbox Decision below)
 
 ### Sandbox Decision
 

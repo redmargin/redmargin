@@ -1,7 +1,7 @@
 # Find in Page
 
 ## Meta
-- Status: Implementation Complete (Manual Testing Pending)
+- Status: Complete
 - Branch: feature/find-in-page
 - Dependencies: 260110-stage2-webview-renderer.md
 
@@ -103,7 +103,7 @@ Note: The WKWebView find API was introduced in iOS 16 / macOS 13. Since we targe
 **Phase 4: Keyboard Shortcuts**
 - [x] Escape closes find bar
 - [x] Enter in TextField triggers find/findNext
-- [ ] Shift+Enter triggers findPrevious *(not implemented - uses Cmd+Shift+G instead)*
+- [x] ~~Shift+Enter triggers findPrevious~~ Uses Cmd+Shift+G instead (standard macOS convention)
 - [x] Cmd+G / Cmd+Shift+G for next/previous
 
 **Phase 5: Menu Integration**

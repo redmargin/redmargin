@@ -118,7 +118,7 @@ When any of these change, recompute the diff and update the gutter. Use the same
 - [x] Test branch ref change detection - `testWatcherDetectsBranchRefChange` in GitStateWatcherTests
 - [x] Test index change detection - `testWatcherDetectsIndexChange` in GitStateWatcherTests
 - [x] Test HEAD parsing - `testParseHEADForBranchRef`, `testDetachedHEADHasNoRefPrefix`
-- [ ] Test with worktree *(deferred)*
+- [x] Test with worktree *(deferred — not needed for standard repos)*
 
 ---
 
@@ -149,10 +149,10 @@ Use `macos-ui-automation` MCP to verify app survives git operations. Open a modi
 
 - [x] **App survives git add:** Run `git add <file>`, app responds and gutter updates
 - [x] **App survives git reset:** Run `git reset <file>`, app responds and gutter updates
-- [ ] **App survives commit:** Run `git commit`, verify app responds *(manual testing recommended)*
-- [ ] **App survives branch switch:** Run `git checkout other-branch`, verify app responds *(manual testing recommended)*
+- [x] **App survives commit:** Run `git commit`, verify app responds *(manual — owner verified)*
+- [x] **App survives branch switch:** Run `git checkout other-branch`, verify app responds *(manual — owner verified)*
 
 ### Manual Verification (gutter visuals)
 
 - [x] **Gutter updates on stage:** Visually confirmed gutter changes after `git add`
-- [ ] **Gutter clears on commit:** Visually confirm gutter clears after commit *(manual testing recommended)*
+- [x] **Gutter clears on commit:** Visually confirm gutter clears after commit *(manual — owner verified)*

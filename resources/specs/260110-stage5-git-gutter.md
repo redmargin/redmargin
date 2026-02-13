@@ -1,7 +1,7 @@
 # Git Gutter
 
 ## Meta
-- Status: In Progress
+- Status: Complete
 - Branch: feature/git-gutter
 - Dependencies: 260110-stage2-webview-renderer.md, 260110-stage4-git-diff-parsing.md
 

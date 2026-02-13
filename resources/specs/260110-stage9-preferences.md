@@ -148,5 +148,5 @@ Use `macos-ui-automation` MCP to verify preferences window. App does not need to
 ### Manual Verification (WebView rendering effects)
 
 - [x] **Theme applies to content:** After changing theme, visually confirm WebView updates
-- [ ] **Remote images blocked/allowed:** Test with remote image URL, visually confirm behavior
+- [x] **Remote images blocked/allowed:** Test with remote image URL, visually confirm behavior *(manual — owner verified)*
 - [x] **Inline code color applies:** After changing color preset, confirm inline `code` color changes in WebView

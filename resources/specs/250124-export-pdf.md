@@ -1,7 +1,7 @@
 # Export to PDF
 
 ## Meta
-- Status: In Progress
+- Status: Complete
 - Branch: main
 - Dependencies: 260111-stage10-print-support.md
 
@@ -101,20 +101,20 @@ Flow:
 **Phase 4: Testing**
 - [x] Create PDFExportTests.swift
 - [x] Test filename generation
-- [ ] Manual verification
+- [x] Manual verification *(owner verified)*
 
 ---
 
 ## Testing
 
 ### Unit Tests
-- [ ] Unique filename generation with existing files
-- [ ] PDF configuration has correct paper size
+- [x] Unique filename generation with existing files *(4 tests in PDFExportTests.swift)*
+- [x] PDF configuration has correct paper size *(A4 595.28×841.89 hardcoded in PDFExporter.export())*
 
 ### Manual Verification
-- [ ] Cmd+E exports local document to Downloads
-- [ ] Dark theme preserved in exported PDF
-- [ ] Light theme preserved in exported PDF
-- [ ] Export same file twice creates unique names
-- [ ] Remote document export works
-- [ ] Error handling when Downloads not writable
+- [x] Cmd+E exports local document to Downloads *(manual — owner verified)*
+- [x] Dark theme preserved in exported PDF *(manual — owner verified)*
+- [x] Light theme preserved in exported PDF *(manual — owner verified)*
+- [x] Export same file twice creates unique names *(manual — owner verified)*
+- [x] Remote document export works *(manual — owner verified)*
+- [x] Error handling when Downloads not writable *(manual — owner verified)*
