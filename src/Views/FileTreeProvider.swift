@@ -1,4 +1,5 @@
 import Foundation
+import CoreServices
 import RedmarginCore
 
 /// Represents a node in the file tree (either a folder or a file)
@@ -46,7 +47,7 @@ public class FileTreeProvider: ObservableObject {
     @Published public private(set) var isLoading = false
 
     private let currentFileURL: URL?
-    private var directoryWatcher: DirectoryWatcher?
+    private var directoryWatcher: FSEventsDirectoryWatcher?
     private var expandedFolders: Set<String> = []
     private let autoExpandRoot: Bool
 
@@ -111,6 +112,7 @@ public class FileTreeProvider: ObservableObject {
     /// Refreshes the file list
     public func refresh() {
         guard let root = rootDirectory else { return }
+        print("[FileTreeProvider] refresh() called for \(root.lastPathComponent)")
         rootNodes = buildTree(from: root)
     }
 
@@ -190,7 +192,7 @@ public class FileTreeProvider: ObservableObject {
     }
 
     private func setupDirectoryWatcher(for directory: URL) {
-        directoryWatcher = DirectoryWatcher(url: directory) { [weak self] in
+        directoryWatcher = FSEventsDirectoryWatcher(url: directory) { [weak self] in
             Task { @MainActor in
                 self?.refresh()
             }
@@ -230,41 +232,67 @@ public class FileTreeProvider: ObservableObject {
     }
 }
 
-/// Watches a directory for changes (file additions/removals)
-class DirectoryWatcher {
-    private var source: DispatchSourceFileSystemObject?
-    private var fileDescriptor: Int32 = -1
-    private let url: URL
+/// Watches an entire directory tree recursively using FSEvents.
+/// Single kernel-level registration monitors all subdirectories.
+/// FSEvents coalesces events within the latency window (built-in debounce).
+class FSEventsDirectoryWatcher {
+    private var stream: FSEventStreamRef?
     private let onChange: () -> Void
 
     init?(url: URL, onChange: @escaping () -> Void) {
-        self.url = url
         self.onChange = onChange
+        self.stream = nil
 
-        fileDescriptor = open(url.path, O_EVTONLY)
-        guard fileDescriptor >= 0 else {
-            print("[DirectoryWatcher] Failed to open: \(url.path)")
+        var context = FSEventStreamContext(
+            version: 0,
+            info: Unmanaged.passUnretained(self).toOpaque(),
+            retain: nil,
+            release: nil,
+            copyDescription: nil
+        )
+
+        let paths = [url.path as NSString] as NSArray
+
+        let flags: FSEventStreamCreateFlags =
+            UInt32(kFSEventStreamCreateFlagNoDefer) |
+            UInt32(kFSEventStreamCreateFlagFileEvents)
+
+        guard let stream = FSEventStreamCreate(
+            kCFAllocatorDefault,
+            { (_, clientCallBackInfo, _, _, _, _) in
+                guard let info = clientCallBackInfo else { return }
+                let watcher = Unmanaged<FSEventsDirectoryWatcher>.fromOpaque(info).takeUnretainedValue()
+                watcher.onChange()
+            },
+            &context,
+            paths,
+            FSEventsGetCurrentEventId(),
+            0.3,
+            flags
+        ) else {
+            print("[FSEventsWatcher] Failed to create stream for: \(url.path)")
             return nil
         }
 
-        source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fileDescriptor,
-            eventMask: [.write, .rename],
-            queue: .main
-        )
+        self.stream = stream
+        FSEventStreamSetDispatchQueue(stream, .main)
+        let started = FSEventStreamStart(stream)
+        print("[FSEventsWatcher] Watching \(url.path) — started: \(started)")
 
-        source?.setEventHandler { [weak self] in
-            self?.onChange()
+        if !started {
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+            self.stream = nil
+            return nil
         }
-
-        source?.setCancelHandler { }
-        source?.resume()
     }
 
     deinit {
-        source?.cancel()
-        if fileDescriptor >= 0 {
-            close(fileDescriptor)
+        if let stream = stream {
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+            print("[FSEventsWatcher] Stopped watching")
         }
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import RedmarginLib
 import RedmarginCore
 
@@ -11,32 +12,34 @@ struct PendingCheckboxToggle {
 }
 
 @MainActor
-class RemoteDocumentState: ObservableObject {
-    @Published var content: String
-    @Published var gitChanges: GitChangeResult?
-    @Published var isRefreshing: Bool = false
-    @Published var connectionState: SSHConnectionState = .connected
+@Observable
+class RemoteDocumentState {
+    var content: String
+    var gitChanges: GitChangeResult?
+    var isRefreshing: Bool = false
+    var refreshToken: Int = 0  // Sole purpose: bust image cache in MarkdownWebView
+    var connectionState: SSHConnectionState = .connected
 
     /// When true, shows conflict resolution dialog
-    @Published var showConflictDialog: Bool = false
+    var showConflictDialog: Bool = false
 
-    @Published private(set) var location: RemoteLocation
-    let fileProvider: RemoteFileProvider
+    private(set) var location: RemoteLocation
+    @ObservationIgnored let fileProvider: RemoteFileProvider
 
-    private var fileWatchToken: WatchToken?
-    private var gitWatchToken: WatchToken?
-    private var isWritingFile = false
+    @ObservationIgnored private var fileWatchToken: WatchToken?
+    @ObservationIgnored private var gitWatchToken: WatchToken?
+    @ObservationIgnored private var isWritingFile = false
 
-    private var repoRoot: String?
-    private var gitChangeTask: Task<Void, Never>?
-    private var stateObserverTask: Task<Void, Never>?
-    private var reloadTask: Task<Void, Never>?
+    @ObservationIgnored private var repoRoot: String?
+    @ObservationIgnored private var gitChangeTask: Task<Void, Never>?
+    @ObservationIgnored private var stateObserverTask: Task<Void, Never>?
+    @ObservationIgnored private var reloadTask: Task<Void, Never>?
 
     /// Last content that was confirmed on the server (read or successfully written)
-    private var lastKnownServerContent: String
+    @ObservationIgnored private var lastKnownServerContent: String
 
     /// Pending checkbox toggle that failed due to disconnect
-    private var pendingToggle: PendingCheckboxToggle?
+    @ObservationIgnored private var pendingToggle: PendingCheckboxToggle?
 
     init(content: String, location: RemoteLocation, fileProvider: RemoteFileProvider) {
         self.content = content
@@ -249,12 +252,16 @@ class RemoteDocumentState: ObservableObject {
 
     func refresh() {
         isRefreshing = true
+        refreshToken += 1
         Task {
-            if let newContent = try? await fileProvider.readFile(at: location.path) {
+            do {
+                let newContent = try await fileProvider.readFile(at: location.path)
                 await MainActor.run {
                     content = newContent
                     lastKnownServerContent = newContent
                 }
+            } catch {
+                print("[RemoteDocumentState] refresh() failed to read file: \(error)")
             }
             await detectGitChanges()
 
@@ -277,6 +284,7 @@ class RemoteDocumentState: ObservableObject {
         gitChanges = nil
         repoRoot = nil
         pendingToggle = nil
+        refreshToken += 1
 
         // Reset watchers for the new file
         await setupFileWatcher()

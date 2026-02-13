@@ -1,7 +1,7 @@
 # Fix Content Refresh Everywhere
 
 ## Meta
-- Status: Draft
+- Status: In Progress
 - Branch: fix/content-refresh
 
 ---
@@ -52,35 +52,35 @@ Three independent problems, each with its own fix:
 ### Implementation Plan
 
 **Phase 1: Migrate DocumentState to @Observable**
-- [ ] `AppMain/DocumentState.swift` — Replace `ObservableObject` with `@Observable` macro, remove all `@Published` wrappers, add `import Observation` if needed
-- [ ] `AppMain/DocumentView.swift` — Change `@StateObject private var state: DocumentState` to `@State private var state: DocumentState`
-- [ ] `AppMain/FolderWindowContent.swift` — Already `@State`, verify it compiles and observes correctly
-- [ ] Build and verify folder window refresh works (file watcher + Cmd-R)
+- [x] `AppMain/DocumentState.swift` — Replace `ObservableObject` with `@Observable` macro, remove all `@Published` wrappers, add `import Observation` if needed
+- [x] `AppMain/DocumentView.swift` — Change `@StateObject private var state: DocumentState` to `@State private var state: DocumentState`
+- [x] `AppMain/FolderWindowContent.swift` — Already `@State`, verify it compiles and observes correctly
+- [x] Build and verify folder window refresh works (file watcher + Cmd-R)
 
 **Phase 2: Migrate RemoteDocumentState to @Observable**
-- [ ] `AppMain/RemoteDocumentState.swift` — Replace `ObservableObject` with `@Observable` macro, remove all `@Published` wrappers
-- [ ] `AppMain/RemoteDocumentView.swift` — Change `@StateObject private var state: RemoteDocumentState` to `@State private var state: RemoteDocumentState`
-- [ ] Build and verify remote document windows still work
+- [x] `AppMain/RemoteDocumentState.swift` — Replace `ObservableObject` with `@Observable` macro, remove all `@Published` wrappers
+- [x] `AppMain/RemoteDocumentView.swift` — Change `@StateObject private var state: RemoteDocumentState` to `@State private var state: RemoteDocumentState`
+- [x] Build and verify remote document windows still work
 
 **Phase 3: Fix LinuxWatcher atomic save handling**
-- [ ] `Server/Watcher.swift` `LinuxWatcher` — On `IN_DELETE_SELF` or `IN_MOVE_SELF`, close the old inotify watch, retry re-adding with exponential backoff (same pattern as `FileWatcher.retryStartWatching`), then fire `onChange`
-- [ ] Verify on devtest: open file in Redmargin, edit with vim (atomic save), confirm watcher survives and content updates
+- [x] `Server/Watcher.swift` `LinuxWatcher` — On `IN_DELETE_SELF` or `IN_MOVE_SELF`, close the old inotify watch, retry re-adding with exponential backoff (same pattern as `FileWatcher.retryStartWatching`), then fire `onChange`
+- [x] Verify on devtest: open file in Redmargin, edit with vim (atomic save), confirm watcher survives and content updates
 
 **Phase 4: Wire up remote refresh properly**
-- [ ] `AppMain/RemoteDocumentState.swift` — Add `refreshToken` property, increment in `refresh()` and `loadFile()`
-- [ ] `AppMain/RemoteDocumentView.swift` — Pass `cacheBust: state.refreshToken` to `MarkdownWebView`
-- [ ] `AppMain/RemoteDocumentState.swift` `refresh()` — Replace `try?` with `do/catch`, log errors explicitly
-- [ ] Build and verify Cmd-R works for remote files
+- [x] `AppMain/RemoteDocumentState.swift` — Add `refreshToken` property, increment in `refresh()` and `loadFile()`
+- [x] `AppMain/RemoteDocumentView.swift` — Pass `cacheBust: state.refreshToken` to `MarkdownWebView`
+- [x] `AppMain/RemoteDocumentState.swift` `refresh()` — Replace `try?` with `do/catch`, log errors explicitly
+- [x] Build and verify Cmd-R works for remote files
 
 **Phase 5: Cmd-R refreshes sidebar**
-- [ ] `AppMain/FolderWindowContent.swift` — In the `.refreshDocument` notification handler, also call `fileTreeProvider.refresh()` when `showSidebar` is true
-- [ ] `AppMain/DocumentView.swift` — Same: call `fileTreeProvider.refresh()` in the `.refreshDocument` handler when sidebar is visible
-- [ ] `AppMain/RemoteDocumentView.swift` — Same for remote windows
-- [ ] Build and verify Cmd-R refreshes both content and sidebar file list
+- [x] `AppMain/FolderWindowContent.swift` — In the `.refreshDocument` notification handler, also call `fileTreeProvider.refresh()` when `showSidebar` is true
+- [x] `AppMain/DocumentView.swift` — Same: call `fileTreeProvider.refresh()` in the `.refreshDocument` handler when sidebar is visible
+- [x] `AppMain/RemoteDocumentView.swift` — Same for remote windows
+- [x] Build and verify Cmd-R refreshes both content and sidebar file list
 
 **Phase 6: Clean up**
-- [ ] Add code comment on `refreshToken` in both state classes clarifying its sole purpose is image cache busting, not triggering view updates
-- [ ] Verify `reloadContent()` in both state classes does NOT need `refreshToken` (SwiftUI now observes `content` changes directly via `@Observable`)
+- [x] Add code comment on `refreshToken` in both state classes clarifying its sole purpose is image cache busting, not triggering view updates
+- [x] Verify `reloadContent()` in both state classes does NOT need `refreshToken` (SwiftUI now observes `content` changes directly via `@Observable`)
 
 ---
 
@@ -102,7 +102,7 @@ Tests in `Tests/`. Results logged in `Tests/TEST_LOG.md`.
 ### Manual Verification (Marco)
 
 Visual inspection items that cannot be automated:
-- [ ] Open a markdown file in a folder window, edit it externally — preview updates without relaunching
+- [x] Open a markdown file in a folder window, edit it externally — preview updates without relaunching
 - [ ] Press Cmd-R in a folder window — content re-renders (visible with image changes or added text)
 - [ ] Open a file via double-click (single-document window) — file watcher and Cmd-R still work
 - [ ] Open a remote file, edit with vim on server — preview updates and keeps updating across multiple saves

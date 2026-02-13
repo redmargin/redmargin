@@ -37,6 +37,13 @@ public actor RemoteFileProvider: FileProvider {
         let callback: () -> Void
     }
 
+    private struct DirectoryWatchCallback {
+        let path: String
+        let callback: ([String]) -> Void
+    }
+    private var directoryWatchers: [WatchToken: DirectoryWatchCallback] = [:]
+    private var directoryRemoteTokens: [WatchToken: String] = [:]
+
     public init(connection: SSHConnection) {
         self.connection = connection
 
@@ -154,6 +161,33 @@ public actor RemoteFileProvider: FileProvider {
         return response.payload.diff ?? .empty
     }
 
+    public func watchDirectory(at path: String, onChange: @escaping ([String]) -> Void) async -> WatchToken {
+        let token = WatchToken()
+        directoryWatchers[token] = DirectoryWatchCallback(path: path, callback: onChange)
+
+        let payload = WatchDirectoryPayload(path: path)
+        do {
+            let data = try await connection.send(type: RPCMessageType.watchDirectory.rawValue, payload: payload)
+            let response = try JSONDecoder().decode(
+                RPCMessage<WatchDirectoryResponsePayload>.self, from: data)
+            directoryRemoteTokens[token] = response.payload.token
+        } catch {
+            print("[RemoteFileProvider] Failed to start remote directory watch for \(path): \(error)")
+        }
+
+        return token
+    }
+
+    public func unwatchDirectory(_ token: WatchToken) async {
+        let remoteToken = directoryRemoteTokens.removeValue(forKey: token)
+        directoryWatchers.removeValue(forKey: token)
+
+        if let remoteToken = remoteToken {
+            let payload = UnwatchDirectoryPayload(token: remoteToken)
+            _ = try? await connection.send(type: RPCMessageType.unwatchDirectory.rawValue, payload: payload)
+        }
+    }
+
     public func watchGitRepo(at repoRoot: String, onChange: @escaping () -> Void) async -> WatchToken {
         let token = WatchToken()
         watchers[token] = WatchCallback(path: repoRoot, callback: onChange)
@@ -179,6 +213,14 @@ public actor RemoteFileProvider: FileProvider {
             print("[RemoteFileProvider] Found \(callbacks.count) watchers for path")
             for item in callbacks {
                 item.callback()
+            }
+        } else if let msg = try? JSONDecoder().decode(RPCMessage<DirectoryChangedPayload>.self, from: data),
+                  msg.type == RPCMessageType.directoryChanged.rawValue {
+            let fileCount = msg.payload.files.count
+            print("[RemoteFileProvider] Directory changed: \(msg.payload.path) (\(fileCount) files)")
+            let callbacks = directoryWatchers.values.filter { $0.path == msg.payload.path }
+            for item in callbacks {
+                item.callback(msg.payload.files)
             }
         } else if let msg = try? JSONDecoder().decode(RPCMessage<GitChangedPayload>.self, from: data),
                   msg.type == RPCMessageType.gitChanged.rawValue {
