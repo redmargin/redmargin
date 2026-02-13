@@ -1,7 +1,7 @@
 # Fix Content Refresh Everywhere
 
 ## Meta
-- Status: In Progress
+- Status: Complete
 - Branch: fix/content-refresh
 
 ---
@@ -90,21 +90,21 @@ Tests in `Tests/`. Results logged in `Tests/TEST_LOG.md`.
 
 ### Unit Tests (`Tests/DocumentStateTests.swift`)
 
-- [ ] `testReloadContentUpdatesContent` - Simulating a file change triggers content update on DocumentState
-- [ ] `testRefreshIncrementsToken` - Calling refresh() increments refreshToken and re-reads content
-- [ ] `testLoadFileUpdatesAllState` - Loading a new file updates fileURL, content, refreshToken, and clears git state
+- [x] `testReloadContentUpdatesContent` - Simulating a file change triggers content update on DocumentState
+- [x] `testRefreshIncrementsToken` - Calling refresh() increments refreshToken and re-reads content
+- [x] `testLoadFileUpdatesAllState` - Loading a new file updates fileURL, content, refreshToken, and clears git state
 
 ### Unit Tests (`Tests/LinuxWatcherTests.swift`)
 
-- [ ] `testWatcherSurvivesAtomicSave` - Rename-over-original triggers onChange and watcher keeps working for subsequent changes
-- [ ] `testWatcherRetriesOnDeleteSelf` - File deletion triggers retry logic and watcher recovers when file reappears
+- [x] `testWatcherSurvivesAtomicSave` - Rename-over-original triggers onChange and watcher keeps working for subsequent changes
+- [x] `testWatcherRetriesOnDeleteSelf` - File deletion triggers retry logic and watcher recovers when file reappears
 
 ### Manual Verification (Marco)
 
 Visual inspection items that cannot be automated:
 - [x] Open a markdown file in a folder window, edit it externally — preview updates without relaunching
-- [ ] Press Cmd-R in a folder window — content re-renders (visible with image changes or added text)
-- [ ] Open a file via double-click (single-document window) — file watcher and Cmd-R still work
-- [ ] Open a remote file, edit with vim on server — preview updates and keeps updating across multiple saves
-- [ ] Press Cmd-R on a remote file — content re-renders including image cache bust
-- [ ] Press Cmd-R with sidebar open — file list refreshes (add/remove a file externally, Cmd-R shows it)
+- [x] Press Cmd-R in a folder window — content re-renders (visible with image changes or added text)
+- [x] Open a file via double-click (single-document window) — file watcher and Cmd-R still work
+- [x] Open a remote file, edit with vim on server — preview updates and keeps updating across multiple saves
+- [x] Press Cmd-R on a remote file — content re-renders including image cache bust
+- [x] Press Cmd-R with sidebar open — file list refreshes (add/remove a file externally, Cmd-R shows it)

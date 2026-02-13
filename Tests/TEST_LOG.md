@@ -1,9 +1,9 @@
 # Test Log
 
 ## Latest Run
-- Started: 2026-01-13 12:27:30
-- Command: Full test suite (91 Swift tests + 62 JS tests)
-- Status: ALL PASS
+- Started: 2026-02-13
+- Command: DocumentStateTests (macOS) + LinuxWatcherTests (devtest)
+- Status: ALL PASS (5/5 new tests)
 
 ### AppShellTests
 | Test | Status | Duration | Last Run |
@@ -155,6 +155,19 @@
 | testHandlesArgumentsWithSpaces | PASS | 0.005s | 2026-01-13 12:27:23 |
 | testHandlesMultipleArguments | PASS | 0.005s | 2026-01-13 12:27:23 |
 
+### DocumentStateTests
+| Test | Status | Duration | Last Run |
+| --- | --- | --- | --- |
+| testReloadContentUpdatesContent | PASS | 0.323s | 2026-02-13 |
+| testRefreshIncrementsToken | PASS | 0.382s | 2026-02-13 |
+| testLoadFileUpdatesAllState | PASS | 0.531s | 2026-02-13 |
+
+### LinuxWatcherTests (devtest)
+| Test | Status | Duration | Last Run |
+| --- | --- | --- | --- |
+| testWatcherSurvivesAtomicSave | PASS | 0.811s | 2026-02-13 |
+| testWatcherRetriesOnDeleteSelf | PASS | 0.403s | 2026-02-13 |
+
 ### FileWatcherTests
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
@@ -162,6 +175,16 @@
 | testDispatchSourceDetectsMultipleWrites | PASS | 0.167s | 2026-01-13 12:23:18 |
 | testDispatchSourceDetectsAtomicWrite | PASS | 0.005s | 2026-01-13 12:23:20 |
 | testDispatchSourceAfterAtomicWriteNeedsRestart | PASS | 0.011s | 2026-01-13 12:23:23 |
+
+### SidebarTests
+| Test | Status | Duration | Last Run |
+| --- | --- | --- | --- |
+| (14 tests) | PASS | - | 2026-01-19 |
+
+### LocalFileProviderTests
+| Test | Status | Duration | Last Run |
+| --- | --- | --- | --- |
+| (8 tests) | PASS | - | 2026-01-19 |
 
 ## Notes
 - 2026-01-13: Added BookmarkManagerTests, FindTests, GitStateWatcherTests, PreferencesManagerTests, PrintTests sections.
