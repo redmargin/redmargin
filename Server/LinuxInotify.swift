@@ -5,8 +5,13 @@ import Glibc
 
 // swiftlint:disable identifier_name
 let IN_MODIFY: UInt32 = 0x00000002
+let IN_MOVED_FROM: UInt32 = 0x00000040
+let IN_MOVED_TO: UInt32 = 0x00000080
+let IN_CREATE: UInt32 = 0x00000100
+let IN_DELETE: UInt32 = 0x00000200
 let IN_DELETE_SELF: UInt32 = 0x00000400
 let IN_MOVE_SELF: UInt32 = 0x00000800
+let IN_ISDIR: UInt32 = 0x40000000
 // swiftlint:enable identifier_name
 
 struct InotifyEventRaw {

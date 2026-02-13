@@ -5,7 +5,7 @@ import RedmarginLib
 import RedmarginCore
 
 struct DocumentWindowContent: View {
-    @StateObject private var state: DocumentState
+    @State private var state: DocumentState
     @StateObject private var findController = FindController()
     @StateObject private var fileTreeProvider: FileTreeProvider
     @ObservedObject private var prefs = PreferencesManager.shared
@@ -52,7 +52,7 @@ struct DocumentWindowContent: View {
     ) {
         let prefs = PreferencesManager.shared
         self.storedFileURL = fileURL
-        _state = StateObject(wrappedValue: DocumentState(content: content, fileURL: fileURL))
+        _state = State(initialValue: DocumentState(content: content, fileURL: fileURL))
         _fileTreeProvider = StateObject(wrappedValue: FileTreeProvider(currentFileURL: fileURL))
         _showSidebar = State(initialValue: showSidebar ?? false)
         _sidebarWidth = State(initialValue: sidebarWidth ?? 200)
@@ -76,7 +76,10 @@ struct DocumentWindowContent: View {
                 showFindBar: $showFindBar,
                 findBarFocusTrigger: $findBarFocusTrigger,
                 sidebarWidth: sidebarWidth,
-                onRefresh: { state.refresh() },
+                onRefresh: {
+                    state.refresh()
+                    if showSidebar { fileTreeProvider.refresh() }
+                },
                 onFindNext: { findController.findNext() },
                 onFindPrevious: { findController.findPrevious() },
                 onPrint: executePrint,

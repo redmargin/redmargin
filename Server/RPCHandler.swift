@@ -6,7 +6,6 @@ class RPCHandler {
     let gitOperations = GitOperations()
 
     func handle(_ data: Data) async -> Data? {
-        // 1. Decode Header
         guard let header = try? JSONDecoder().decode(RPCHeader.self, from: data) else {
             print("Failed to decode RPC header")
             return nil
@@ -18,35 +17,43 @@ class RPCHandler {
         }
 
         do {
-            switch type {
-            case .hello:
-                return try await handleHello(data)
-            case .listDirectory:
-                return try await handleListDirectory(data)
-            case .findMarkdownFiles:
-                return try await handleFindMarkdownFiles(data)
-            case .readFile:
-                return try await handleReadFile(data)
-            case .readAsset:
-                return try await handleReadAsset(data)
-            case .writeFile:
-                return try await handleWriteFile(data)
-            case .watchFile:
-                return try await handleWatchFile(data)
-            case .unwatchFile:
-                return try await handleUnwatchFile(data)
-            case .gitDetectRepo:
-                return try await handleGitDetectRepo(data)
-            case .gitDiff:
-                return try await handleGitDiff(data)
-            case .watchGitRepo:
-                return try await handleWatchGitRepo(data)
-            default:
-                print("Unhandled message type: \(type)")
-                return nil
-            }
+            return try await routeMessage(type, data: data)
         } catch {
             print("Error handling message \(type): \(error)")
+            return nil
+        }
+    }
+
+    private func routeMessage(_ type: RPCMessageType, data: Data) async throws -> Data? {
+        switch type {
+        case .hello:
+            return try await handleHello(data)
+        case .listDirectory:
+            return try await handleListDirectory(data)
+        case .findMarkdownFiles:
+            return try await handleFindMarkdownFiles(data)
+        case .readFile:
+            return try await handleReadFile(data)
+        case .readAsset:
+            return try await handleReadAsset(data)
+        case .writeFile:
+            return try await handleWriteFile(data)
+        case .watchFile:
+            return try await handleWatchFile(data)
+        case .unwatchFile:
+            return try await handleUnwatchFile(data)
+        case .gitDetectRepo:
+            return try await handleGitDetectRepo(data)
+        case .gitDiff:
+            return try await handleGitDiff(data)
+        case .watchGitRepo:
+            return try await handleWatchGitRepo(data)
+        case .watchDirectory:
+            return try await handleWatchDirectory(data)
+        case .unwatchDirectory:
+            return try await handleUnwatchDirectory(data)
+        default:
+            print("Unhandled message type: \(type)")
             return nil
         }
     }
@@ -152,6 +159,26 @@ class RPCHandler {
             id: msg.id,
             type: RPCMessageType.gitDiffResponse.rawValue,
             payload: responsePayload
+        )
+    }
+
+    private func handleWatchDirectory(_ data: Data) async throws -> Data {
+        let msg = try JSONDecoder().decode(RPCMessage<WatchDirectoryPayload>.self, from: data)
+        let token = await fileOperations.watchDirectory(path: msg.payload.path)
+        return try RPCStreamHandler.encode(
+            id: msg.id,
+            type: RPCMessageType.watchDirectoryResponse.rawValue,
+            payload: WatchDirectoryResponsePayload(token: token)
+        )
+    }
+
+    private func handleUnwatchDirectory(_ data: Data) async throws -> Data {
+        let msg = try JSONDecoder().decode(RPCMessage<UnwatchDirectoryPayload>.self, from: data)
+        let success = await fileOperations.unwatchDirectory(token: msg.payload.token)
+        return try RPCStreamHandler.encode(
+            id: msg.id,
+            type: RPCMessageType.unwatchDirectoryResponse.rawValue,
+            payload: UnwatchDirectoryResponsePayload(success: success)
         )
     }
 

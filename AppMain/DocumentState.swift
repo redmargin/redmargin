@@ -1,24 +1,26 @@
 import Foundation
+import Observation
 import RedmarginLib
 import RedmarginCore
 
 @MainActor
-class DocumentState: ObservableObject {
-    @Published var content: String
-    @Published var gitChanges: GitChangeResult?
-    @Published var isRefreshing: Bool = false
-    @Published var refreshToken: Int = 0  // Incremented on refresh to bust image cache
-    @Published private(set) var fileURL: URL
+@Observable
+class DocumentState {
+    var content: String
+    var gitChanges: GitChangeResult?
+    var isRefreshing: Bool = false
+    var refreshToken: Int = 0  // Sole purpose: bust image cache in MarkdownWebView
+    private(set) var fileURL: URL
 
-    private let fileProvider: FileProvider
+    @ObservationIgnored private let fileProvider: FileProvider
 
-    private var fileWatchToken: WatchToken?
-    private var gitWatchToken: WatchToken?
-    private var isWritingFile = false
+    @ObservationIgnored private var fileWatchToken: WatchToken?
+    @ObservationIgnored private var gitWatchToken: WatchToken?
+    @ObservationIgnored private var isWritingFile = false
 
-    private var repoRoot: String?
-    private var gitChangeTask: Task<Void, Never>?
-    private var reloadTask: Task<Void, Never>?
+    @ObservationIgnored private var repoRoot: String?
+    @ObservationIgnored private var gitChangeTask: Task<Void, Never>?
+    @ObservationIgnored private var reloadTask: Task<Void, Never>?
 
     init(content: String, fileURL: URL, fileProvider: FileProvider = LocalFileProvider()) {
         self.content = content

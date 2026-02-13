@@ -5,7 +5,7 @@ import RedmarginLib
 import RedmarginCore
 
 struct RemoteDocumentWindowContent: View {
-    @StateObject private var state: RemoteDocumentState
+    @State private var state: RemoteDocumentState
     @StateObject private var findController = FindController()
     @StateObject private var fileTreeProvider: RemoteFileTreeProvider
     @ObservedObject private var prefs = PreferencesManager.shared
@@ -48,7 +48,7 @@ struct RemoteDocumentWindowContent: View {
         _sidebarWidth = State(initialValue: sidebarWidth ?? 200)
         _showGutter = State(initialValue: prefs.showGutter)
         _showGitIndicators = State(initialValue: prefs.showGitIndicators)
-        _state = StateObject(wrappedValue: RemoteDocumentState(
+        _state = State(initialValue: RemoteDocumentState(
             content: content,
             location: location,
             fileProvider: fileProvider
@@ -75,7 +75,10 @@ struct RemoteDocumentWindowContent: View {
                 showFindBar: $showFindBar,
                 findBarFocusTrigger: $findBarFocusTrigger,
                 sidebarWidth: sidebarWidth,
-                onRefresh: { state.refresh() },
+                onRefresh: {
+                    state.refresh()
+                    if showSidebar { fileTreeProvider.refresh() }
+                },
                 onFindNext: { findController.findNext() },
                 onFindPrevious: { findController.findPrevious() },
                 onPrint: executePrint,
@@ -205,6 +208,7 @@ struct RemoteDocumentWindowContent: View {
                 allowRemoteImages: prefs.allowRemoteImages,
                 showGutter: showGutter,
                 showGitIndicators: showGitIndicators,
+                cacheBust: state.refreshToken,
                 remoteBasePath: remoteBasePath,
                 remoteAssetFetcher: { [weak state] path in
                     guard let state = state else { return nil }

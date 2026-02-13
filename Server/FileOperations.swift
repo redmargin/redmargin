@@ -196,4 +196,47 @@ actor FileOperations {
         }
         return false
     }
+
+    // MARK: - Directory Watching
+
+    private static let ignoredDirectories: Set<String> = [
+        ".git", "node_modules", ".build", "build", "DerivedData",
+        ".cache", ".npm", "vendor", "Pods", ".svn", ".hg"
+    ]
+
+    private var directoryWatchers: [String: ServerDirectoryWatcher] = [:]
+
+    func watchDirectory(path: String) -> String {
+        let token = UUID().uuidString
+        let expandedPath = NSString(string: path).expandingTildeInPath
+
+        if let watcher = PlatformDirectoryWatcher(
+            rootPath: expandedPath,
+            ignoredDirs: Self.ignoredDirectories,
+            onChange: { [weak self] in
+                Task { [weak self] in
+                    guard let self = self else { return }
+                    let result = await self.findMarkdownFiles(path: expandedPath)
+                    let files = result.files ?? []
+                    let payload = DirectoryChangedPayload(path: path, files: files)
+                    let msgType = RPCMessageType.directoryChanged.rawValue
+                    if let data = try? RPCStreamHandler.encode(id: nil, type: msgType, payload: payload) {
+                        await self.eventHandler?(data)
+                    }
+                }
+            }
+        ) {
+            directoryWatchers[token] = watcher
+        }
+
+        return token
+    }
+
+    func unwatchDirectory(token: String) -> Bool {
+        if let watcher = directoryWatchers.removeValue(forKey: token) {
+            watcher.stop()
+            return true
+        }
+        return false
+    }
 }

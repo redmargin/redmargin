@@ -12,6 +12,7 @@ public class RemoteFileTreeProvider: ObservableObject {
     private let currentFilePath: String
     private let fileProvider: RemoteFileProvider
     private var expandedFolders: Set<String> = []
+    private var directoryWatchToken: WatchToken?
 
     /// Callback when expanded folders change (path of root, set of expanded folder paths)
     public var onExpandedFoldersChange: ((String, Set<String>) -> Void)?
@@ -35,6 +36,7 @@ public class RemoteFileTreeProvider: ObservableObject {
             if let repoRoot = try await fileProvider.detectGitRepo(for: currentFilePath) {
                 rootDirectory = repoRoot
                 rootNodes = await buildTree(from: repoRoot)
+                await setupDirectoryWatching(for: repoRoot)
                 return
             }
         } catch {
@@ -45,6 +47,26 @@ public class RemoteFileTreeProvider: ObservableObject {
         let parentDir = (currentFilePath as NSString).deletingLastPathComponent
         rootDirectory = parentDir
         rootNodes = await buildTree(from: parentDir)
+        await setupDirectoryWatching(for: parentDir)
+    }
+
+    private func setupDirectoryWatching(for path: String) async {
+        // Clean up any existing watch
+        if let token = directoryWatchToken {
+            await fileProvider.unwatchDirectory(token)
+        }
+
+        directoryWatchToken = await fileProvider.watchDirectory(at: path) { [weak self] files in
+            Task { @MainActor in
+                self?.handleDirectoryChanged(files: files)
+            }
+        }
+    }
+
+    private func handleDirectoryChanged(files: [String]) {
+        guard let root = rootDirectory else { return }
+        print("[RemoteFileTreeProvider] Directory changed, rebuilding tree (\(files.count) files)")
+        rootNodes = buildTreeFromPaths(files, rootPath: root)
     }
 
     /// Refreshes the file list

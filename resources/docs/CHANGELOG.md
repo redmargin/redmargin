@@ -6,9 +6,19 @@
 - Open folders directly via File > Open, drag-and-drop, or `open -a Redmargin ~/path/to/folder`
 - Folder windows show sidebar with markdown file tree and a welcome view until a file is selected
 - Folder windows persist and restore on relaunch (including selected file, sidebar width, and sidebar visibility)
+- Sidebar file list now auto-updates when files are added, removed, or renamed (local and remote)
+- Cmd-R now refreshes both document content and sidebar file list when sidebar is visible
+
+### Improvements
+- Migrated DocumentState and RemoteDocumentState from ObservableObject to @Observable for more precise SwiftUI view updates
+- Remote file watcher now survives vim-style atomic saves (server-side inotify retry with exponential backoff)
+- Remote Cmd-R now properly busts image cache (refreshToken wired through to MarkdownWebView)
+- Local sidebar uses FSEvents for recursive directory monitoring (single kernel-level watcher for entire tree)
+- Remote sidebar uses server-pushed file lists on directory changes (zero SSH calls after initial setup)
 
 ### Bug Fixes
 - Fixed remote documents not reconnecting after Mac wakes from sleep (forced SSH reconnection on wake)
+- Fixed remote refresh() silently swallowing errors (now logs failures explicitly)
 - Fixed flaky sidebar tests caused by race conditions with async file tree loading
 
 ---

@@ -70,7 +70,10 @@ struct FolderWindowContent: View {
                 findBarFocusTrigger: $findBarFocusTrigger,
                 sidebarWidth: sidebarWidth,
                 hasDocument: selectedFileURL != nil,
-                onRefresh: { documentState?.refresh() },
+                onRefresh: {
+                    documentState?.refresh()
+                    if showSidebar { fileTreeProvider.refresh() }
+                },
                 onFindNext: { findController.findNext() },
                 onFindPrevious: { findController.findPrevious() },
                 onPrint: executePrint,
