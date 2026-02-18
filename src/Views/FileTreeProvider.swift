@@ -55,13 +55,13 @@ public class FileTreeProvider: ObservableObject {
     public var onExpandedFoldersChange: ((String, Set<String>) -> Void)?
 
     /// Directories to skip when enumerating files
-    private static let ignoredDirectories: Set<String> = [
+    private nonisolated static let ignoredDirectories: Set<String> = [
         ".git", "node_modules", ".build", "build", "DerivedData",
         ".cache", ".npm", "vendor", "Pods", ".svn", ".hg"
     ]
 
     /// File extensions to include
-    private static let markdownExtensions: Set<String> = ["md", "markdown"]
+    private nonisolated static let markdownExtensions: Set<String> = ["md", "markdown"]
 
     public init(currentFileURL: URL, expandedFolders: Set<String> = []) {
         self.currentFileURL = currentFileURL
@@ -79,8 +79,8 @@ public class FileTreeProvider: ObservableObject {
         self.expandedFolders = expandedFolders
         self.autoExpandRoot = false
         self.rootDirectory = rootDirectory
-        self.rootNodes = buildTree(from: rootDirectory)
         setupDirectoryWatcher(for: rootDirectory)
+        buildTreeAsync(from: rootDirectory)
     }
 
     /// Loads markdown files from the appropriate root directory
@@ -88,13 +88,13 @@ public class FileTreeProvider: ObservableObject {
         guard let currentFileURL else { return }
 
         isLoading = true
-        defer { isLoading = false }
 
         // Try to find Git repo root first
         do {
             if let repoRoot = try await GitRepoDetector.detectRepoRoot(forFile: currentFileURL) {
                 rootDirectory = repoRoot
-                rootNodes = buildTree(from: repoRoot)
+                buildTreeAsync(from: repoRoot)
+                isLoading = false
                 setupDirectoryWatcher(for: repoRoot)
                 return
             }
@@ -105,7 +105,8 @@ public class FileTreeProvider: ObservableObject {
         // Fall back to file's parent directory
         let parentDir = currentFileURL.deletingLastPathComponent()
         rootDirectory = parentDir
-        rootNodes = buildTree(from: parentDir)
+        buildTreeAsync(from: parentDir)
+        isLoading = false
         setupDirectoryWatcher(for: parentDir)
     }
 
@@ -113,14 +114,51 @@ public class FileTreeProvider: ObservableObject {
     public func refresh() {
         guard let root = rootDirectory else { return }
         print("[FileTreeProvider] refresh() called for \(root.lastPathComponent)")
-        rootNodes = buildTree(from: root)
+        buildTreeAsync(from: root)
     }
 
     private func buildTree(from directory: URL) -> [FileTreeNode] {
-        return buildTreeRecursive(at: directory, depth: 0)
+        let expanded = expandedFolders
+        let autoExpand = autoExpandRoot
+        return buildTreeRecursive(at: directory, depth: 0, expandedFolders: expanded, autoExpandRoot: autoExpand)
     }
 
-    private func buildTreeRecursive(at directory: URL, depth: Int) -> [FileTreeNode] {
+    /// Builds the tree on a background thread, then applies result on main
+    private func buildTreeAsync(from directory: URL) {
+        let expanded = expandedFolders
+        let autoExpand = autoExpandRoot
+        Task.detached { [weak self] in
+            guard let self else { return }
+            let nodes = self.buildTreeRecursive(
+                at: directory,
+                depth: 0,
+                expandedFolders: expanded,
+                autoExpandRoot: autoExpand
+            )
+            await MainActor.run {
+                self.rootNodes = nodes
+                self.wireUpCallbacks(nodes)
+            }
+        }
+    }
+
+    /// Wire up expansion callbacks after tree is built (must be on MainActor)
+    private func wireUpCallbacks(_ nodes: [FileTreeNode]) {
+        for node in nodes where node.isDirectory {
+            node.onExpandedChange = { [weak self] path, expanded in
+                self?.handleFolderExpansionChange(path: path, expanded: expanded)
+            }
+            wireUpCallbacks(node.children)
+        }
+    }
+
+    /// Non-isolated tree builder — runs off the main thread
+    private nonisolated func buildTreeRecursive(
+        at directory: URL,
+        depth: Int,
+        expandedFolders: Set<String>,
+        autoExpandRoot: Bool
+    ) -> [FileTreeNode] {
         var nodes: [FileTreeNode] = []
 
         guard let contents = try? FileManager.default.contentsOfDirectory(
@@ -131,55 +169,60 @@ public class FileTreeProvider: ObservableObject {
             return []
         }
 
-        // Sort: directories first, then alphabetically
-        let sorted = contents.sorted { lhs, rhs in
-            let lhsIsDir = (try? lhs.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            let rhsIsDir = (try? rhs.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-
-            if lhsIsDir != rhsIsDir {
-                return lhsIsDir  // Directories first
-            }
-            return lhs.lastPathComponent.localizedCaseInsensitiveCompare(rhs.lastPathComponent) == .orderedAscending
+        // Pre-compute isDirectory once per entry (uses prefetched values from contentsOfDirectory)
+        struct Entry {
+            let url: URL
+            let name: String
+            let isDirectory: Bool
+        }
+        let entries: [Entry] = contents.map { url in
+            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            return Entry(url: url, name: url.lastPathComponent, isDirectory: isDir)
         }
 
-        for url in sorted {
-            let name = url.lastPathComponent
-            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+        // Sort: directories first, then alphabetically
+        let sorted = entries.sorted { lhs, rhs in
+            if lhs.isDirectory != rhs.isDirectory {
+                return lhs.isDirectory  // Directories first
+            }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
 
-            if isDir {
+        for entry in sorted {
+            if entry.isDirectory {
                 // Skip ignored directories
-                if Self.ignoredDirectories.contains(name) {
+                if Self.ignoredDirectories.contains(entry.name) {
                     continue
                 }
 
                 // Recursively get children
-                let children = buildTreeRecursive(at: url, depth: depth + 1)
+                let children = buildTreeRecursive(
+                    at: entry.url,
+                    depth: depth + 1,
+                    expandedFolders: expandedFolders,
+                    autoExpandRoot: autoExpandRoot
+                )
 
                 // Only include directory if it has markdown files (directly or nested)
                 if !children.isEmpty {
-                    // Check if this folder should be expanded
-                    let shouldExpand = expandedFolders.contains(url.path) || (autoExpandRoot && depth == 0)
+                    let shouldExpand = expandedFolders.contains(entry.url.path) || (autoExpandRoot && depth == 0)
                     let node = FileTreeNode(
-                        name: name,
-                        url: url,
+                        name: entry.name,
+                        url: entry.url,
                         isDirectory: true,
                         depth: depth,
                         children: children,
                         isExpanded: shouldExpand
                     )
-                    // Set up callback for expansion changes
-                    node.onExpandedChange = { [weak self] path, expanded in
-                        self?.handleFolderExpansionChange(path: path, expanded: expanded)
-                    }
                     nodes.append(node)
                 }
             } else {
                 // Check if it's a markdown file
-                let ext = url.pathExtension.lowercased()
+                let ext = entry.url.pathExtension.lowercased()
                 if Self.markdownExtensions.contains(ext) {
                     let node = FileTreeNode(
-                        name: name,
-                        url: url,
+                        name: entry.name,
+                        url: entry.url,
                         isDirectory: false,
                         depth: depth
                     )
@@ -267,7 +310,7 @@ class FSEventsDirectoryWatcher {
             &context,
             paths,
             FSEventsGetCurrentEventId(),
-            0.3,
+            1.0,
             flags
         ) else {
             print("[FSEventsWatcher] Failed to create stream for: \(url.path)")
