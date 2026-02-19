@@ -136,8 +136,43 @@ public class FileTreeProvider: ObservableObject {
                 autoExpandRoot: autoExpand
             )
             await MainActor.run {
-                self.rootNodes = nodes
-                self.wireUpCallbacks(nodes)
+                if self.rootNodes.isEmpty {
+                    // First load — set directly
+                    self.rootNodes = nodes
+                    self.wireUpCallbacks(nodes)
+                } else {
+                    // Subsequent refresh — merge to preserve node identity and scroll position
+                    self.rootNodes = self.mergeNodes(
+                        existing: self.rootNodes,
+                        incoming: nodes
+                    )
+                }
+            }
+        }
+    }
+
+    /// Merge incoming tree structure into existing nodes, reusing objects to preserve
+    /// SwiftUI identity (UUID) so ScrollView scroll position stays stable.
+    private func mergeNodes(existing: [FileTreeNode], incoming: [FileTreeNode]) -> [FileTreeNode] {
+        var existingByURL: [URL: FileTreeNode] = [:]
+        for node in existing {
+            existingByURL[node.url] = node
+        }
+
+        return incoming.map { newNode in
+            if let existingNode = existingByURL[newNode.url] {
+                // Reuse existing node — preserves its id (UUID) and expansion state
+                if existingNode.isDirectory {
+                    existingNode.children = mergeNodes(
+                        existing: existingNode.children,
+                        incoming: newNode.children
+                    )
+                }
+                return existingNode
+            } else {
+                // Brand new node — wire up callbacks
+                wireUpCallbacks([newNode])
+                return newNode
             }
         }
     }
