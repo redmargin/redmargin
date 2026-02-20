@@ -48,7 +48,10 @@ struct FolderWindowContent: View {
         let prefs = PreferencesManager.shared
         self.folderURL = folderURL
         self.initialSelectedFile = initialSelectedFile
-        _fileTreeProvider = StateObject(wrappedValue: FileTreeProvider(rootDirectory: folderURL))
+        let savedExpanded = DocumentSettingsStorage.shared.loadExpandedFolders(for: folderURL.path)
+        _fileTreeProvider = StateObject(wrappedValue: FileTreeProvider(
+            rootDirectory: folderURL, expandedFolders: savedExpanded
+        ))
         _showSidebar = State(initialValue: showSidebar ?? true)
         _sidebarWidth = State(initialValue: sidebarWidth ?? 200)
         _showGutter = State(initialValue: prefs.showGutter)
@@ -98,25 +101,18 @@ struct FolderWindowContent: View {
     private func setupExpandedFoldersPersistence() {
         let settings = DocumentSettingsStorage.shared
 
+        // Save callback — persists expansion changes to UserDefaults
         fileTreeProvider.onExpandedFoldersChange = { rootPath, expandedPaths in
             settings.saveExpandedFolders(expandedPaths, for: rootPath)
         }
 
-        Task { @MainActor in
-            while fileTreeProvider.isLoading {
-                try? await Task.sleep(nanoseconds: 50_000_000)
-            }
-
-            if let rootPath = fileTreeProvider.rootDirectory?.path {
-                let expandedFolders = settings.loadExpandedFolders(for: rootPath)
-                if !expandedFolders.isEmpty {
-                    fileTreeProvider.applyExpandedFolders(expandedFolders)
+        // Restore previously selected file once tree is ready
+        if let fileURL = initialSelectedFile,
+           FileManager.default.fileExists(atPath: fileURL.path) {
+            Task { @MainActor in
+                while fileTreeProvider.isLoading {
+                    try? await Task.sleep(nanoseconds: 50_000_000)
                 }
-            }
-
-            // Restore previously selected file
-            if let fileURL = initialSelectedFile,
-               FileManager.default.fileExists(atPath: fileURL.path) {
                 handleFileSelection(fileURL)
             }
         }
