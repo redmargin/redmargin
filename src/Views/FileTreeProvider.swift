@@ -161,8 +161,16 @@ public class FileTreeProvider: ObservableObject {
 
         return incoming.map { newNode in
             if let existingNode = existingByURL[newNode.url] {
-                // Reuse existing node — preserves its id (UUID) and expansion state
+                // Reuse existing node — preserves its id (UUID) for scroll stability
                 if existingNode.isDirectory {
+                    // Sync expansion state from incoming node (built with current expandedFolders)
+                    // without triggering the save callback
+                    if existingNode.isExpanded != newNode.isExpanded {
+                        let callback = existingNode.onExpandedChange
+                        existingNode.onExpandedChange = nil
+                        existingNode.isExpanded = newNode.isExpanded
+                        existingNode.onExpandedChange = callback
+                    }
                     existingNode.children = mergeNodes(
                         existing: existingNode.children,
                         incoming: newNode.children
