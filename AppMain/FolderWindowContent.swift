@@ -96,6 +96,9 @@ struct FolderWindowContent: View {
             .onChange(of: sidebarWidth) { _, newValue in
                 DocumentSettingsStorage.shared.saveSidebarWidth(newValue, for: folderURL)
             }
+            .onChange(of: findController.searchText) { _, newValue in
+                findController.find(newValue)
+            }
     }
 
     private func setupExpandedFoldersPersistence() {
