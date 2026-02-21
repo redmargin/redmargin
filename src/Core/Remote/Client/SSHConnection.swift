@@ -543,8 +543,11 @@ public actor SSHConnection {
         completedResponses.removeAll()
     }
 
-    // MARK: - Convenience Methods
+}
 
+// MARK: - Convenience Methods
+
+extension SSHConnection {
     public func listDirectory(path: String) async throws -> [DirectoryEntry] {
         let responseData = try await send(
             type: RPCMessageType.listDirectory.rawValue,
