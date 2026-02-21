@@ -55,7 +55,8 @@ struct RemoteDocumentWindowContent: View {
         ))
         _fileTreeProvider = StateObject(wrappedValue: RemoteFileTreeProvider(
             currentFilePath: location.path,
-            fileProvider: fileProvider
+            fileProvider: fileProvider,
+            stateChanges: fileProvider.stateChanges
         ))
     }
 

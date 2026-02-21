@@ -33,6 +33,7 @@ public actor SSHConnection {
     private var isIntentionallyDisconnected = false
     private var reconnectAttempts = 0
     private let maxReconnectDelay: TimeInterval = 30.0
+    private var reconnectTask: Task<Void, Never>?
     private var remoteBinaryPath: String?
 
     private let deployer = ServerDeployer()
@@ -71,9 +72,17 @@ public actor SSHConnection {
     /// Used when the system wakes from sleep and the TCP connection is likely dead
     /// but the process hasn't detected it yet.
     public func forceReconnect() {
-        guard state == .connected || state == .connecting else { return }
+        guard state == .connected || state == .connecting || state == .reconnecting else { return }
         print("[SSHConnection] Force reconnect (wake from sleep)")
-        handleDisconnect()
+        if state == .reconnecting {
+            // Cancel the existing slow reconnect loop and start fresh immediately
+            reconnectTask?.cancel()
+            reconnectTask = nil
+            reconnectAttempts = 0
+            scheduleReconnect()
+        } else {
+            handleDisconnect()
+        }
     }
 
     private var homeDirectory: String?
@@ -482,6 +491,8 @@ public actor SSHConnection {
 
         if !isIntentionallyDisconnected {
             state = .reconnecting
+            reconnectTask?.cancel()
+            reconnectTask = nil
             scheduleReconnect()
         } else {
             state = .disconnected
@@ -489,12 +500,12 @@ public actor SSHConnection {
     }
 
     private func scheduleReconnect() {
-        Task {
+        reconnectTask = Task {
             let delay = min(pow(2.0, Double(reconnectAttempts)), maxReconnectDelay)
             print("[SSHConnection] Reconnecting in \(delay)s...")
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
 
-            if isIntentionallyDisconnected { return }
+            guard !Task.isCancelled, !isIntentionallyDisconnected else { return }
 
             reconnectAttempts += 1
             do {
@@ -503,6 +514,7 @@ public actor SSHConnection {
                 reconnectAttempts = 0
                 print("[SSHConnection] Reconnected!")
             } catch {
+                guard !Task.isCancelled else { return }
                 print("[SSHConnection] Reconnection failed: \(error)")
                 scheduleReconnect()
             }
@@ -511,6 +523,9 @@ public actor SSHConnection {
 
     public func disconnect() {
         isIntentionallyDisconnected = true
+
+        reconnectTask?.cancel()
+        reconnectTask = nil
 
         // Clear file handle callbacks first to prevent race conditions
         stderrPipe?.fileHandleForReading.readabilityHandler = nil

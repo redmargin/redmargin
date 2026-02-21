@@ -13,16 +13,38 @@ public class RemoteFileTreeProvider: ObservableObject {
     private let fileProvider: RemoteFileProvider
     private var expandedFolders: Set<String> = []
     private var directoryWatchToken: WatchToken?
+    private var stateObserverTask: Task<Void, Never>?
 
     /// Callback when expanded folders change (path of root, set of expanded folder paths)
     public var onExpandedFoldersChange: ((String, Set<String>) -> Void)?
 
-    public init(currentFilePath: String, fileProvider: RemoteFileProvider, expandedFolders: Set<String> = []) {
+    public init(
+        currentFilePath: String,
+        fileProvider: RemoteFileProvider,
+        stateChanges: AsyncStream<SSHConnectionState>? = nil,
+        expandedFolders: Set<String> = []
+    ) {
         self.currentFilePath = currentFilePath
         self.fileProvider = fileProvider
         self.expandedFolders = expandedFolders
         Task {
             await loadFiles()
+        }
+        if let stateChanges = stateChanges {
+            observeConnectionState(stateChanges)
+        }
+    }
+
+    private func observeConnectionState(_ stateChanges: AsyncStream<SSHConnectionState>) {
+        stateObserverTask = Task { [weak self] in
+            var previousState: SSHConnectionState?
+            for await state in stateChanges {
+                guard !Task.isCancelled else { break }
+                if previousState == .reconnecting && state == .connected {
+                    await self?.loadFiles()
+                }
+                previousState = state
+            }
         }
     }
 
