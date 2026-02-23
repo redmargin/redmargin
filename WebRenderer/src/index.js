@@ -19,6 +19,7 @@
     });
 
     md.use(window.markdownitTaskLists, { enabled: true, label: true });
+    md.use(window.tableCheckboxPlugin);
     md.use(window.sourceposPlugin);
     md.use(window.headingAnchorsPlugin);
 

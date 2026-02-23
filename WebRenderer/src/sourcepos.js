@@ -15,6 +15,7 @@ function sourceposPlugin(md) {
         'code_block',
         'fence',
         'table_open',
+        'tr_open',
         'hr'
     ];
 

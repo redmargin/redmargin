@@ -15,24 +15,27 @@
             return;
         }
 
-        const listItem = checkbox.closest('li.task-list-item');
-        if (!listItem) {
-            return;
-        }
-
-        const sourcepos = listItem.getAttribute('data-sourcepos');
-        if (!sourcepos) {
-            return;
-        }
-
-        // Parse sourcepos format: "startLine:startCol-endLine:endCol"
-        const match = sourcepos.match(/^(\d+):/);
-        if (!match) {
-            return;
-        }
-
-        const line = parseInt(match[1], 10);
         const checked = checkbox.checked;
+        var line = 0;
+
+        // Table checkbox: find the parent <tr> with data-sourcepos
+        const tableRow = checkbox.closest('tr');
+        if (tableRow) {
+            const sourcepos = tableRow.getAttribute('data-sourcepos');
+            if (!sourcepos) return;
+            const match = sourcepos.match(/^(\d+):/);
+            if (!match) return;
+            line = parseInt(match[1], 10);
+        } else {
+            // List item checkbox
+            const listItem = checkbox.closest('li.task-list-item');
+            if (!listItem) return;
+            const sourcepos = listItem.getAttribute('data-sourcepos');
+            if (!sourcepos) return;
+            const match = sourcepos.match(/^(\d+):/);
+            if (!match) return;
+            line = parseInt(match[1], 10);
+        }
 
         // Send message to Swift
         if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.checkboxToggle) {

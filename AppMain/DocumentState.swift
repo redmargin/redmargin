@@ -191,22 +191,7 @@ class DocumentState {
             guard index >= 0 && index < lines.count else { return }
 
             let currentLine = lines[index]
-            let newLine: String
-
-            if checked {
-                newLine = currentLine
-                    .replacingOccurrences(of: "- [ ]", with: "- [x]")
-                    .replacingOccurrences(of: "* [ ]", with: "* [x]")
-                    .replacingOccurrences(of: "+ [ ]", with: "+ [x]")
-            } else {
-                newLine = currentLine
-                    .replacingOccurrences(of: "- [x]", with: "- [ ]")
-                    .replacingOccurrences(of: "- [X]", with: "- [ ]")
-                    .replacingOccurrences(of: "* [x]", with: "* [ ]")
-                    .replacingOccurrences(of: "* [X]", with: "* [ ]")
-                    .replacingOccurrences(of: "+ [x]", with: "+ [ ]")
-                    .replacingOccurrences(of: "+ [X]", with: "+ [ ]")
-            }
+            let newLine = toggleCheckbox(in: currentLine, checked: checked)
 
             guard newLine != currentLine else { return }
 

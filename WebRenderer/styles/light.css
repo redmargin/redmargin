@@ -190,6 +190,10 @@ li > ul, li > ol {
     transform: rotate(45deg);
 }
 
+.table-checkbox {
+    margin-right: 0;
+}
+
 table {
     border-collapse: collapse;
     width: 100%;
