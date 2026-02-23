@@ -22,6 +22,7 @@
 - Fixed remote documents auto-recovering after SSH disconnect (no Cmd-R needed; reconnects and refreshes automatically)
 - Fixed stale SSH connections detected proactively: idle connections are pinged before refresh or file load to avoid 30s hangs
 - Fixed remote documents not reconnecting after Mac wakes from sleep (forced SSH reconnection on wake)
+- Fixed false "Reconnecting" flashes when remote files change (serialized stdin writes prevent pipe contention from triggering disconnect)
 - Fixed remote refresh() silently swallowing errors (now logs failures explicitly)
 - Fixed flaky sidebar tests caused by race conditions with async file tree loading
 - Fixed search not working in folder windows

@@ -15,6 +15,11 @@ public actor SSHConnection {
     private let streamHandler = RPCStreamHandler()
     private var nextRequestId = 1
 
+    /// Serial queue for stdin writes. Actor reentrancy at await suspension
+    /// points allows concurrent send() calls, which could interleave writes
+    /// on the pipe and corrupt protocol framing. This queue serializes them.
+    private let stdinWriteQueue = DispatchQueue(label: "com.redmargin.ssh.stdin-write")
+
     // Sync marker that server outputs after shell initialization - we discard everything before this
     private static let syncMarker = "REDMARGIN_SYNC_7f3d9a\n"
 
@@ -400,32 +405,27 @@ public actor SSHConnection {
             throw SSHConnectionError.unexpectedDisconnect
         }
 
-        // Write on a GCD thread so a blocked pipe doesn't freeze the actor.
-        // Race it against a 5s timeout — if write blocks that long, the connection is dead.
+        // Serialize writes on a dedicated queue so concurrent send() calls
+        // (possible via actor reentrancy) don't interleave on the pipe.
         sshLog.info("send() id=\(id): writing \(data.count) bytes to stdin...")
         let stdinHandle = stdin
         let writeData = data
-        let writeOK: Bool = await withTaskGroup(of: Bool.self) { group in
-            group.addTask { @Sendable in
+        let writeQueue = stdinWriteQueue
+        let writeError: Error? = await withCheckedContinuation { continuation in
+            writeQueue.async {
                 do {
                     try stdinHandle.write(contentsOf: writeData)
-                    return true
+                    continuation.resume(returning: nil)
                 } catch {
-                    return false
+                    continuation.resume(returning: error)
                 }
             }
-            group.addTask { @Sendable in
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-                return false
-            }
-            defer { group.cancelAll() }
-            return await group.next() ?? false
         }
 
-        guard writeOK else {
-            sshLog.error("send() id=\(id): stdin write blocked/failed — forcing reconnect")
+        if let writeError {
+            sshLog.error("send() id=\(id): stdin write failed — \(writeError.localizedDescription, privacy: .public)")
             handleDisconnect()
-            throw SSHConnectionError.operationTimeout(operation: type)
+            throw SSHConnectionError.unexpectedDisconnect
         }
 
         sshLog.info("send() id=\(id): written, waiting for response (timeout=\(timeout)s)")
@@ -517,6 +517,14 @@ public actor SSHConnection {
     }
 
     private func handleDisconnect() {
+        // Guard against cascade: if already reconnecting/disconnected, skip.
+        // Multiple concurrent send() failures can all call this in quick succession.
+        guard state == .connected || state == .connecting else {
+            sshLog.info(
+                "handleDisconnect() skipped (already \(String(describing: self.state), privacy: .public))"
+            )
+            return
+        }
         sshLog.info("handleDisconnect() state=\(String(describing: self.state), privacy: .public)")
         healthCheckTask?.cancel()
         healthCheckTask = nil

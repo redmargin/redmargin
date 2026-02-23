@@ -100,10 +100,9 @@ class RemoteDocumentState {
         let oldState = connectionState
         connectionState = newState
 
-        refreshLog.info(
-            "connectionState: \(String(describing: oldState), privacy: .public) -> "
-            + "\(String(describing: newState), privacy: .public)"
-        )
+        let old = String(describing: oldState)
+        let new = String(describing: newState)
+        refreshLog.info("connectionState: \(old, privacy: .public) -> \(new, privacy: .public)")
         // Note: handleReconnection() is triggered by the NotificationCenter observer,
         // not here. The AsyncStream is used only for UI state (overlay).
     }
@@ -310,10 +309,10 @@ class RemoteDocumentState {
                 // observer can lag behind, leaving the "Connecting" overlay stuck.
                 let actualState = await fileProvider.getConnectionState()
                 if connectionState != actualState {
+                    let was = String(describing: self.connectionState)
+                    let now = String(describing: actualState)
                     refreshLog.info(
-                        "refresh() fixing stale connectionState: "
-                        + "\(String(describing: self.connectionState), privacy: .public) -> "
-                        + "\(String(describing: actualState), privacy: .public)"
+                        "refresh() fixing stale connectionState: \(was, privacy: .public) -> \(now, privacy: .public)"
                     )
                     connectionState = actualState
                 }
