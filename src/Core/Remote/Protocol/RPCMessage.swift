@@ -28,6 +28,11 @@ public class RPCStreamHandler {
 
     public init() {}
 
+    /// Discards any buffered partial data (call on reconnect to avoid corrupted framing).
+    public func reset() {
+        buffer.removeAll()
+    }
+
     /// Appends data to the buffer and extracts any complete messages.
     /// Returns an array of Data, where each item is the JSON payload of a message.
     public func receive(data: Data) -> [Data] {

@@ -32,6 +32,11 @@ public actor RemoteFileProvider: FileProvider {
         await connection.getState()
     }
 
+    /// Force an immediate reconnection attempt
+    public func forceReconnect() async {
+        await connection.forceReconnect()
+    }
+
     private struct WatchCallback {
         let path: String
         let callback: () -> Void

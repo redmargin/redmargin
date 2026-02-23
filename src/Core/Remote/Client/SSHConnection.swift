@@ -1,6 +1,9 @@
 import Foundation
+import os.log
 
 // SSHConnectionState, SSHConnectionError, and StderrCollector are in SSHConnectionTypes.swift
+
+private let sshLog = Logger(subsystem: "com.redmargin", category: "SSHConnection")
 
 public actor SSHConnection {
     private let host: String
@@ -72,15 +75,21 @@ public actor SSHConnection {
     /// Used when the system wakes from sleep and the TCP connection is likely dead
     /// but the process hasn't detected it yet.
     public func forceReconnect() {
-        guard state == .connected || state == .connecting || state == .reconnecting else { return }
-        print("[SSHConnection] Force reconnect (wake from sleep)")
-        if state == .reconnecting {
+        sshLog.info("forceReconnect() called, state=\(String(describing: self.state), privacy: .public)")
+        switch state {
+        case .disconnected:
+            // Was fully disconnected (e.g. all reconnect attempts exhausted) — restart from scratch
+            isIntentionallyDisconnected = false
+            reconnectAttempts = 0
+            state = .reconnecting
+            scheduleReconnect()
+        case .reconnecting:
             // Cancel the existing slow reconnect loop and start fresh immediately
             reconnectTask?.cancel()
             reconnectTask = nil
             reconnectAttempts = 0
             scheduleReconnect()
-        } else {
+        case .connected, .connecting:
             handleDisconnect()
         }
     }
@@ -366,9 +375,9 @@ public actor SSHConnection {
     }
 
     public func send(type: String, payload: some Codable, timeout: TimeInterval = 10) async throws -> Data {
-        print("[SSHConnection] send() type=\(type)")
+        sshLog.info("send() type=\(type)")
         if state != .connected && state != .connecting {
-            print("[SSHConnection] ERROR: Not in connected/connecting state")
+            sshLog.error("send() rejected: state=\(String(describing: self.state))")
             throw SSHConnectionError.serverNotResponding(host: host)
         }
 
@@ -376,40 +385,62 @@ public actor SSHConnection {
         nextRequestId += 1
 
         let data = try RPCStreamHandler.encode(id: id, type: type, payload: payload)
-        print("[SSHConnection] Encoded message id=\(id), size=\(data.count) bytes")
 
         guard let stdin = stdinPipe?.fileHandleForWriting else {
-            print("[SSHConnection] ERROR: No stdin pipe")
+            sshLog.error("send() id=\(id): no stdin pipe")
             throw SSHConnectionError.unexpectedDisconnect
         }
 
-        print("[SSHConnection] Writing to stdin...")
-        try stdin.write(contentsOf: data)
-        print("[SSHConnection] Written, waiting for response id=\(id) with timeout=\(timeout)s...")
+        // Write on a GCD thread so a blocked pipe doesn't freeze the actor.
+        // Race it against a 5s timeout — if write blocks that long, the connection is dead.
+        sshLog.info("send() id=\(id): writing \(data.count) bytes to stdin...")
+        let stdinHandle = stdin
+        let writeData = data
+        let writeOK: Bool = await withTaskGroup(of: Bool.self) { group in
+            group.addTask { @Sendable in
+                do {
+                    try stdinHandle.write(contentsOf: writeData)
+                    return true
+                } catch {
+                    return false
+                }
+            }
+            group.addTask { @Sendable in
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                return false
+            }
+            defer { group.cancelAll() }
+            return await group.next() ?? false
+        }
+
+        guard writeOK else {
+            sshLog.error("send() id=\(id): stdin write blocked/failed — forcing reconnect")
+            handleDisconnect()
+            throw SSHConnectionError.operationTimeout(operation: type)
+        }
+
+        sshLog.info("send() id=\(id): written, waiting for response (timeout=\(timeout)s)")
 
         // Wait for response with timeout - poll-based to ensure timeout works
         let deadline = Date().addingTimeInterval(timeout)
         registerPendingRequest(id: id)
 
         while Date() < deadline {
-            // Check if response arrived
             if let response = completedResponses.removeValue(forKey: id) {
-                print("[SSHConnection] Got response for id=\(id)")
+                sshLog.info("send() id=\(id): got response")
                 return response
             }
 
-            // Check if we got disconnected
             if state != .connected && state != .connecting {
                 pendingRequestIds.remove(id)
                 throw SSHConnectionError.unexpectedDisconnect
             }
 
-            // Wait a bit before checking again
             try await Task.sleep(nanoseconds: 50_000_000) // 50ms
         }
 
         // Timeout - connection is stale; force reconnect so it recovers
-        print("[SSHConnection] Timeout waiting for response id=\(id) — forcing reconnect")
+        sshLog.error("send() id=\(id): timeout after \(timeout)s — forcing reconnect")
         pendingRequestIds.remove(id)
         completedResponses.removeValue(forKey: id)
         handleDisconnect()
@@ -476,13 +507,16 @@ public actor SSHConnection {
     }
 
     private func handleDisconnect() {
+        sshLog.info("handleDisconnect() state=\(String(describing: self.state), privacy: .public)")
         // Clear file handle callbacks first to prevent race conditions
         stderrPipe?.fileHandleForReading.readabilityHandler = nil
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil
 
-        // Clear pending requests - the polling loop will detect state change
+        // Clear pending requests and stale stream data so the next connection starts clean
         pendingRequestIds.removeAll()
         completedResponses.removeAll()
+        streamHandler.reset()
+        nextRequestId = 1
 
         process?.terminate()
         process = nil
@@ -496,6 +530,7 @@ public actor SSHConnection {
             reconnectTask = nil
             scheduleReconnect()
         } else {
+            sshLog.info("handleDisconnect() intentional, not reconnecting")
             state = .disconnected
         }
     }
@@ -503,20 +538,29 @@ public actor SSHConnection {
     private func scheduleReconnect() {
         reconnectTask = Task {
             let delay = min(pow(2.0, Double(reconnectAttempts)), maxReconnectDelay)
-            print("[SSHConnection] Reconnecting in \(delay)s...")
+            sshLog.info("scheduleReconnect() attempt=\(self.reconnectAttempts) delay=\(delay)s")
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
 
-            guard !Task.isCancelled, !isIntentionallyDisconnected else { return }
+            guard !Task.isCancelled, !isIntentionallyDisconnected else {
+                sshLog.info("scheduleReconnect() cancelled or intentionally disconnected")
+                return
+            }
 
             reconnectAttempts += 1
+            state = .connecting
             do {
                 try await establishConnection()
                 state = .connected
                 reconnectAttempts = 0
-                print("[SSHConnection] Reconnected!")
+                sshLog.info("Reconnected successfully!")
+                NotificationCenter.default.post(
+                    name: .sshConnectionReconnected,
+                    object: self.host
+                )
             } catch {
                 guard !Task.isCancelled else { return }
-                print("[SSHConnection] Reconnection failed: \(error)")
+                state = .reconnecting
+                sshLog.error("Reconnection failed: \(error.localizedDescription, privacy: .public)")
                 scheduleReconnect()
             }
         }

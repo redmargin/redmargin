@@ -1,7 +1,10 @@
 import Foundation
 import Observation
+import os.log
 import RedmarginLib
 import RedmarginCore
+
+private let refreshLog = Logger(subsystem: "com.redmargin", category: "RemoteRefresh")
 
 /// Represents a pending checkbox toggle that couldn't be saved due to disconnect
 struct PendingCheckboxToggle {
@@ -34,6 +37,7 @@ class RemoteDocumentState {
     @ObservationIgnored private var gitChangeTask: Task<Void, Never>?
     @ObservationIgnored private var stateObserverTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
+    @ObservationIgnored private var reconnectObserver: Any?
 
     /// Last content that was confirmed on the server (read or successfully written)
     @ObservationIgnored private var lastKnownServerContent: String
@@ -46,6 +50,18 @@ class RemoteDocumentState {
         self.lastKnownServerContent = content
         self.location = location
         self.fileProvider = fileProvider
+
+        // Observe reconnection via NotificationCenter (reliable, unlike AsyncStream)
+        reconnectObserver = NotificationCenter.default.addObserver(
+            forName: .sshConnectionReconnected,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleReconnection()
+            }
+        }
+
         Task {
             async let watcher: Void = setupFileWatcher()
             async let git: Void = detectGitChanges()
@@ -55,6 +71,9 @@ class RemoteDocumentState {
     }
 
     deinit {
+        if let observer = reconnectObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
         let provider = fileProvider
         let fToken = fileWatchToken
         let gToken = gitWatchToken
@@ -81,49 +100,49 @@ class RemoteDocumentState {
         let oldState = connectionState
         connectionState = newState
 
-        print("[RemoteDocumentState] Connection state: \(oldState) -> \(newState)")
+        refreshLog.info(
+            "connectionState: \(String(describing: oldState), privacy: .public) -> \(String(describing: newState), privacy: .public)"
+        )
 
-        // Handle reconnection
-        if oldState == .reconnecting && newState == .connected {
+        // Handle reconnection — fire when arriving at .connected from any non-connected state
+        if oldState != .connected && newState == .connected {
             handleReconnection()
         }
     }
 
     private func handleReconnection() {
-        print("[RemoteDocumentState] Reconnected, checking for conflicts...")
+        refreshLog.info("handleReconnection() called")
+
+        // Clear the "Connecting" overlay immediately
+        connectionState = .connected
+        refreshToken += 1
 
         Task {
             do {
                 let serverContent = try await fileProvider.readFile(at: location.path)
 
                 await MainActor.run {
-                    // Check if server content changed while we were disconnected
                     let serverChanged = serverContent != lastKnownServerContent
 
                     if let pending = pendingToggle {
                         if serverChanged {
-                            // Conflict: server changed AND we have pending toggle
-                            print("[RemoteDocumentState] Conflict - server changed with pending toggle")
+                            refreshLog.info("Conflict — server changed with pending toggle")
                             showConflictDialog = true
                         } else {
-                            // No conflict: apply pending toggle
-                            print("[RemoteDocumentState] No conflict, applying pending toggle")
+                            refreshLog.info("No conflict, applying pending toggle")
                             applyPendingToggle(pending)
                         }
+                    } else if serverChanged {
+                        refreshLog.info("Server content changed, updating")
+                        content = serverContent
+                        lastKnownServerContent = serverContent
+                        Task { await detectGitChanges() }
                     } else {
-                        // No pending toggle, just update content if changed
-                        if serverChanged {
-                            print("[RemoteDocumentState] Server content changed, updating")
-                            content = serverContent
-                            lastKnownServerContent = serverContent
-                            Task {
-                                await detectGitChanges()
-                            }
-                        }
+                        refreshLog.info("Content unchanged after reconnect")
                     }
                 }
             } catch {
-                print("[RemoteDocumentState] Failed to read file on reconnect: \(error)")
+                refreshLog.error("Failed to read file on reconnect: \(error)")
             }
         }
     }
@@ -253,6 +272,7 @@ class RemoteDocumentState {
     func refresh() {
         isRefreshing = true
         refreshToken += 1
+        refreshLog.info("refresh() starting for \(self.location.path)")
         Task {
             var succeeded = false
             do {
@@ -262,49 +282,58 @@ class RemoteDocumentState {
                     lastKnownServerContent = newContent
                 }
                 succeeded = true
+                refreshLog.info("refresh() read succeeded")
             } catch {
-                print("[RemoteDocumentState] refresh() failed: \(error), waiting for reconnect...")
-            }
-
-            // First attempt failed (stale connection) — wait for reconnect and retry
-            if !succeeded {
+                refreshLog.error("refresh() read failed: \(error), forcing reconnect")
+                // Actively kick the connection — don't just wait passively
+                await fileProvider.forceReconnect()
                 succeeded = await waitForReconnectAndRetryRead()
             }
 
             if succeeded {
+                // Sync connectionState from the actual connection — the AsyncStream
+                // observer can lag behind, leaving the "Connecting" overlay stuck.
+                let actualState = await fileProvider.getConnectionState()
+                if connectionState != actualState {
+                    refreshLog.info(
+                        "refresh() fixing stale connectionState: \(String(describing: self.connectionState), privacy: .public) -> \(String(describing: actualState), privacy: .public)"
+                    )
+                    connectionState = actualState
+                }
                 await detectGitChanges()
             }
 
             try? await Task.sleep(nanoseconds: 300_000_000)
+            refreshLog.info("refresh() done, clearing spinner (succeeded=\(succeeded))")
             await MainActor.run {
                 self.isRefreshing = false
             }
         }
     }
 
-    /// Waits up to 15s for the connection to come back, then retries the read once.
+    /// Waits up to 20s for the connection to come back, then retries the read once.
     private func waitForReconnectAndRetryRead() async -> Bool {
-        // Poll connection state with a 15s deadline
-        let deadline = Date().addingTimeInterval(15)
+        refreshLog.info("waitForReconnect: waiting for connection...")
+        let deadline = Date().addingTimeInterval(20)
         while Date() < deadline {
-            let state = await fileProvider.getConnectionState()
-            if state == .connected {
+            let connState = await fileProvider.getConnectionState()
+            if connState == .connected {
+                refreshLog.info("waitForReconnect: connected, retrying read")
                 break
             }
-            try? await Task.sleep(nanoseconds: 250_000_000) // 250ms
+            try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
         }
 
-        // Retry the read
         do {
             let newContent = try await fileProvider.readFile(at: location.path)
             await MainActor.run {
                 content = newContent
                 lastKnownServerContent = newContent
             }
-            print("[RemoteDocumentState] refresh() succeeded after reconnect")
+            refreshLog.info("waitForReconnect: retry succeeded")
             return true
         } catch {
-            print("[RemoteDocumentState] refresh() retry after reconnect also failed: \(error)")
+            refreshLog.error("waitForReconnect: retry failed: \(error)")
             return false
         }
     }

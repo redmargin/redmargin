@@ -1,5 +1,9 @@
 import Foundation
 
+extension Notification.Name {
+    public static let sshConnectionReconnected = Notification.Name("RedMargin.sshConnectionReconnected")
+}
+
 /// Connection state for SSH sessions
 public enum SSHConnectionState: String, Sendable {
     case disconnected
