@@ -36,7 +36,9 @@ public actor SSHConnection {
     private var isIntentionallyDisconnected = false
     private var reconnectAttempts = 0
     private let maxReconnectDelay: TimeInterval = 30.0
+    private var lastResponseTime = Date()
     private var reconnectTask: Task<Void, Never>?
+    private var healthCheckTask: Task<Void, Never>?
     private var remoteBinaryPath: String?
 
     private let deployer = ServerDeployer()
@@ -69,6 +71,11 @@ public actor SSHConnection {
     /// Returns true if the connection state is connected AND the SSH process is still running
     public func isAlive() -> Bool {
         return state == .connected && process?.isRunning == true
+    }
+
+    /// Seconds since the last successful RPC response
+    public func idleTime() -> TimeInterval {
+        Date().timeIntervalSince(lastResponseTime)
     }
 
     /// Forces an immediate reconnection by killing the current SSH process.
@@ -148,6 +155,7 @@ public actor SSHConnection {
         do {
             try await establishConnection()
             state = .connected
+            startHealthCheck()
             print("[SSHConnection] Quick retry succeeded")
             return
         } catch {
@@ -174,6 +182,7 @@ public actor SSHConnection {
             onProgress?("Connecting to")
             try await establishConnection()
             state = .connected
+            startHealthCheck()
             reconnectAttempts = 0
             print("[SSHConnection] Connected to \(host)")
         } catch {
@@ -458,6 +467,7 @@ public actor SSHConnection {
         if pendingRequestIds.contains(id) {
             completedResponses[id] = data
             pendingRequestIds.remove(id)
+            lastResponseTime = Date()
         }
     }
 
@@ -508,6 +518,9 @@ public actor SSHConnection {
 
     private func handleDisconnect() {
         sshLog.info("handleDisconnect() state=\(String(describing: self.state), privacy: .public)")
+        healthCheckTask?.cancel()
+        healthCheckTask = nil
+
         // Clear file handle callbacks first to prevent race conditions
         stderrPipe?.fileHandleForReading.readabilityHandler = nil
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil
@@ -535,6 +548,23 @@ public actor SSHConnection {
         }
     }
 
+    /// Periodically checks if the SSH process is still alive.
+    /// Catches cases where SSH exited (e.g. ServerAliveInterval timeout killed it)
+    /// but the readabilityHandler EOF didn't fire.
+    private func startHealthCheck() {
+        healthCheckTask?.cancel()
+        healthCheckTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 15_000_000_000) // 15s
+                guard !Task.isCancelled, state == .connected else { continue }
+                if process?.isRunning != true {
+                    sshLog.error("Health check: SSH process is dead, triggering reconnect")
+                    handleDisconnect()
+                }
+            }
+        }
+    }
+
     private func scheduleReconnect() {
         reconnectTask = Task {
             let delay = min(pow(2.0, Double(reconnectAttempts)), maxReconnectDelay)
@@ -551,6 +581,7 @@ public actor SSHConnection {
             do {
                 try await establishConnection()
                 state = .connected
+                startHealthCheck()
                 reconnectAttempts = 0
                 sshLog.info("Reconnected successfully!")
                 NotificationCenter.default.post(
@@ -569,6 +600,8 @@ public actor SSHConnection {
     public func disconnect() {
         isIntentionallyDisconnected = true
 
+        healthCheckTask?.cancel()
+        healthCheckTask = nil
         reconnectTask?.cancel()
         reconnectTask = nil
 

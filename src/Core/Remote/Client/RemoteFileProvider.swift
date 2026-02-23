@@ -32,6 +32,29 @@ public actor RemoteFileProvider: FileProvider {
         await connection.getState()
     }
 
+    /// Returns true if the connection is connected and the SSH process is running
+    public func isConnectionAlive() async -> Bool {
+        await connection.isAlive()
+    }
+
+    /// Seconds since the last successful RPC response
+    public func connectionIdleTime() async -> TimeInterval {
+        await connection.idleTime()
+    }
+
+    /// Quick ping to check if the connection is responsive
+    public func ping(timeout: TimeInterval = 3) async -> Bool {
+        do {
+            let hello = HelloPayload(clientVersion: "1.0.0", protocolVersion: 1)
+            _ = try await connection.send(
+                type: RPCMessageType.hello.rawValue, payload: hello, timeout: timeout
+            )
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Force an immediate reconnection attempt
     public func forceReconnect() async {
         await connection.forceReconnect()
@@ -62,8 +85,12 @@ public actor RemoteFileProvider: FileProvider {
     }
 
     public func readFile(at path: String) async throws -> String {
+        try await readFile(at: path, timeout: 30)
+    }
+
+    public func readFile(at path: String, timeout: TimeInterval) async throws -> String {
         let payload = ReadFilePayload(path: path)
-        let data = try await connection.send(type: RPCMessageType.readFile.rawValue, payload: payload, timeout: 30)
+        let data = try await connection.send(type: RPCMessageType.readFile.rawValue, payload: payload, timeout: timeout)
         let response = try JSONDecoder().decode(RPCMessage<ReadFileResponsePayload>.self, from: data)
 
         if let error = response.payload.error {

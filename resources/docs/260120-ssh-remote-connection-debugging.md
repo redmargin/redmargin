@@ -213,6 +213,43 @@ print(syncMarker, terminator: "")        // NOW client can send
 
 **Key insight**: `connect()` succeeding means "kernel accepted the connection", not "server is ready to process".
 
+### 7. RPCStreamHandler Buffer Corruption on Reconnect
+
+**Problem**: Reconnection worked on some hosts but failed on others. On cognel-v2-dev, every reconnect attempt's Hello handshake timed out despite spawning a fresh SSH process. On spamnesia, reconnects worked instantly.
+
+**Root Cause**: `RPCStreamHandler` accumulates bytes in an internal `buffer` and extracts length-prefixed messages. This buffer was **never cleared on disconnect**. When a TCP connection dies mid-stream (e.g., stale connection after idle), partially-transmitted push events leave orphan bytes in the buffer. On reconnect, the new connection's fresh data gets appended to those stale bytes, permanently corrupting the length-prefix framing. The parser reads a garbage length, waits for an impossibly large message, and no responses are ever extracted.
+
+**Why it was host-dependent**: On spamnesia, we killed the server process cleanly (`pkill`), so SSH got EOF at a clean message boundary — buffer was empty. On cognel-v2-dev, the TCP connection died silently during idle. A server push event (file watcher notification) was likely mid-transmission, leaving partial bytes in the buffer.
+
+**Solution**: Reset the stream handler on disconnect:
+
+```swift
+// SSHConnection.swift - handleDisconnect()
+pendingRequestIds.removeAll()
+completedResponses.removeAll()
+streamHandler.reset()   // Clear stale partial data
+nextRequestId = 1       // Fresh IDs for new connection
+```
+
+```swift
+// RPCMessage.swift - RPCStreamHandler
+public func reset() {
+    buffer.removeAll()
+}
+```
+
+**Key insight**: Any shared state that accumulates data across the lifetime of a connection must be reset when the connection is torn down. The stream handler is a stateful parser — its buffer is connection-scoped, not application-scoped.
+
+### 8. Auto-Recovery on SSH Reconnect
+
+**Problem**: After fixing reconnection, users still had to press Cmd-R to refresh the document. The AsyncStream-based state observer was unreliable for delivering the `.connected` transition.
+
+**Solution**: Use `NotificationCenter` as a reliable signal:
+
+1. `SSHConnection.scheduleReconnect()` posts `.sshConnectionReconnected` after successful reconnect
+2. `RemoteDocumentState` observes it and calls `handleReconnection()` which clears the "Connecting" overlay and re-reads the file
+3. `refresh()` also explicitly syncs `connectionState` from the actual connection state after a successful read, as a fallback for the unreliable AsyncStream
+
 ## Version History
 
 | Version | Changes |
@@ -225,6 +262,7 @@ print(syncMarker, terminator: "")        // NOW client can send
 | 0.42.8  | Moved sync marker AFTER daemon connection |
 | 0.42.9  | Added RDY signal: proxy waits for daemon accept() before sync marker |
 | 0.42.10 | **THE FIX**: Replaced waitUntilExit() and Thread.sleep() with usleep() |
+| 1.2.0   | Reset RPCStreamHandler buffer on disconnect; auto-recovery via NotificationCenter |
 
 ### 6. process.waitUntilExit() Hangs with GCD (THE ACTUAL Root Cause)
 

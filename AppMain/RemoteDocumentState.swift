@@ -101,13 +101,11 @@ class RemoteDocumentState {
         connectionState = newState
 
         refreshLog.info(
-            "connectionState: \(String(describing: oldState), privacy: .public) -> \(String(describing: newState), privacy: .public)"
+            "connectionState: \(String(describing: oldState), privacy: .public) -> "
+            + "\(String(describing: newState), privacy: .public)"
         )
-
-        // Handle reconnection — fire when arriving at .connected from any non-connected state
-        if oldState != .connected && newState == .connected {
-            handleReconnection()
-        }
+        // Note: handleReconnection() is triggered by the NotificationCenter observer,
+        // not here. The AsyncStream is used only for UI state (overlay).
     }
 
     private func handleReconnection() {
@@ -271,23 +269,40 @@ class RemoteDocumentState {
 
     func refresh() {
         isRefreshing = true
-        refreshToken += 1
         refreshLog.info("refresh() starting for \(self.location.path)")
         Task {
             var succeeded = false
-            do {
-                let newContent = try await fileProvider.readFile(at: location.path)
-                await MainActor.run {
-                    content = newContent
-                    lastKnownServerContent = newContent
+
+            // If connection has been idle, verify it's still alive before
+            // triggering the full refresh (which also refreshes the sidebar).
+            // This avoids a 30s hang on stale connections.
+            let idle = await fileProvider.connectionIdleTime()
+            if idle > 30 {
+                refreshLog.info("refresh() idle \(idle)s, pinging first")
+                let alive = await pingConnection()
+                if !alive {
+                    refreshLog.info("refresh() ping failed, forcing reconnect")
+                    await fileProvider.forceReconnect()
+                    succeeded = await waitForReconnectAndRetryRead()
                 }
-                succeeded = true
-                refreshLog.info("refresh() read succeeded")
-            } catch {
-                refreshLog.error("refresh() read failed: \(error), forcing reconnect")
-                // Actively kick the connection — don't just wait passively
-                await fileProvider.forceReconnect()
-                succeeded = await waitForReconnectAndRetryRead()
+            }
+
+            // Normal read (skipped if we already reconnected above)
+            if !succeeded {
+                refreshToken += 1
+                do {
+                    let newContent = try await fileProvider.readFile(at: location.path)
+                    await MainActor.run {
+                        content = newContent
+                        lastKnownServerContent = newContent
+                    }
+                    succeeded = true
+                    refreshLog.info("refresh() read succeeded")
+                } catch {
+                    refreshLog.error("refresh() read failed: \(error), forcing reconnect")
+                    await fileProvider.forceReconnect()
+                    succeeded = await waitForReconnectAndRetryRead()
+                }
             }
 
             if succeeded {
@@ -296,7 +311,9 @@ class RemoteDocumentState {
                 let actualState = await fileProvider.getConnectionState()
                 if connectionState != actualState {
                     refreshLog.info(
-                        "refresh() fixing stale connectionState: \(String(describing: self.connectionState), privacy: .public) -> \(String(describing: actualState), privacy: .public)"
+                        "refresh() fixing stale connectionState: "
+                        + "\(String(describing: self.connectionState), privacy: .public) -> "
+                        + "\(String(describing: actualState), privacy: .public)"
                     )
                     connectionState = actualState
                 }
@@ -338,9 +355,28 @@ class RemoteDocumentState {
         }
     }
 
+    /// Quick ping to verify the connection is responsive (no side effects if it fails)
+    private func pingConnection() async -> Bool {
+        await fileProvider.ping(timeout: 3)
+    }
+
     /// Loads a different file in the same window
     func loadFile(at path: String) async throws {
-        // Read the new file content
+        // If connection has been idle, verify it's alive before reading
+        let idle = await fileProvider.connectionIdleTime()
+        if idle > 30 {
+            let alive = await pingConnection()
+            if !alive {
+                await fileProvider.forceReconnect()
+                let deadline = Date().addingTimeInterval(15)
+                while Date() < deadline {
+                    let state = await fileProvider.getConnectionState()
+                    if state == .connected { break }
+                    try await Task.sleep(nanoseconds: 500_000_000)
+                }
+            }
+        }
+
         let newContent = try await fileProvider.readFile(at: path)
 
         // Update location and content
