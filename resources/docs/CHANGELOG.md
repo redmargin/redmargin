@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.2.0 (2026-02-23)
 
 ### New Features
 - Open folders directly via File > Open, drag-and-drop, or `open -a Redmargin ~/path/to/folder`
@@ -8,6 +8,7 @@
 - Folder windows persist and restore on relaunch (including selected file, sidebar width, and sidebar visibility)
 - Sidebar file list now auto-updates when files are added, removed, or renamed (local and remote)
 - Cmd-R now refreshes both document content and sidebar file list when sidebar is visible
+- Checkboxes in markdown tables: `[ ]` and `[x]` in table cells render as interactive checkboxes
 
 ### Improvements
 - Migrated DocumentState and RemoteDocumentState from ObservableObject to @Observable for more precise SwiftUI view updates
@@ -20,6 +21,12 @@
 - Fixed remote documents not reconnecting after Mac wakes from sleep (forced SSH reconnection on wake)
 - Fixed remote refresh() silently swallowing errors (now logs failures explicitly)
 - Fixed flaky sidebar tests caused by race conditions with async file tree loading
+- Fixed search not working in folder windows
+- Fixed sidebar expansion state not persisting across relaunch
+- Fixed sidebar scroll position lost during file tree refresh
+- Fixed sidebar beachball caused by tree build on main thread
+- Fixed sidebar file selection showing wrong file content
+- Fixed file watcher dying permanently and folder selection freezing
 
 ---
 
