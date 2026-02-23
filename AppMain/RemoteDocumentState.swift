@@ -254,21 +254,58 @@ class RemoteDocumentState {
         isRefreshing = true
         refreshToken += 1
         Task {
+            var succeeded = false
             do {
                 let newContent = try await fileProvider.readFile(at: location.path)
                 await MainActor.run {
                     content = newContent
                     lastKnownServerContent = newContent
                 }
+                succeeded = true
             } catch {
-                print("[RemoteDocumentState] refresh() failed to read file: \(error)")
+                print("[RemoteDocumentState] refresh() failed: \(error), waiting for reconnect...")
             }
-            await detectGitChanges()
+
+            // First attempt failed (stale connection) — wait for reconnect and retry
+            if !succeeded {
+                succeeded = await waitForReconnectAndRetryRead()
+            }
+
+            if succeeded {
+                await detectGitChanges()
+            }
 
             try? await Task.sleep(nanoseconds: 300_000_000)
             await MainActor.run {
                 self.isRefreshing = false
             }
+        }
+    }
+
+    /// Waits up to 15s for the connection to come back, then retries the read once.
+    private func waitForReconnectAndRetryRead() async -> Bool {
+        // Poll connection state with a 15s deadline
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline {
+            let state = await fileProvider.getConnectionState()
+            if state == .connected {
+                break
+            }
+            try? await Task.sleep(nanoseconds: 250_000_000) // 250ms
+        }
+
+        // Retry the read
+        do {
+            let newContent = try await fileProvider.readFile(at: location.path)
+            await MainActor.run {
+                content = newContent
+                lastKnownServerContent = newContent
+            }
+            print("[RemoteDocumentState] refresh() succeeded after reconnect")
+            return true
+        } catch {
+            print("[RemoteDocumentState] refresh() retry after reconnect also failed: \(error)")
+            return false
         }
     }
 

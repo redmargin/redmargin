@@ -408,10 +408,11 @@ public actor SSHConnection {
             try await Task.sleep(nanoseconds: 50_000_000) // 50ms
         }
 
-        // Timeout - clean up and throw
-        print("[SSHConnection] Timeout waiting for response id=\(id)")
+        // Timeout - connection is stale; force reconnect so it recovers
+        print("[SSHConnection] Timeout waiting for response id=\(id) — forcing reconnect")
         pendingRequestIds.remove(id)
         completedResponses.removeValue(forKey: id)
+        handleDisconnect()
         throw SSHConnectionError.operationTimeout(operation: type)
     }
 
