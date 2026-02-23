@@ -139,6 +139,7 @@ struct RemoteDocumentWindowContent: View {
                 handleFileSelection(url)
             },
             onRefresh: {
+                state.refresh()
                 fileTreeProvider.refresh()
             }
         )

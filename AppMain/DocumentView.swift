@@ -142,6 +142,7 @@ struct DocumentWindowContent: View {
                         handleFileSelection(url)
                     },
                     onRefresh: {
+                        state.refresh()
                         fileTreeProvider.refresh()
                     }
                 )
