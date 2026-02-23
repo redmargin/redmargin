@@ -14,6 +14,8 @@ public class RemoteFileTreeProvider: ObservableObject {
     private var expandedFolders: Set<String> = []
     private var directoryWatchToken: WatchToken?
     private var stateObserverTask: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
+    private var refreshGeneration = 0
 
     /// Callback when expanded folders change (path of root, set of expanded folder paths)
     public var onExpandedFoldersChange: ((String, Set<String>) -> Void)?
@@ -91,13 +93,47 @@ public class RemoteFileTreeProvider: ObservableObject {
         rootNodes = buildTreeFromPaths(files, rootPath: root)
     }
 
-    /// Refreshes the file list
+    /// Refreshes the file list with cancellation support and overall timeout.
+    /// Uses a generation counter so a stale task cannot flip isLoading off while a newer refresh is running.
     public func refresh() {
-        Task {
+        refreshTask?.cancel()
+        refreshGeneration += 1
+        let myGeneration = refreshGeneration
+        isLoading = true
+
+        refreshTask = Task {
+            defer {
+                // Only this generation may clear the spinner
+                if myGeneration == refreshGeneration {
+                    isLoading = false
+                }
+            }
+
             guard let root = rootDirectory else { return }
-            isLoading = true
-            rootNodes = await buildTree(from: root)
-            isLoading = false
+            print("[RemoteFileTreeProvider] refresh() gen=\(myGeneration) starting for \(root)")
+
+            // Race buildTree against a 15s timeout — whichever finishes first wins
+            let nodes: [FileTreeNode] = await withTaskGroup(of: [FileTreeNode]?.self) { group in
+                group.addTask {
+                    await self.buildTree(from: root)
+                }
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    return nil // sentinel for timeout
+                }
+                // First result back: real nodes or nil (timeout)
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                if let nodes = first {
+                    return nodes
+                }
+                print("[RemoteFileTreeProvider] refresh() gen=\(myGeneration) timed out after 15s")
+                return []
+            }
+
+            guard !Task.isCancelled, myGeneration == refreshGeneration else { return }
+            rootNodes = nodes
+            print("[RemoteFileTreeProvider] refresh() gen=\(myGeneration) completed, \(nodes.count) root nodes")
         }
     }
 
@@ -123,6 +159,7 @@ public class RemoteFileTreeProvider: ObservableObject {
     }
 
     private func buildTreeRecursive(at directory: String, depth: Int) async -> [FileTreeNode] {
+        guard !Task.isCancelled else { return [] }
         var nodes: [FileTreeNode] = []
 
         let entries: [DirectoryEntry]
@@ -141,6 +178,7 @@ public class RemoteFileTreeProvider: ObservableObject {
         }
 
         for entry in sorted {
+            guard !Task.isCancelled else { return nodes }
             let fullPath = (directory as NSString).appendingPathComponent(entry.name)
             let url = URL(fileURLWithPath: fullPath)
 
