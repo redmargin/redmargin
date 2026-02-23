@@ -159,7 +159,7 @@ extension AppDelegate {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationIcon: NSApp.applicationIconImage as Any,
             .applicationName: "Redmargin",
-            .applicationVersion: "1.1.0",
+            .applicationVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
             .version: "",
             .credits: credits
         ])
