@@ -61,9 +61,18 @@ body {
 
 #content-container {
     flex: 1;
-    padding: 24px 32px 24px 20px;
-    max-width: 800px;
+    min-width: 0;
+    padding: 24px 40px 24px 20px;
     overflow-wrap: break-word;
+}
+
+/* Width constraints via CSS custom properties set by JS */
+p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, hr, .task-list-item {
+    max-width: var(--prose-max-width, none);
+}
+
+table, pre, img {
+    max-width: var(--content-max-width, none);
 }
 
 h1, h2, h3, h4, h5, h6 {

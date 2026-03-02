@@ -166,6 +166,8 @@ struct FolderWindowContent: View {
                     allowRemoteImages: prefs.allowRemoteImages,
                     showGutter: showGutter,
                     showGitIndicators: showGitIndicators,
+                    textWidth: prefs.textWidth.rawValue,
+                    contentWidth: prefs.contentWidth.rawValue,
                     cacheBust: state.refreshToken
                 )
 

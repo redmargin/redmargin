@@ -14,6 +14,19 @@ public enum InlineCodeColor: String, CaseIterable {
     case neutral
 }
 
+public enum TextWidth: String, CaseIterable {
+    case narrow
+    case medium
+    case wide
+    case unrestricted
+}
+
+public enum ContentWidth: String, CaseIterable {
+    case medium
+    case wide
+    case unrestricted
+}
+
 public class PreferencesManager: ObservableObject {
     public static let shared = PreferencesManager()
 
@@ -23,6 +36,8 @@ public class PreferencesManager: ObservableObject {
     private let showGitIndicatorsKey = "RedMargin.Preferences.ShowGitIndicators"
     private let allowRemoteImagesKey = "RedMargin.Preferences.AllowRemoteImages"
     private let inlineCodeColorKey = "RedMargin.Preferences.InlineCodeColor"
+    private let textWidthKey = "RedMargin.Preferences.TextWidth"
+    private let contentWidthKey = "RedMargin.Preferences.ContentWidth"
     private let printMarginKey = "RedMargin.Preferences.PrintMargin"
 
     @Published public var theme: Theme {
@@ -49,6 +64,14 @@ public class PreferencesManager: ObservableObject {
         didSet { UserDefaults.standard.set(inlineCodeColor.rawValue, forKey: inlineCodeColorKey) }
     }
 
+    @Published public var textWidth: TextWidth {
+        didSet { UserDefaults.standard.set(textWidth.rawValue, forKey: textWidthKey) }
+    }
+
+    @Published public var contentWidth: ContentWidth {
+        didSet { UserDefaults.standard.set(contentWidth.rawValue, forKey: contentWidthKey) }
+    }
+
     @Published public var printMargin: Double {
         didSet { UserDefaults.standard.set(printMargin, forKey: printMarginKey) }
     }
@@ -65,6 +88,13 @@ public class PreferencesManager: ObservableObject {
 
         let colorString = UserDefaults.standard.string(forKey: inlineCodeColorKey) ?? InlineCodeColor.warm.rawValue
         self.inlineCodeColor = InlineCodeColor(rawValue: colorString) ?? .warm
+
+        let textWidthString = UserDefaults.standard.string(forKey: textWidthKey) ?? TextWidth.medium.rawValue
+        self.textWidth = TextWidth(rawValue: textWidthString) ?? .medium
+
+        let contentWidthString = UserDefaults.standard.string(forKey: contentWidthKey)
+            ?? ContentWidth.unrestricted.rawValue
+        self.contentWidth = ContentWidth(rawValue: contentWidthString) ?? .unrestricted
 
         self.printMargin = UserDefaults.standard.object(forKey: printMarginKey) as? Double ?? 28
     }

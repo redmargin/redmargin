@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+
+- Configurable content width: separate Text Width (Narrow/Medium/Wide/Unrestricted) and Content Width (Medium/Wide/Unrestricted) preferences in General > Appearance
+- Tables and code blocks default to unrestricted width while prose stays readable at 680px
+
+### Improvements
+
+- Tables reflow when window is resized (no longer stuck at initial render width)
+- Table width calculation accounts for container padding, preventing overflow into right margin
+- Checkbox clicks only toggle on direct checkbox clicks, not when clicking surrounding text or selecting text nearby
+
+### Bug Fixes
+
+- Fixed scroll position not restoring after relaunch
+
 ## v1.2.0 (2026-02-23)
 
 ### New Features

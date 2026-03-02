@@ -175,6 +175,12 @@
         margin: 0;
     }
 
+    /* Remove all width constraints in print */
+    p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, hr, .task-list-item,
+    table, pre, img {
+        max-width: none !important;
+    }
+
     /* When gutter is hidden, let content use full width */
     .print-hide-gutter #content-container {
         margin-left: 0;

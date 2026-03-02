@@ -60,7 +60,10 @@
             var numCols = rows[0].cells.length;
             if (numCols <= 1) continue;
 
-            var availWidth = container.clientWidth;
+            var containerStyle = getComputedStyle(container);
+            var availWidth = container.clientWidth
+                - parseFloat(containerStyle.paddingLeft)
+                - parseFloat(containerStyle.paddingRight);
             if (availWidth <= 0) continue;
 
             var allCells = table.querySelectorAll('th, td');
@@ -188,13 +191,14 @@
 
     function render(payload) {
         const { markdown, options = {}, changes = null } = payload;
-        const { theme = 'light', basePath = '', inlineCodeColor = 'warm', showGutter = true, showGitIndicators = true, cacheBust = 0 } = options;
+        const { theme = 'light', basePath = '', inlineCodeColor = 'warm', showGutter = true, showGitIndicators = true, textWidth = 'medium', contentWidth = 'unrestricted', cacheBust = 0 } = options;
 
         currentBasePath = basePath;
         setTheme(theme);
         setInlineCodeColor(inlineCodeColor);
         setGutterVisible(showGutter);
         setGitIndicatorsVisible(showGitIndicators);
+        setContentWidths(textWidth, contentWidth);
 
         // Always store latest changes - RAF callback will use this instead of stale captured value
         latestChanges = changes;
@@ -223,6 +227,11 @@
             if (container) {
                 container.innerHTML = html;
                 optimizeTableWidths(container);
+                // Remove for attributes from task list labels so clicking text
+                // doesn't toggle the checkbox — only direct checkbox clicks should
+                container.querySelectorAll('.task-list-item-label[for]').forEach(function(label) {
+                    label.removeAttribute('for');
+                });
             }
 
             // Use requestAnimationFrame to ensure DOM is updated
@@ -237,8 +246,11 @@
                     window.Gutter.update(latestChanges);
                 }
 
-                // Restore scroll position
-                window.scrollTo(0, savedScrollY);
+                // Restore scroll position (skip if 0 — avoids overriding
+                // ScrollPosition.restore which runs on a 50ms timeout)
+                if (savedScrollY > 0) {
+                    window.scrollTo(0, savedScrollY);
+                }
             });
         } else {
             // Content unchanged - just update gutter markers
@@ -266,6 +278,26 @@
         document.documentElement.style.setProperty('--code-text', color);
     }
 
+    const textWidthValues = {
+        narrow: '580px',
+        medium: '680px',
+        wide: '800px',
+        unrestricted: 'none'
+    };
+
+    const contentWidthValues = {
+        medium: '800px',
+        wide: '1100px',
+        unrestricted: 'none'
+    };
+
+    function setContentWidths(textWidth, contentWidth) {
+        const proseVal = textWidthValues[textWidth] || 'none';
+        const wideVal = contentWidthValues[contentWidth] || 'none';
+        document.documentElement.style.setProperty('--prose-max-width', proseVal);
+        document.documentElement.style.setProperty('--content-max-width', wideVal);
+    }
+
     // Re-apply inline code color when theme changes
     const originalSetTheme = setTheme;
     setTheme = function(theme) {
@@ -277,6 +309,25 @@
             document.documentElement.style.setProperty('--code-text', color);
         }
     };
+
+    // Re-optimize table widths on window resize so tables reflow
+    var resizeTimer;
+    window.addEventListener('resize', function() {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function() {
+            var container = document.getElementById('content-container');
+            if (container) {
+                // Strip existing colgroups and inline styles before re-optimizing
+                container.querySelectorAll('table').forEach(function(table) {
+                    var cg = table.querySelector('colgroup');
+                    if (cg) cg.remove();
+                    table.style.tableLayout = '';
+                    table.style.width = '';
+                });
+                optimizeTableWidths(container);
+            }
+        }, 100);
+    });
 
     window.App = {
         render: render,

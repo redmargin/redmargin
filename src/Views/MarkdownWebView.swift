@@ -18,6 +18,8 @@ public struct MarkdownWebView: NSViewRepresentable {
     public var allowRemoteImages: Bool
     public var showGutter: Bool
     public var showGitIndicators: Bool
+    public var textWidth: String
+    public var contentWidth: String
     public var cacheBust: Int  // Token to bust image cache on refresh
     public var remoteBasePath: String?  // Remote path for custom scheme
     public var remoteAssetFetcher: ((String) async throws -> (Data, String)?)?
@@ -37,6 +39,8 @@ public struct MarkdownWebView: NSViewRepresentable {
         allowRemoteImages: Bool = false,
         showGutter: Bool = true,
         showGitIndicators: Bool = true,
+        textWidth: String = "medium",
+        contentWidth: String = "unrestricted",
         cacheBust: Int = 0,
         remoteBasePath: String? = nil,
         remoteAssetFetcher: ((String) async throws -> (Data, String)?)? = nil
@@ -55,6 +59,8 @@ public struct MarkdownWebView: NSViewRepresentable {
         self.allowRemoteImages = allowRemoteImages
         self.showGutter = showGutter
         self.showGitIndicators = showGitIndicators
+        self.textWidth = textWidth
+        self.contentWidth = contentWidth
         self.cacheBust = cacheBust
         self.remoteBasePath = remoteBasePath
         self.remoteAssetFetcher = remoteAssetFetcher
@@ -141,6 +147,8 @@ public struct MarkdownWebView: NSViewRepresentable {
             inlineCodeColor: inlineCodeColor,
             showGutter: showGutter,
             showGitIndicators: showGitIndicators,
+            textWidth: textWidth,
+            contentWidth: contentWidth,
             cacheBust: cacheBust
         )
 
@@ -201,6 +209,8 @@ public struct MarkdownWebView: NSViewRepresentable {
                 "inlineCodeColor": params.inlineCodeColor,
                 "showGutter": params.showGutter,
                 "showGitIndicators": params.showGitIndicators,
+                "textWidth": params.textWidth,
+                "contentWidth": params.contentWidth,
                 "cacheBust": params.cacheBust
             ]
         ]
@@ -284,6 +294,8 @@ public struct MarkdownWebView: NSViewRepresentable {
         var inlineCodeColor: String = "warm"
         var showGutter: Bool = true
         var showGitIndicators: Bool = true
+        var textWidth: String = "medium"
+        var contentWidth: String = "unrestricted"
         var cacheBust: Int = 0
     }
 }

@@ -137,6 +137,19 @@ private struct GeneralSettingsView: View {
                     Text("Purple").tag(InlineCodeColor.purple)
                     Text("Neutral").tag(InlineCodeColor.neutral)
                 }
+
+                Picker("Text Width", selection: $prefs.textWidth) {
+                    Text("Narrow").tag(TextWidth.narrow)
+                    Text("Medium").tag(TextWidth.medium)
+                    Text("Wide").tag(TextWidth.wide)
+                    Text("Unrestricted").tag(TextWidth.unrestricted)
+                }
+
+                Picker("Content Width", selection: $prefs.contentWidth) {
+                    Text("Medium").tag(ContentWidth.medium)
+                    Text("Wide").tag(ContentWidth.wide)
+                    Text("Unrestricted").tag(ContentWidth.unrestricted)
+                }
             } header: {
                 Text("Appearance")
             }
