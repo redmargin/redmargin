@@ -33,7 +33,7 @@
     }
 
     function restoreScrollPosition(scrollY) {
-        if (typeof scrollY === 'number' && scrollY > 0) {
+        if (typeof scrollY === 'number' && scrollY >= 0) {
             // Use setTimeout to ensure DOM is fully rendered
             setTimeout(function() {
                 window.scrollTo(0, scrollY);

@@ -125,6 +125,12 @@ public struct MarkdownWebView: NSViewRepresentable {
         context.coordinator.onScrollPositionChange = onScrollPositionChange
         context.coordinator.remoteAssetFetcher = remoteAssetFetcher
 
+        // Detect file change (e.g. switching files in folder window)
+        if context.coordinator.lastFileURL != fileURL {
+            context.coordinator.lastFileURL = fileURL
+            context.coordinator.hasRestoredInitialScroll = false
+        }
+
         // Update content rules if allowRemoteImages preference changed
         if context.coordinator.lastAllowRemoteImages != allowRemoteImages {
             context.coordinator.lastAllowRemoteImages = allowRemoteImages
@@ -242,7 +248,7 @@ public struct MarkdownWebView: NSViewRepresentable {
 
         // Only restore scroll on initial load, not on content updates
         // (JS handles scroll preservation on content changes)
-        if restoreScroll && params.scrollPosition > 0 {
+        if restoreScroll {
             let scrollScript = "window.ScrollPosition.restore(\(params.scrollPosition))"
             webView.evaluateJavaScript(scrollScript, completionHandler: nil)
         }
@@ -315,6 +321,7 @@ extension MarkdownWebView {
         var onScrollPositionChange: ((Double) -> Void)?
         var onFirstRenderComplete: (() -> Void)?
         var initialScrollPosition: Double = 0
+        var lastFileURL: URL?
         // Remote asset fetcher - can be updated after WKWebView is created
         var remoteAssetFetcher: ((String) async throws -> (Data, String)?)?
 

@@ -155,9 +155,11 @@ struct FolderWindowContent: View {
                     markdown: state.content,
                     fileURL: state.fileURL,
                     onCheckboxToggle: state.handleCheckboxToggle,
-                    onScrollPositionChange: { _ in },
+                    onScrollPositionChange: { position in
+                        DocumentSettingsStorage.shared.saveScrollPosition(position, for: state.fileURL)
+                    },
                     onFirstRenderComplete: { },
-                    initialScrollPosition: 0,
+                    initialScrollPosition: DocumentSettingsStorage.shared.loadScrollPosition(for: state.fileURL),
                     showLineNumbers: showLineNumbers,
                     gitChanges: state.gitChanges,
                     findController: findController,
