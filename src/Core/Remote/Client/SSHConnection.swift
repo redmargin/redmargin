@@ -3,17 +3,17 @@ import os.log
 
 // SSHConnectionState, SSHConnectionError, and StderrCollector are in SSHConnectionTypes.swift
 
-private let sshLog = Logger(subsystem: "com.redmargin", category: "SSHConnection")
+// sshLog is defined in SSHConnectionExtensions.swift
 
 public actor SSHConnection {
-    private let host: String
-    private var process: Process?
-    private var stdinPipe: Pipe?
-    private var stdoutPipe: Pipe?
-    private var stderrPipe: Pipe?
+    let host: String
+    var process: Process?
+    var stdinPipe: Pipe?
+    var stdoutPipe: Pipe?
+    var stderrPipe: Pipe?
 
-    private let streamHandler = RPCStreamHandler()
-    private var nextRequestId = 1
+    let streamHandler = RPCStreamHandler()
+    var nextRequestId = 1
 
     /// Serial queue for stdin writes. Actor reentrancy at await suspension
     /// points allows concurrent send() calls, which could interleave writes
@@ -31,19 +31,19 @@ public actor SSHConnection {
     private var stateContinuation: AsyncStream<SSHConnectionState>.Continuation?
     public nonisolated let stateChanges: AsyncStream<SSHConnectionState>
 
-    private var state: SSHConnectionState = .disconnected {
+    var state: SSHConnectionState = .disconnected {
         didSet {
             if state != oldValue {
                 stateContinuation?.yield(state)
             }
         }
     }
-    private var isIntentionallyDisconnected = false
-    private var reconnectAttempts = 0
-    private let maxReconnectDelay: TimeInterval = 30.0
+    var isIntentionallyDisconnected = false
+    var reconnectAttempts = 0
+    let maxReconnectDelay: TimeInterval = 30.0
     private var lastResponseTime = Date()
-    private var reconnectTask: Task<Void, Never>?
-    private var healthCheckTask: Task<Void, Never>?
+    var reconnectTask: Task<Void, Never>?
+    var healthCheckTask: Task<Void, Never>?
     private var remoteBinaryPath: String?
 
     private let deployer = ServerDeployer()
@@ -197,7 +197,7 @@ public actor SSHConnection {
         }
     }
 
-    private func establishConnection() async throws {
+    func establishConnection() async throws {
         print("[SSHConnection] establishConnection() starting")
         guard let remoteBinaryPath = remoteBinaryPath else {
             print("[SSHConnection] ERROR: No remote binary path")
@@ -456,8 +456,8 @@ public actor SSHConnection {
         throw SSHConnectionError.operationTimeout(operation: type)
     }
 
-    private var pendingRequestIds: Set<Int> = []
-    private var completedResponses: [Int: Data] = [:]
+    var pendingRequestIds: Set<Int> = []
+    var completedResponses: [Int: Data] = [:]
 
     private func registerPendingRequest(id: Int) {
         pendingRequestIds.insert(id)
@@ -516,157 +516,5 @@ public actor SSHConnection {
         }
     }
 
-    private func handleDisconnect() {
-        // Guard against cascade: if already reconnecting/disconnected, skip.
-        // Multiple concurrent send() failures can all call this in quick succession.
-        guard state == .connected || state == .connecting else {
-            sshLog.info(
-                "handleDisconnect() skipped (already \(String(describing: self.state), privacy: .public))"
-            )
-            return
-        }
-        sshLog.info("handleDisconnect() state=\(String(describing: self.state), privacy: .public)")
-        healthCheckTask?.cancel()
-        healthCheckTask = nil
-
-        // Clear file handle callbacks first to prevent race conditions
-        stderrPipe?.fileHandleForReading.readabilityHandler = nil
-        stdoutPipe?.fileHandleForReading.readabilityHandler = nil
-
-        // Clear pending requests and stale stream data so the next connection starts clean
-        pendingRequestIds.removeAll()
-        completedResponses.removeAll()
-        streamHandler.reset()
-        nextRequestId = 1
-
-        process?.terminate()
-        process = nil
-        stdinPipe = nil
-        stdoutPipe = nil
-        stderrPipe = nil
-
-        if !isIntentionallyDisconnected {
-            state = .reconnecting
-            reconnectTask?.cancel()
-            reconnectTask = nil
-            scheduleReconnect()
-        } else {
-            sshLog.info("handleDisconnect() intentional, not reconnecting")
-            state = .disconnected
-        }
-    }
-
-    /// Periodically checks if the SSH process is still alive.
-    /// Catches cases where SSH exited (e.g. ServerAliveInterval timeout killed it)
-    /// but the readabilityHandler EOF didn't fire.
-    private func startHealthCheck() {
-        healthCheckTask?.cancel()
-        healthCheckTask = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 15_000_000_000) // 15s
-                guard !Task.isCancelled, state == .connected else { continue }
-                if process?.isRunning != true {
-                    sshLog.error("Health check: SSH process is dead, triggering reconnect")
-                    handleDisconnect()
-                }
-            }
-        }
-    }
-
-    private func scheduleReconnect() {
-        reconnectTask = Task {
-            let delay = min(pow(2.0, Double(reconnectAttempts)), maxReconnectDelay)
-            sshLog.info("scheduleReconnect() attempt=\(self.reconnectAttempts) delay=\(delay)s")
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-
-            guard !Task.isCancelled, !isIntentionallyDisconnected else {
-                sshLog.info("scheduleReconnect() cancelled or intentionally disconnected")
-                return
-            }
-
-            reconnectAttempts += 1
-            state = .connecting
-            do {
-                try await establishConnection()
-                state = .connected
-                startHealthCheck()
-                reconnectAttempts = 0
-                sshLog.info("Reconnected successfully!")
-                NotificationCenter.default.post(
-                    name: .sshConnectionReconnected,
-                    object: self.host
-                )
-            } catch {
-                guard !Task.isCancelled else { return }
-                state = .reconnecting
-                sshLog.error("Reconnection failed: \(error.localizedDescription, privacy: .public)")
-                scheduleReconnect()
-            }
-        }
-    }
-
-    public func disconnect() {
-        isIntentionallyDisconnected = true
-
-        healthCheckTask?.cancel()
-        healthCheckTask = nil
-        reconnectTask?.cancel()
-        reconnectTask = nil
-
-        // Clear file handle callbacks first to prevent race conditions
-        stderrPipe?.fileHandleForReading.readabilityHandler = nil
-        stdoutPipe?.fileHandleForReading.readabilityHandler = nil
-
-        process?.terminate()
-        process = nil
-        stdinPipe = nil
-        stdoutPipe = nil
-        stderrPipe = nil
-        state = .disconnected
-
-        // Clear pending - polling loops will detect state change
-        pendingRequestIds.removeAll()
-        completedResponses.removeAll()
-    }
-
 }
-
-// MARK: - Convenience Methods
-
-extension SSHConnection {
-    public func listDirectory(path: String) async throws -> [DirectoryEntry] {
-        let responseData = try await send(
-            type: RPCMessageType.listDirectory.rawValue,
-            payload: ListDirectoryPayload(path: path)
-        )
-        let response = try JSONDecoder().decode(
-            RPCMessage<ListDirectoryResponsePayload>.self,
-            from: responseData
-        )
-        if let error = response.payload.error {
-            throw RPCError.serverError(error)
-        }
-        return response.payload.entries ?? []
-    }
-
-    public func readAsset(path: String) async throws -> (data: Data, mimeType: String) {
-        // Longer timeout for large files (images can be several MB)
-        let responseData = try await send(
-            type: RPCMessageType.readAsset.rawValue,
-            payload: ReadAssetPayload(path: path),
-            timeout: 60
-        )
-        let response = try JSONDecoder().decode(
-            RPCMessage<ReadAssetResponsePayload>.self,
-            from: responseData
-        )
-        if let error = response.payload.error {
-            throw RPCError.serverError(error)
-        }
-        guard let base64Data = response.payload.data,
-              let data = Data(base64Encoded: base64Data) else {
-            throw RPCError.serverError("Invalid asset data")
-        }
-        return (data, response.payload.mimeType ?? "application/octet-stream")
-    }
-}
+// Extensions are in SSHConnectionExtensions.swift
