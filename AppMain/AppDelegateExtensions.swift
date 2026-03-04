@@ -53,6 +53,9 @@ extension AppDelegate {
             onFileSelected: { [weak self] connection, path in
                 try await self?.openRemoteDocument(connection: connection, path: path)
             },
+            onFolderSelected: { [weak self] connection, path in
+                try await self?.openRemoteFolder(connection: connection, path: path)
+            },
             onDismiss: {
                 if let window = sheetWindow {
                     window.close()
@@ -119,6 +122,50 @@ extension AppDelegate {
             )
 
             let window = createRemoteWindow(for: location, rootView: documentView)
+            remoteDocumentWindows[location] = window
+            window.delegate = self
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    /// Opens a remote directory as a folder window with sidebar
+    func openRemoteFolder(connection: SSHConnection, path: String) async throws {
+        let host = await connection.getHost()
+        let location = RemoteLocation(host: host, path: path)
+
+        // Add to recent lists
+        await MainActor.run {
+            addToRecentRemoteServers(host)
+            addToRecentRemoteLocations(location)
+        }
+
+        // Check if already open
+        if let existingWindow = remoteDocumentWindows[location] {
+            await MainActor.run {
+                existingWindow.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            return
+        }
+
+        // Register connection with manager
+        await SSHConnectionManager.shared.registerConnection(connection, for: host)
+
+        // Create remote file provider
+        let fileProvider = RemoteFileProvider(connection: connection)
+
+        await MainActor.run {
+            let folderView = RemoteDocumentWindowContent(
+                folderPath: path,
+                host: host,
+                fileProvider: fileProvider,
+                showSidebar: true,
+                sidebarWidth: settings.loadSidebarWidth(for: location),
+                appDelegate: self
+            )
+
+            let window = createRemoteWindow(for: location, rootView: folderView)
             remoteDocumentWindows[location] = window
             window.delegate = self
             window.makeKeyAndOrderFront(nil)
@@ -230,12 +277,12 @@ extension AppDelegate {
     func openRecentRemoteLocation(_ location: RemoteLocation) {
         Task {
             do {
-                // Quick check if file exists before establishing full connection
+                // Quick check if file or directory exists before establishing full connection
                 let sshArgs = [
                     "-o", "BatchMode=yes",
                     "-o", "ConnectTimeout=5",
                     location.host,
-                    "test -f '\(location.path)'"
+                    "test -e '\(location.path)'"
                 ]
                 let checkResult = try await ProcessRunner.run(
                     executable: "/usr/bin/ssh",
@@ -247,7 +294,24 @@ extension AppDelegate {
                 }
 
                 let connection = try await SSHConnectionManager.shared.connection(for: location.host)
-                try await openRemoteDocument(connection: connection, path: location.path)
+
+                // Check if it's a directory
+                let isDirArgs = [
+                    "-o", "BatchMode=yes",
+                    "-o", "ConnectTimeout=5",
+                    location.host,
+                    "test -d '\(location.path)'"
+                ]
+                let isDirResult = try await ProcessRunner.run(
+                    executable: "/usr/bin/ssh",
+                    arguments: isDirArgs,
+                    timeout: 10
+                )
+                if isDirResult.exitCode == 0 {
+                    try await openRemoteFolder(connection: connection, path: location.path)
+                } else {
+                    try await openRemoteDocument(connection: connection, path: location.path)
+                }
             } catch {
                 await MainActor.run {
                     let isFileNotFound = (error as? RemoteFileError)?.isFileNotFound == true

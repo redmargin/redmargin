@@ -241,6 +241,21 @@ extension OpenRemoteSheet {
         }
     }
 
+    func openCurrentFolder() {
+        guard let conn = connection, let callback = onFolderSelected else { return }
+
+        Task {
+            do {
+                try await callback(conn, currentPath)
+                await MainActor.run { onDismiss() }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = "Failed to open folder: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     func openManualPath() {
         let path = manualPath.trimmingCharacters(in: .whitespaces)
         guard !path.isEmpty, let conn = connection else { return }

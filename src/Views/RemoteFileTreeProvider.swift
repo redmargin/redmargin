@@ -11,6 +11,7 @@ public class RemoteFileTreeProvider: ObservableObject {
 
     private let currentFilePath: String
     private let fileProvider: RemoteFileProvider
+    private let pathIsDirectory: Bool
     private var expandedFolders: Set<String> = []
     private var directoryWatchToken: WatchToken?
     private var stateObserverTask: Task<Void, Never>?
@@ -24,10 +25,12 @@ public class RemoteFileTreeProvider: ObservableObject {
         currentFilePath: String,
         fileProvider: RemoteFileProvider,
         stateChanges: AsyncStream<SSHConnectionState>? = nil,
-        expandedFolders: Set<String> = []
+        expandedFolders: Set<String> = [],
+        isDirectory: Bool = false
     ) {
         self.currentFilePath = currentFilePath
         self.fileProvider = fileProvider
+        self.pathIsDirectory = isDirectory
         self.expandedFolders = expandedFolders
         Task {
             await loadFiles()
@@ -67,11 +70,13 @@ public class RemoteFileTreeProvider: ObservableObject {
             print("[RemoteFileTreeProvider] Git detection failed: \(error)")
         }
 
-        // Fall back to file's parent directory
-        let parentDir = (currentFilePath as NSString).deletingLastPathComponent
-        rootDirectory = parentDir
-        rootNodes = await buildTree(from: parentDir)
-        await setupDirectoryWatching(for: parentDir)
+        // Fall back to the directory itself (if opened as folder) or file's parent
+        let fallbackDir = pathIsDirectory
+            ? currentFilePath
+            : (currentFilePath as NSString).deletingLastPathComponent
+        rootDirectory = fallbackDir
+        rootNodes = await buildTree(from: fallbackDir)
+        await setupDirectoryWatching(for: fallbackDir)
     }
 
     private func setupDirectoryWatching(for path: String) async {

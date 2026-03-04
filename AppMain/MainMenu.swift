@@ -282,25 +282,39 @@ final class RecentDocumentsMenuDelegate: NSObject, NSMenuDelegate {
 
         guard let appDelegate = appDelegate else { return }
 
+        // Partition local recents into files and folders
+        var recentFiles: [URL] = []
+        var recentFolders: [URL] = []
         for url in appDelegate.recentDocuments {
-            let item = NSMenuItem(
-                title: url.displayPath, action: #selector(openRecentDocument(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = url
-            // Show folder icon for directory entries
             var isDir: ObjCBool = false
             if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-                item.image = NSImage(systemSymbolName: "folder.fill", accessibilityDescription: "Folder")
-                item.image?.size = NSSize(width: 16, height: 16)
+                recentFolders.append(url)
+            } else {
+                recentFiles.append(url)
             }
-            menu.addItem(item)
         }
 
-        if !appDelegate.recentRemoteLocations.isEmpty {
-            if !appDelegate.recentDocuments.isEmpty {
-                menu.addItem(NSMenuItem.separator())
-            }
+        let hasFiles = !recentFiles.isEmpty
+        let hasRemote = !appDelegate.recentRemoteLocations.isEmpty
+        let hasFolders = !recentFolders.isEmpty
 
+        // Documents section
+        if hasFiles {
+            menu.addItem(sectionHeader("Documents"))
+            for url in recentFiles {
+                let item = NSMenuItem(
+                    title: url.displayPath, action: #selector(openRecentDocument(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = url
+                item.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "Document")
+                item.image?.size = NSSize(width: 16, height: 16)
+                menu.addItem(item)
+            }
+        }
+
+        // Remote Documents section
+        if hasRemote {
+            menu.addItem(sectionHeader("Remote Documents"))
             for location in appDelegate.recentRemoteLocations {
                 let item = NSMenuItem(
                     title: location.displayString,
@@ -308,18 +322,38 @@ final class RecentDocumentsMenuDelegate: NSObject, NSMenuDelegate {
                     keyEquivalent: "")
                 item.target = self
                 item.representedObject = location
+                item.image = NSImage(systemSymbolName: "network", accessibilityDescription: "Remote")
+                item.image?.size = NSSize(width: 14, height: 14)
                 menu.addItem(item)
             }
         }
 
-        let hasItems = !appDelegate.recentDocuments.isEmpty || !appDelegate.recentRemoteLocations.isEmpty
-        if hasItems {
+        // Folders section
+        if hasFolders {
+            menu.addItem(sectionHeader("Folders"))
+            for url in recentFolders {
+                let item = NSMenuItem(
+                    title: url.displayPath, action: #selector(openRecentDocument(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = url
+                item.image = NSImage(systemSymbolName: "folder.fill", accessibilityDescription: "Folder")
+                item.image?.size = NSSize(width: 16, height: 16)
+                menu.addItem(item)
+            }
+        }
+
+        if hasFiles || hasRemote || hasFolders {
             menu.addItem(NSMenuItem.separator())
             let clearItem = NSMenuItem(
                 title: "Clear Menu", action: #selector(clearRecentDocuments(_:)), keyEquivalent: "")
             clearItem.target = self
             menu.addItem(clearItem)
         }
+    }
+
+    private func sectionHeader(_ title: String) -> NSMenuItem {
+        let item = NSMenuItem.sectionHeader(title: title)
+        return item
     }
 
     @objc private func openRecentDocument(_ sender: NSMenuItem) {

@@ -40,6 +40,7 @@ struct OpenRemoteSheet: View {
     @Binding var recentServers: [String]
     let onServerConnected: (String) -> Void
     let onFileSelected: (SSHConnection, String) async throws -> Void
+    let onFolderSelected: ((SSHConnection, String) async throws -> Void)?
     let onDismiss: () -> Void
 
     enum NavDirection { case upward, downward }
@@ -48,11 +49,13 @@ struct OpenRemoteSheet: View {
         recentServers: Binding<[String]>,
         onServerConnected: @escaping (String) -> Void,
         onFileSelected: @escaping (SSHConnection, String) async throws -> Void,
+        onFolderSelected: ((SSHConnection, String) async throws -> Void)? = nil,
         onDismiss: @escaping () -> Void
     ) {
         self._recentServers = recentServers
         self.onServerConnected = onServerConnected
         self.onFileSelected = onFileSelected
+        self.onFolderSelected = onFolderSelected
         self.onDismiss = onDismiss
     }
 

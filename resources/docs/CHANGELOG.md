@@ -6,12 +6,17 @@
 
 - Configurable content width: separate Text Width (Narrow/Medium/Wide/Unrestricted) and Content Width (Medium/Wide/Unrestricted) preferences in General > Appearance
 - Tables and code blocks default to unrestricted width while prose stays readable at 680px
+- YAML front matter renders as a styled metadata card above the document instead of raw text
+- Open remote folders as workspaces via the "Open Folder" button in the Open Remote sheet
+- Recent files menu now organized into labeled sections: Documents, Remote Documents, and Folders
 
 ### Improvements
 
 - Tables reflow when window is resized (no longer stuck at initial render width)
 - Table width calculation accounts for container padding, preventing overflow into right margin
 - Checkbox clicks only toggle on direct checkbox clicks, not when clicking surrounding text or selecting text nearby
+- Front matter tags/categories render as pill chips, dates are locale-formatted, draft status shows a badge
+- Git gutter and line numbers stay aligned when front matter is present (sourcepos offset applied)
 
 ### Bug Fixes
 

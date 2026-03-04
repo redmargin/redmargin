@@ -27,6 +27,184 @@
     let currentBasePath = '';
     let lastRenderedMarkdown = null;
     let latestChanges = null;  // Always use latest changes for gutter
+    let lastFrontMatterOffset = 0;  // Line offset from stripped front matter
+
+    // --- Front Matter ---
+
+    /**
+     * Extracts YAML front matter from markdown string.
+     * Returns { body, fields, lineCount } where lineCount includes both --- delimiters.
+     */
+    function extractFrontMatter(markdown) {
+        if (!markdown || !markdown.startsWith('---')) {
+            return { body: markdown, fields: null, lineCount: 0 };
+        }
+
+        // Match opening --- followed by content, then closing ---
+        var match = markdown.match(/^---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/);
+        if (!match) {
+            return { body: markdown, fields: null, lineCount: 0 };
+        }
+
+        var yamlBlock = match[1];
+        var fullMatch = match[0];
+        var body = markdown.slice(fullMatch.length);
+        var lineCount = fullMatch.split('\n').length - (fullMatch.endsWith('\n') ? 1 : 0);
+
+        var fields = parseYamlSubset(yamlBlock);
+        if (!fields || fields.length === 0) {
+            return { body: markdown, fields: null, lineCount: 0 };
+        }
+
+        return { body: body, fields: fields, lineCount: lineCount };
+    }
+
+    /**
+     * Micro YAML parser for front matter subset:
+     * scalar values, simple arrays (both flow [a, b] and block - item).
+     */
+    function parseYamlSubset(yaml) {
+        var lines = yaml.split('\n');
+        var fields = [];
+        var currentKey = null;
+        var currentArrayItems = null;
+
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+
+            // Skip empty lines and comments
+            if (/^\s*$/.test(line) || /^\s*#/.test(line)) continue;
+
+            // Check for block array item (continuation of previous key)
+            var arrayItemMatch = line.match(/^\s+-\s+(.*)/);
+            if (arrayItemMatch && currentKey) {
+                if (!currentArrayItems) currentArrayItems = [];
+                currentArrayItems.push(arrayItemMatch[1].trim());
+                continue;
+            }
+
+            // Flush previous key if it had array items
+            if (currentKey && currentArrayItems) {
+                fields.push({ key: currentKey, value: currentArrayItems });
+                currentKey = null;
+                currentArrayItems = null;
+            }
+
+            // Key: value pair
+            var kvMatch = line.match(/^([A-Za-z_][\w.-]*)\s*:\s*(.*)/);
+            if (!kvMatch) continue;
+
+            currentKey = kvMatch[1];
+            var rawValue = kvMatch[2].trim();
+
+            // Empty value — might have block array items following
+            if (!rawValue) continue;
+
+            // Flow array: [item1, item2]
+            var flowMatch = rawValue.match(/^\[(.*)\]$/);
+            if (flowMatch) {
+                var items = flowMatch[1].split(',').map(function(s) {
+                    return s.trim().replace(/^["']|["']$/g, '');
+                }).filter(Boolean);
+                fields.push({ key: currentKey, value: items });
+                currentKey = null;
+                continue;
+            }
+
+            // Strip quotes from scalar
+            var scalar = rawValue.replace(/^["']|["']$/g, '');
+            fields.push({ key: currentKey, value: scalar });
+            currentKey = null;
+        }
+
+        // Flush last key
+        if (currentKey && currentArrayItems) {
+            fields.push({ key: currentKey, value: currentArrayItems });
+        } else if (currentKey) {
+            // Key with empty value
+            fields.push({ key: currentKey, value: '' });
+        }
+
+        return fields;
+    }
+
+    var tagFields = ['tags', 'categories', 'keywords', 'labels'];
+    var dateFields = ['date', 'updated', 'published', 'created', 'modified'];
+
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function formatDate(str) {
+        // Try to parse as date
+        var d = new Date(str);
+        if (isNaN(d.getTime())) return escapeHtml(str);
+        try {
+            return new Intl.DateTimeFormat(undefined, {
+                year: 'numeric', month: 'long', day: 'numeric'
+            }).format(d);
+        } catch (e) {
+            return escapeHtml(str);
+        }
+    }
+
+    function renderFrontMatterCard(fields) {
+        var rows = '';
+        for (var i = 0; i < fields.length; i++) {
+            var field = fields[i];
+            var key = field.key;
+            var value = field.value;
+            var valueHtml;
+
+            if (Array.isArray(value) && tagFields.indexOf(key.toLowerCase()) !== -1) {
+                // Render as pill list
+                var pills = value.map(function(t) {
+                    return '<li class="fm-tag">' + escapeHtml(t) + '</li>';
+                }).join('');
+                valueHtml = '<ul class="fm-tag-list">' + pills + '</ul>';
+            } else if (Array.isArray(value)) {
+                valueHtml = escapeHtml(value.join(', '));
+            } else if (key.toLowerCase() === 'draft' && (value === 'true' || value === true)) {
+                valueHtml = '<span class="fm-badge-draft">Draft</span>';
+            } else if (dateFields.indexOf(key.toLowerCase()) !== -1) {
+                valueHtml = formatDate(value);
+            } else {
+                valueHtml = escapeHtml(value);
+            }
+
+            rows += '<div class="fm-row"><dt class="fm-label">' +
+                escapeHtml(key) + '</dt><dd class="fm-value">' +
+                valueHtml + '</dd></div>';
+        }
+
+        return '<section id="front-matter" role="region" aria-label="Document metadata">' +
+            '<dl class="fm-fields">' + rows + '</dl></section>';
+    }
+
+    /**
+     * Adjusts data-sourcepos attributes by adding an offset.
+     * This compensates for stripped front matter lines so gutter/line numbers
+     * reference the original file line numbers.
+     */
+    function offsetSourcepos(container, offset) {
+        if (!offset || !container) return;
+
+        var elements = container.querySelectorAll('[data-sourcepos]');
+        for (var i = 0; i < elements.length; i++) {
+            var sp = elements[i].getAttribute('data-sourcepos');
+            var match = sp.match(/^(\d+):(\d+)-(\d+):(\d+)$/);
+            if (match) {
+                var newStart = parseInt(match[1], 10) + offset;
+                var newEnd = parseInt(match[3], 10) + offset;
+                elements[i].setAttribute('data-sourcepos',
+                    newStart + ':' + match[2] + '-' + newEnd + ':' + match[4]);
+            }
+        }
+    }
 
     function setTheme(theme) {
         if (theme === currentTheme) return;
@@ -216,16 +394,27 @@
         if (contentChanged) {
             lastRenderedMarkdown = markdown;
 
-            let html = md.render(markdown || '');
+            // Extract and strip front matter before rendering
+            var fm = extractFrontMatter(markdown || '');
+            lastFrontMatterOffset = fm.lineCount;
+
+            let html = md.render(fm.body || '');
             // Sanitize HTML to prevent XSS from inline HTML in Markdown
             if (window.Sanitizer && window.Sanitizer.sanitize) {
                 html = window.Sanitizer.sanitize(html);
             }
             html = resolveImagePaths(html, basePath, cacheBust);
 
+            // Prepend front matter card if present
+            if (fm.fields) {
+                html = renderFrontMatterCard(fm.fields) + html;
+            }
+
             const container = document.getElementById('content-container');
             if (container) {
                 container.innerHTML = html;
+                // Offset sourcepos attributes to match original file lines
+                offsetSourcepos(container, lastFrontMatterOffset);
                 optimizeTableWidths(container);
                 // Remove for attributes from task list labels so clicking text
                 // doesn't toggle the checkbox — only direct checkbox clicks should

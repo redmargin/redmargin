@@ -13,7 +13,7 @@ extension OpenRemoteSheet {
                 .buttonStyle(.plain)
             }
 
-            Text(connection == nil ? "Connect to Server" : "Select File")
+            Text(connection == nil ? "Connect to Server" : "Browse Remote")
                 .font(.headline)
 
             Spacer()
@@ -45,6 +45,12 @@ extension OpenRemoteSheet {
                 dismissSheet()
             }
             .keyboardShortcut(.cancelAction)
+
+            if connection != nil && !isLoadingDirectory && onFolderSelected != nil {
+                Button("Open Folder") {
+                    openCurrentFolder()
+                }
+            }
 
             if connection == nil && !isConnecting {
                 Button("Connect", action: connectToServer)

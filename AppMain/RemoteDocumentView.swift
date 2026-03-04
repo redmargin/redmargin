@@ -33,6 +33,9 @@ struct RemoteDocumentWindowContent: View {
         }
     }
 
+    /// Whether this window was opened as a folder (no initial file)
+    @State private var isFolderMode: Bool
+
     init(
         content: String,
         location: RemoteLocation,
@@ -44,6 +47,7 @@ struct RemoteDocumentWindowContent: View {
         let prefs = PreferencesManager.shared
         self.location = location
         self.appDelegate = appDelegate
+        _isFolderMode = State(initialValue: false)
         _showSidebar = State(initialValue: showSidebar ?? false)
         _sidebarWidth = State(initialValue: sidebarWidth ?? 200)
         _showGutter = State(initialValue: prefs.showGutter)
@@ -57,6 +61,37 @@ struct RemoteDocumentWindowContent: View {
             currentFilePath: location.path,
             fileProvider: fileProvider,
             stateChanges: fileProvider.stateChanges
+        ))
+    }
+
+    /// Folder-mode init: opens a remote directory with sidebar, no file loaded initially.
+    init(
+        folderPath: String,
+        host: String,
+        fileProvider: RemoteFileProvider,
+        showSidebar: Bool? = nil,
+        sidebarWidth: CGFloat? = nil,
+        appDelegate: AppDelegate? = nil
+    ) {
+        let prefs = PreferencesManager.shared
+        let location = RemoteLocation(host: host, path: folderPath)
+        self.location = location
+        self.appDelegate = appDelegate
+        _isFolderMode = State(initialValue: true)
+        _showSidebar = State(initialValue: showSidebar ?? true)
+        _sidebarWidth = State(initialValue: sidebarWidth ?? 200)
+        _showGutter = State(initialValue: prefs.showGutter)
+        _showGitIndicators = State(initialValue: prefs.showGitIndicators)
+        _state = State(initialValue: RemoteDocumentState(
+            content: "",
+            location: location,
+            fileProvider: fileProvider
+        ))
+        _fileTreeProvider = StateObject(wrappedValue: RemoteFileTreeProvider(
+            currentFilePath: folderPath,
+            fileProvider: fileProvider,
+            stateChanges: fileProvider.stateChanges,
+            isDirectory: true
         ))
     }
 
@@ -193,6 +228,24 @@ struct RemoteDocumentWindowContent: View {
 
     @ViewBuilder
     private var mainContent: some View {
+        if isFolderMode && state.content.isEmpty {
+            remoteFolderWelcomeView
+        } else {
+            documentContent
+        }
+    }
+
+    private var remoteFolderWelcomeView: some View {
+        ContentUnavailableView(
+            "No Selection",
+            systemImage: "doc.text",
+            description: Text("Select a file from the sidebar")
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var documentContent: some View {
         ZStack(alignment: .top) {
             MarkdownWebView(
                 markdown: state.content,
@@ -321,6 +374,7 @@ struct RemoteDocumentWindowContent: View {
         Task {
             do {
                 try await state.loadFile(at: selectedPath)
+                isFolderMode = false  // Exit welcome view once a file is loaded
                 let newLocation = RemoteLocation(host: oldLocation.host, path: selectedPath)
                 appDelegate?.updateRemoteWindowTracking(from: oldLocation, to: newLocation)
 
