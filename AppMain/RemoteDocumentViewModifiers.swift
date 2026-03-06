@@ -34,6 +34,8 @@ struct RemoteNotificationModifiers: ViewModifier {
     @Binding var showGutter: Bool
     @Binding var showLineNumbers: Bool
     @Binding var showGitIndicators: Bool
+    @Binding var textWidth: String
+    @Binding var contentWidth: String
     @Binding var showFindBar: Bool
     @Binding var findBarFocusTrigger: UUID
     let sidebarWidth: CGFloat
@@ -79,6 +81,16 @@ struct RemoteNotificationModifiers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .exportToPDF)) { _ in
                 if checkIsKeyWindow() { onExport() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .setTextWidth)) { notification in
+                if checkIsKeyWindow(), let value = notification.userInfo?["value"] as? String {
+                    textWidth = value
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .setContentWidth)) { notification in
+                if checkIsKeyWindow(), let value = notification.userInfo?["value"] as? String {
+                    contentWidth = value
+                }
             }
     }
 
@@ -126,6 +138,8 @@ struct RemotePersistenceModifiers: ViewModifier {
     let showGutter: Bool
     let showLineNumbers: Bool
     let showGitIndicators: Bool
+    let textWidth: String
+    let contentWidth: String
     let showSidebar: Bool
     let sidebarWidth: CGFloat
     let findSearchText: String
@@ -143,6 +157,12 @@ struct RemotePersistenceModifiers: ViewModifier {
             }
             .onChange(of: showGitIndicators) { _, newValue in
                 settings.saveGitIndicatorsVisible(newValue, for: location)
+            }
+            .onChange(of: textWidth) { _, newValue in
+                settings.saveTextWidth(newValue, for: location)
+            }
+            .onChange(of: contentWidth) { _, newValue in
+                settings.saveContentWidth(newValue, for: location)
             }
             .onChange(of: showSidebar) { _, newValue in
                 settings.saveSidebarVisible(newValue, for: location)

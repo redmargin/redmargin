@@ -15,6 +15,8 @@ struct DocumentWindowContent: View {
     @State private var showGutter: Bool
     @State private var showLineNumbers: Bool
     @State private var showGitIndicators: Bool
+    @State private var textWidth: String
+    @State private var contentWidth: String
     @State private var showFindBar: Bool = false
     @State private var findBarFocusTrigger: UUID = UUID()
     @State private var isExporting: Bool = false
@@ -47,6 +49,8 @@ struct DocumentWindowContent: View {
         showGutter: Bool? = nil,
         showLineNumbers: Bool? = nil,
         showGitIndicators: Bool? = nil,
+        textWidth: String? = nil,
+        contentWidth: String? = nil,
         appDelegate: AppDelegate? = nil,
         onScrollPositionChange: @escaping (Double) -> Void = { _ in }
     ) {
@@ -59,6 +63,8 @@ struct DocumentWindowContent: View {
         _showGutter = State(initialValue: showGutter ?? prefs.showGutter)
         _showLineNumbers = State(initialValue: showLineNumbers ?? prefs.showLineNumbers)
         _showGitIndicators = State(initialValue: showGitIndicators ?? prefs.showGitIndicators)
+        _textWidth = State(initialValue: textWidth ?? prefs.textWidth.rawValue)
+        _contentWidth = State(initialValue: contentWidth ?? prefs.contentWidth.rawValue)
         self.initialScrollPosition = initialScrollPosition
         self.appDelegate = appDelegate
         self.onScrollPositionChange = onScrollPositionChange
@@ -73,6 +79,8 @@ struct DocumentWindowContent: View {
                 showGutter: $showGutter,
                 showLineNumbers: $showLineNumbers,
                 showGitIndicators: $showGitIndicators,
+                textWidth: $textWidth,
+                contentWidth: $contentWidth,
                 showFindBar: $showFindBar,
                 findBarFocusTrigger: $findBarFocusTrigger,
                 sidebarWidth: sidebarWidth,
@@ -90,6 +98,8 @@ struct DocumentWindowContent: View {
                 showGutter: showGutter,
                 showLineNumbers: showLineNumbers,
                 showGitIndicators: showGitIndicators,
+                textWidth: textWidth,
+                contentWidth: contentWidth,
                 showSidebar: showSidebar,
                 sidebarWidth: sidebarWidth,
                 findSearchText: findController.searchText,
@@ -192,8 +202,8 @@ struct DocumentWindowContent: View {
             allowRemoteImages: prefs.allowRemoteImages,
             showGutter: showGutter,
             showGitIndicators: showGitIndicators,
-            textWidth: prefs.textWidth.rawValue,
-            contentWidth: prefs.contentWidth.rawValue,
+            textWidth: textWidth,
+            contentWidth: contentWidth,
             cacheBust: state.refreshToken
         )
     }
@@ -395,6 +405,8 @@ private struct NotificationModifiers: ViewModifier {
     @Binding var showGutter: Bool
     @Binding var showLineNumbers: Bool
     @Binding var showGitIndicators: Bool
+    @Binding var textWidth: String
+    @Binding var contentWidth: String
     @Binding var showFindBar: Bool
     @Binding var findBarFocusTrigger: UUID
     let sidebarWidth: CGFloat
@@ -440,6 +452,16 @@ private struct NotificationModifiers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .exportToPDF)) { _ in
                 if checkIsKeyWindow() { onExport() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .setTextWidth)) { notification in
+                if checkIsKeyWindow(), let value = notification.userInfo?["value"] as? String {
+                    textWidth = value
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .setContentWidth)) { notification in
+                if checkIsKeyWindow(), let value = notification.userInfo?["value"] as? String {
+                    contentWidth = value
+                }
             }
     }
 
@@ -487,6 +509,8 @@ private struct PersistenceModifiers: ViewModifier {
     let showGutter: Bool
     let showLineNumbers: Bool
     let showGitIndicators: Bool
+    let textWidth: String
+    let contentWidth: String
     let showSidebar: Bool
     let sidebarWidth: CGFloat
     let findSearchText: String
@@ -504,6 +528,12 @@ private struct PersistenceModifiers: ViewModifier {
             }
             .onChange(of: showGitIndicators) { _, newValue in
                 settings.saveGitIndicatorsVisible(newValue, for: fileURL)
+            }
+            .onChange(of: textWidth) { _, newValue in
+                settings.saveTextWidth(newValue, for: fileURL)
+            }
+            .onChange(of: contentWidth) { _, newValue in
+                settings.saveContentWidth(newValue, for: fileURL)
             }
             .onChange(of: showSidebar) { _, newValue in
                 settings.saveSidebarVisible(newValue, for: fileURL)

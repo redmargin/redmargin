@@ -425,6 +425,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             showGutter: settings.loadGutterVisible(for: url),
             showLineNumbers: settings.loadLineNumbersVisible(for: url),
             showGitIndicators: settings.loadGitIndicatorsVisible(for: url),
+            textWidth: settings.loadTextWidth(for: url),
+            contentWidth: settings.loadContentWidth(for: url),
             appDelegate: self,
             onScrollPositionChange: { [weak self] in self?.settings.saveScrollPosition($0, for: url) }
         )

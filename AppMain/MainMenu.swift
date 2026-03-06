@@ -125,7 +125,8 @@ private func createViewMenu(target: AppDelegate) -> NSMenuItem {
         action: #selector(AppDelegate.toggleSidebar(_:)),
         keyEquivalent: "1")
     sidebarItem.target = target
-    sidebarItem.tag = ViewMenuTag.sidebar.rawValue
+    sidebarItem.tag = ViewMenuTag.sidebar
+    sidebarItem.image = menuIcon("sidebar.left")
     viewMenu.addItem(sidebarItem)
 
     viewMenu.addItem(NSMenuItem.separator())
@@ -133,6 +134,7 @@ private func createViewMenu(target: AppDelegate) -> NSMenuItem {
     let refreshItem = NSMenuItem(
         title: "Refresh", action: #selector(AppDelegate.refreshDocument(_:)), keyEquivalent: "r")
     refreshItem.target = target
+    refreshItem.image = menuIcon("arrow.clockwise")
     viewMenu.addItem(refreshItem)
 
     viewMenu.addItem(NSMenuItem.separator())
@@ -143,7 +145,8 @@ private func createViewMenu(target: AppDelegate) -> NSMenuItem {
         keyEquivalent: "g")
     gutterItem.keyEquivalentModifierMask = [.command, .option]
     gutterItem.target = target
-    gutterItem.tag = ViewMenuTag.gutter.rawValue
+    gutterItem.tag = ViewMenuTag.gutter
+    gutterItem.image = menuIcon("rectangle.lefthalf.inset.filled")
     viewMenu.addItem(gutterItem)
 
     let lineNumbersItem = NSMenuItem(
@@ -151,7 +154,8 @@ private func createViewMenu(target: AppDelegate) -> NSMenuItem {
         action: #selector(AppDelegate.toggleLineNumbers(_:)),
         keyEquivalent: "l")
     lineNumbersItem.target = target
-    lineNumbersItem.tag = ViewMenuTag.lineNumbers.rawValue
+    lineNumbersItem.tag = ViewMenuTag.lineNumbers
+    lineNumbersItem.image = menuIcon("list.number")
     viewMenu.addItem(lineNumbersItem)
 
     let gitIndicatorsItem = NSMenuItem(
@@ -160,17 +164,62 @@ private func createViewMenu(target: AppDelegate) -> NSMenuItem {
         keyEquivalent: "i")
     gitIndicatorsItem.keyEquivalentModifierMask = [.command, .shift]
     gitIndicatorsItem.target = target
-    gitIndicatorsItem.tag = ViewMenuTag.gitIndicators.rawValue
+    gitIndicatorsItem.tag = ViewMenuTag.gitIndicators
+    gitIndicatorsItem.image = menuIcon("arrow.triangle.branch")
     viewMenu.addItem(gitIndicatorsItem)
+
+    viewMenu.addItem(NSMenuItem.separator())
+
+    // Text Width submenu
+    let textWidthMenu = NSMenu(title: "Text Width")
+    for width in TextWidth.allCases {
+        let item = NSMenuItem(
+            title: width.rawValue.capitalized,
+            action: #selector(AppDelegate.setTextWidth(_:)),
+            keyEquivalent: "")
+        item.target = target
+        item.representedObject = width.rawValue
+        item.tag = ViewMenuTag.textWidthBase + TextWidth.allCases.firstIndex(of: width)!
+        textWidthMenu.addItem(item)
+    }
+    let textWidthItem = NSMenuItem(title: "Text Width", action: nil, keyEquivalent: "")
+    textWidthItem.submenu = textWidthMenu
+    textWidthItem.image = menuIcon("text.alignleft")
+    viewMenu.addItem(textWidthItem)
+
+    // Block Width submenu (code blocks, tables, images)
+    let contentWidthMenu = NSMenu(title: "Block Width")
+    for width in ContentWidth.allCases {
+        let item = NSMenuItem(
+            title: width.rawValue.capitalized,
+            action: #selector(AppDelegate.setContentWidth(_:)),
+            keyEquivalent: "")
+        item.target = target
+        item.representedObject = width.rawValue
+        item.tag = ViewMenuTag.contentWidthBase + ContentWidth.allCases.firstIndex(of: width)!
+        contentWidthMenu.addItem(item)
+    }
+    let contentWidthItem = NSMenuItem(title: "Block Width", action: nil, keyEquivalent: "")
+    contentWidthItem.submenu = contentWidthMenu
+    contentWidthItem.image = menuIcon("rectangle.arrowtriangle.2.outward")
+    viewMenu.addItem(contentWidthItem)
 
     return viewMenuItem
 }
 
-private enum ViewMenuTag: Int {
-    case sidebar = 99
-    case gutter = 100
-    case lineNumbers = 101
-    case gitIndicators = 102
+private func menuIcon(_ name: String) -> NSImage? {
+    let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+    image?.size = NSSize(width: 16, height: 16)
+    return image
+}
+
+private enum ViewMenuTag {
+    static let sidebar = 99
+    static let gutter = 100
+    static let lineNumbers = 101
+    static let gitIndicators = 102
+    static let textWidthBase = 200
+    static let contentWidthBase = 210
 }
 
 final class ViewMenuDelegate: NSObject, NSMenuDelegate {
@@ -190,6 +239,8 @@ final class ViewMenuDelegate: NSObject, NSMenuDelegate {
         var gutterVisible = prefs.showGutter
         var lineNumbersVisible = prefs.showLineNumbers
         var gitIndicatorsVisible = prefs.showGitIndicators
+        var currentTextWidth = prefs.textWidth.rawValue
+        var currentContentWidth = prefs.contentWidth.rawValue
 
         let settings = DocumentSettingsStorage.shared
         if let window = NSApp.keyWindow {
@@ -199,6 +250,17 @@ final class ViewMenuDelegate: NSObject, NSMenuDelegate {
                 gutterVisible = settings.loadGutterVisible(for: url) ?? prefs.showGutter
                 lineNumbersVisible = settings.loadLineNumbersVisible(for: url)
                 gitIndicatorsVisible = settings.loadGitIndicatorsVisible(for: url) ?? prefs.showGitIndicators
+                currentTextWidth = settings.loadTextWidth(for: url) ?? prefs.textWidth.rawValue
+                currentContentWidth = settings.loadContentWidth(for: url) ?? prefs.contentWidth.rawValue
+            } else if let hostingVC = window.contentViewController
+                        as? NSHostingController<FolderWindowContent> {
+                let url = hostingVC.rootView.folderURL
+                sidebarVisible = settings.loadSidebarVisible(for: url) ?? true
+                gutterVisible = settings.loadGutterVisible(for: url) ?? prefs.showGutter
+                lineNumbersVisible = settings.loadLineNumbersVisible(for: url)
+                gitIndicatorsVisible = settings.loadGitIndicatorsVisible(for: url) ?? prefs.showGitIndicators
+                currentTextWidth = settings.loadTextWidth(for: url) ?? prefs.textWidth.rawValue
+                currentContentWidth = settings.loadContentWidth(for: url) ?? prefs.contentWidth.rawValue
             } else if let hostingVC = window.contentViewController
                         as? NSHostingController<RemoteDocumentWindowContent> {
                 let location = hostingVC.rootView.location
@@ -206,21 +268,36 @@ final class ViewMenuDelegate: NSObject, NSMenuDelegate {
                 gutterVisible = settings.loadGutterVisible(for: location) ?? prefs.showGutter
                 lineNumbersVisible = settings.loadLineNumbersVisible(for: location)
                 gitIndicatorsVisible = settings.loadGitIndicatorsVisible(for: location) ?? prefs.showGitIndicators
+                currentTextWidth = settings.loadTextWidth(for: location) ?? prefs.textWidth.rawValue
+                currentContentWidth = settings.loadContentWidth(for: location) ?? prefs.contentWidth.rawValue
             }
         }
 
         for item in menu.items {
             switch item.tag {
-            case ViewMenuTag.sidebar.rawValue:
+            case ViewMenuTag.sidebar:
                 item.title = sidebarVisible ? "Hide Sidebar" : "Show Sidebar"
-            case ViewMenuTag.gutter.rawValue:
+            case ViewMenuTag.gutter:
                 item.title = gutterVisible ? "Hide Gutter" : "Show Gutter"
-            case ViewMenuTag.lineNumbers.rawValue:
+            case ViewMenuTag.lineNumbers:
                 item.title = lineNumbersVisible ? "Hide Line Numbers" : "Show Line Numbers"
-            case ViewMenuTag.gitIndicators.rawValue:
+            case ViewMenuTag.gitIndicators:
                 item.title = gitIndicatorsVisible ? "Hide Git Indicators" : "Show Git Indicators"
             default:
                 break
+            }
+
+            // Update checkmarks on width submenu items
+            if let submenu = item.submenu {
+                for subItem in submenu.items {
+                    if subItem.tag >= ViewMenuTag.textWidthBase
+                        && subItem.tag < ViewMenuTag.textWidthBase + 10 {
+                        subItem.state = (subItem.representedObject as? String) == currentTextWidth ? .on : .off
+                    } else if subItem.tag >= ViewMenuTag.contentWidthBase
+                                && subItem.tag < ViewMenuTag.contentWidthBase + 10 {
+                        subItem.state = (subItem.representedObject as? String) == currentContentWidth ? .on : .off
+                    }
+                }
             }
         }
     }

@@ -16,6 +16,8 @@ extension Notification.Name {
     static var printDocument: Notification.Name { Notification.Name("RedMargin.printDocument") }
     static var exportToPDF: Notification.Name { Notification.Name("RedMargin.exportToPDF") }
     static var windowContentReady: Notification.Name { Notification.Name("RedMargin.windowContentReady") }
+    static var setTextWidth: Notification.Name { Notification.Name("RedMargin.setTextWidth") }
+    static var setContentWidth: Notification.Name { Notification.Name("RedMargin.setContentWidth") }
 }
 
 // MARK: - URL Display Path

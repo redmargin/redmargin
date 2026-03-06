@@ -172,6 +172,60 @@ final class DocumentSettingsStorage {
         return nil
     }
 
+    // MARK: - Text Width
+
+    private let textWidthKey = "RedMargin.DocumentTextWidth"
+    private let remoteTextWidthKey = "RedMargin.RemoteDocumentTextWidth"
+
+    func saveTextWidth(_ value: String, for url: URL) {
+        var settings = UserDefaults.standard.dictionary(forKey: textWidthKey) as? [String: String] ?? [:]
+        settings[url.path] = value
+        UserDefaults.standard.set(settings, forKey: textWidthKey)
+    }
+
+    func loadTextWidth(for url: URL) -> String? {
+        let settings = UserDefaults.standard.dictionary(forKey: textWidthKey) as? [String: String] ?? [:]
+        return settings[url.path]
+    }
+
+    func saveTextWidth(_ value: String, for location: RemoteLocation) {
+        var settings = UserDefaults.standard.dictionary(forKey: remoteTextWidthKey) as? [String: String] ?? [:]
+        settings[location.storageKey] = value
+        UserDefaults.standard.set(settings, forKey: remoteTextWidthKey)
+    }
+
+    func loadTextWidth(for location: RemoteLocation) -> String? {
+        let settings = UserDefaults.standard.dictionary(forKey: remoteTextWidthKey) as? [String: String] ?? [:]
+        return settings[location.storageKey]
+    }
+
+    // MARK: - Content Width
+
+    private let contentWidthKey = "RedMargin.DocumentContentWidth"
+    private let remoteContentWidthKey = "RedMargin.RemoteDocumentContentWidth"
+
+    func saveContentWidth(_ value: String, for url: URL) {
+        var settings = UserDefaults.standard.dictionary(forKey: contentWidthKey) as? [String: String] ?? [:]
+        settings[url.path] = value
+        UserDefaults.standard.set(settings, forKey: contentWidthKey)
+    }
+
+    func loadContentWidth(for url: URL) -> String? {
+        let settings = UserDefaults.standard.dictionary(forKey: contentWidthKey) as? [String: String] ?? [:]
+        return settings[url.path]
+    }
+
+    func saveContentWidth(_ value: String, for location: RemoteLocation) {
+        var settings = UserDefaults.standard.dictionary(forKey: remoteContentWidthKey) as? [String: String] ?? [:]
+        settings[location.storageKey] = value
+        UserDefaults.standard.set(settings, forKey: remoteContentWidthKey)
+    }
+
+    func loadContentWidth(for location: RemoteLocation) -> String? {
+        let settings = UserDefaults.standard.dictionary(forKey: remoteContentWidthKey) as? [String: String] ?? [:]
+        return settings[location.storageKey]
+    }
+
     // MARK: - Expanded Folders
 
     func saveExpandedFolders(_ paths: Set<String>, for rootPath: String) {

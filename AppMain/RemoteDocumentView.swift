@@ -15,6 +15,8 @@ struct RemoteDocumentWindowContent: View {
     @State private var showGutter: Bool
     @State private var showLineNumbers: Bool = false
     @State private var showGitIndicators: Bool
+    @State private var textWidth: String
+    @State private var contentWidth: String
     @State private var showFindBar: Bool = false
     @State private var findBarFocusTrigger: UUID = UUID()
     @State private var isExporting: Bool = false
@@ -52,6 +54,9 @@ struct RemoteDocumentWindowContent: View {
         _sidebarWidth = State(initialValue: sidebarWidth ?? 200)
         _showGutter = State(initialValue: prefs.showGutter)
         _showGitIndicators = State(initialValue: prefs.showGitIndicators)
+        let settings = DocumentSettingsStorage.shared
+        _textWidth = State(initialValue: settings.loadTextWidth(for: location) ?? prefs.textWidth.rawValue)
+        _contentWidth = State(initialValue: settings.loadContentWidth(for: location) ?? prefs.contentWidth.rawValue)
         _state = State(initialValue: RemoteDocumentState(
             content: content,
             location: location,
@@ -82,6 +87,8 @@ struct RemoteDocumentWindowContent: View {
         _sidebarWidth = State(initialValue: sidebarWidth ?? 200)
         _showGutter = State(initialValue: prefs.showGutter)
         _showGitIndicators = State(initialValue: prefs.showGitIndicators)
+        _textWidth = State(initialValue: prefs.textWidth.rawValue)
+        _contentWidth = State(initialValue: prefs.contentWidth.rawValue)
         _state = State(initialValue: RemoteDocumentState(
             content: "",
             location: location,
@@ -108,6 +115,8 @@ struct RemoteDocumentWindowContent: View {
                 showGutter: $showGutter,
                 showLineNumbers: $showLineNumbers,
                 showGitIndicators: $showGitIndicators,
+                textWidth: $textWidth,
+                contentWidth: $contentWidth,
                 showFindBar: $showFindBar,
                 findBarFocusTrigger: $findBarFocusTrigger,
                 sidebarWidth: sidebarWidth,
@@ -125,6 +134,8 @@ struct RemoteDocumentWindowContent: View {
                 showGutter: showGutter,
                 showLineNumbers: showLineNumbers,
                 showGitIndicators: showGitIndicators,
+                textWidth: textWidth,
+                contentWidth: contentWidth,
                 showSidebar: showSidebar,
                 sidebarWidth: sidebarWidth,
                 findSearchText: findController.searchText,
@@ -263,6 +274,8 @@ struct RemoteDocumentWindowContent: View {
                 allowRemoteImages: prefs.allowRemoteImages,
                 showGutter: showGutter,
                 showGitIndicators: showGitIndicators,
+                textWidth: textWidth,
+                contentWidth: contentWidth,
                 cacheBust: state.refreshToken,
                 remoteBasePath: remoteBasePath,
                 remoteAssetFetcher: { [weak state] path in

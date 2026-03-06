@@ -145,13 +145,13 @@ private struct GeneralSettingsView: View {
                     Text("Unrestricted").tag(TextWidth.unrestricted)
                 }
 
-                Picker("Content Width", selection: $prefs.contentWidth) {
+                Picker("Block Width", selection: $prefs.contentWidth) {
                     Text("Medium").tag(ContentWidth.medium)
                     Text("Wide").tag(ContentWidth.wide)
                     Text("Unrestricted").tag(ContentWidth.unrestricted)
                 }
             } header: {
-                Text("Appearance")
+                Text("Appearance (defaults for new documents)")
             }
 
             Section {

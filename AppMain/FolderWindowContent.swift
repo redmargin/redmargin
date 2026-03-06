@@ -17,6 +17,8 @@ struct FolderWindowContent: View {
     @State private var showGutter: Bool
     @State private var showLineNumbers: Bool
     @State private var showGitIndicators: Bool
+    @State private var textWidth: String
+    @State private var contentWidth: String
     @State private var showFindBar: Bool = false
     @State private var findBarFocusTrigger: UUID = UUID()
     @State private var isExporting: Bool = false
@@ -57,6 +59,8 @@ struct FolderWindowContent: View {
         _showGutter = State(initialValue: prefs.showGutter)
         _showLineNumbers = State(initialValue: prefs.showLineNumbers)
         _showGitIndicators = State(initialValue: prefs.showGitIndicators)
+        _textWidth = State(initialValue: prefs.textWidth.rawValue)
+        _contentWidth = State(initialValue: prefs.contentWidth.rawValue)
         self.appDelegate = appDelegate
     }
 
@@ -69,6 +73,8 @@ struct FolderWindowContent: View {
                 showGutter: $showGutter,
                 showLineNumbers: $showLineNumbers,
                 showGitIndicators: $showGitIndicators,
+                textWidth: $textWidth,
+                contentWidth: $contentWidth,
                 showFindBar: $showFindBar,
                 findBarFocusTrigger: $findBarFocusTrigger,
                 sidebarWidth: sidebarWidth,
@@ -95,6 +101,12 @@ struct FolderWindowContent: View {
             }
             .onChange(of: sidebarWidth) { _, newValue in
                 DocumentSettingsStorage.shared.saveSidebarWidth(newValue, for: folderURL)
+            }
+            .onChange(of: textWidth) { _, newValue in
+                DocumentSettingsStorage.shared.saveTextWidth(newValue, for: folderURL)
+            }
+            .onChange(of: contentWidth) { _, newValue in
+                DocumentSettingsStorage.shared.saveContentWidth(newValue, for: folderURL)
             }
             .onChange(of: findController.searchText) { _, newValue in
                 findController.find(newValue)
@@ -168,8 +180,8 @@ struct FolderWindowContent: View {
                     allowRemoteImages: prefs.allowRemoteImages,
                     showGutter: showGutter,
                     showGitIndicators: showGitIndicators,
-                    textWidth: prefs.textWidth.rawValue,
-                    contentWidth: prefs.contentWidth.rawValue,
+                    textWidth: textWidth,
+                    contentWidth: contentWidth,
                     cacheBust: state.refreshToken
                 )
 
@@ -372,6 +384,8 @@ private struct FolderNotificationModifiers: ViewModifier {
     @Binding var showGutter: Bool
     @Binding var showLineNumbers: Bool
     @Binding var showGitIndicators: Bool
+    @Binding var textWidth: String
+    @Binding var contentWidth: String
     @Binding var showFindBar: Bool
     @Binding var findBarFocusTrigger: UUID
     let sidebarWidth: CGFloat
@@ -418,6 +432,16 @@ private struct FolderNotificationModifiers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .exportToPDF)) { _ in
                 if checkIsKeyWindow() && hasDocument { onExport() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .setTextWidth)) { notification in
+                if checkIsKeyWindow(), let value = notification.userInfo?["value"] as? String {
+                    textWidth = value
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .setContentWidth)) { notification in
+                if checkIsKeyWindow(), let value = notification.userInfo?["value"] as? String {
+                    contentWidth = value
+                }
             }
     }
 

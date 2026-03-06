@@ -204,4 +204,14 @@ extension AppDelegate {
     @objc func toggleSidebar(_ sender: Any?) {
         NotificationCenter.default.post(name: .toggleSidebar, object: nil)
     }
+
+    @objc func setTextWidth(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        NotificationCenter.default.post(name: .setTextWidth, object: nil, userInfo: ["value": value])
+    }
+
+    @objc func setContentWidth(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        NotificationCenter.default.post(name: .setContentWidth, object: nil, userInfo: ["value": value])
+    }
 }
