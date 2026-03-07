@@ -326,6 +326,33 @@
         }
     }
 
+    var copySvg = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+    var checkSvg = '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>';
+
+    function addCopyButtons(container) {
+        var pres = container.querySelectorAll('pre');
+        for (var i = 0; i < pres.length; i++) {
+            var pre = pres[i];
+            var btn = document.createElement('button');
+            btn.className = 'copy-btn';
+            btn.innerHTML = copySvg;
+            btn.setAttribute('aria-label', 'Copy code');
+            btn.addEventListener('click', handleCopyClick);
+            pre.appendChild(btn);
+        }
+    }
+
+    function handleCopyClick(e) {
+        var btn = e.currentTarget;
+        var pre = btn.closest('pre');
+        var code = pre.querySelector('code');
+        var text = (code || pre).textContent;
+        navigator.clipboard.writeText(text).then(function() {
+            btn.innerHTML = checkSvg;
+            setTimeout(function() { btn.innerHTML = copySvg; }, 1500);
+        });
+    }
+
     function resolveImagePaths(html, basePath, cacheBust) {
         if (!basePath) return html;
 
@@ -416,6 +443,7 @@
                 // Offset sourcepos attributes to match original file lines
                 offsetSourcepos(container, lastFrontMatterOffset);
                 optimizeTableWidths(container);
+                addCopyButtons(container);
                 // Remove for attributes from task list labels so clicking text
                 // doesn't toggle the checkbox — only direct checkbox clicks should
                 container.querySelectorAll('.task-list-item-label[for]').forEach(function(label) {

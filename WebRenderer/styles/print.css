@@ -175,6 +175,10 @@
         margin: 0;
     }
 
+    .copy-btn {
+        display: none !important;
+    }
+
     /* Remove all width constraints in print */
     p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, hr, .task-list-item,
     table, pre, img {
