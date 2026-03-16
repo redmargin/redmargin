@@ -167,9 +167,22 @@ actor FileOperations {
     }
 
     private var watchers: [String: ServerWatcher] = [:]
+    private var fileWatchPaths: [String: String] = [:]  // token -> path
+    private var pathToFileToken: [String: String] = [:]  // path -> token (dedup)
 
     func watchFile(path: String) -> String {
+        // Remove existing watcher for this path to prevent accumulation
+        // across reconnections (old unwatch RPCs may have failed).
+        if let existingToken = pathToFileToken[path] {
+            watchers[existingToken]?.stop()
+            watchers.removeValue(forKey: existingToken)
+            fileWatchPaths.removeValue(forKey: existingToken)
+            print("[FileOperations] Replaced existing watcher for \(path)")
+        }
+
         let token = UUID().uuidString
+        pathToFileToken[path] = token
+        fileWatchPaths[token] = path
 
         if let watcher = PlatformWatcher(path: path, onChange: { [weak self] in
             Task { [weak self] in
@@ -191,6 +204,9 @@ actor FileOperations {
 
     func unwatchFile(token: String) -> Bool {
         if let watcher = watchers.removeValue(forKey: token) {
+            if let path = fileWatchPaths.removeValue(forKey: token) {
+                pathToFileToken.removeValue(forKey: path)
+            }
             watcher.stop()
             return true
         }
@@ -205,10 +221,23 @@ actor FileOperations {
     ]
 
     private var directoryWatchers: [String: ServerDirectoryWatcher] = [:]
+    private var dirWatchPaths: [String: String] = [:]  // token -> path
+    private var pathToDirToken: [String: String] = [:]  // path -> token (dedup)
 
     func watchDirectory(path: String) -> String {
-        let token = UUID().uuidString
         let expandedPath = NSString(string: path).expandingTildeInPath
+
+        // Remove existing watcher for this path to prevent accumulation
+        if let existingToken = pathToDirToken[expandedPath] {
+            directoryWatchers[existingToken]?.stop()
+            directoryWatchers.removeValue(forKey: existingToken)
+            dirWatchPaths.removeValue(forKey: existingToken)
+            print("[FileOperations] Replaced existing directory watcher for \(expandedPath)")
+        }
+
+        let token = UUID().uuidString
+        pathToDirToken[expandedPath] = token
+        dirWatchPaths[token] = expandedPath
 
         if let watcher = PlatformDirectoryWatcher(
             rootPath: expandedPath,
@@ -234,6 +263,9 @@ actor FileOperations {
 
     func unwatchDirectory(token: String) -> Bool {
         if let watcher = directoryWatchers.removeValue(forKey: token) {
+            if let path = dirWatchPaths.removeValue(forKey: token) {
+                pathToDirToken.removeValue(forKey: path)
+            }
             watcher.stop()
             return true
         }

@@ -51,14 +51,18 @@ class RemoteDocumentState {
         self.location = location
         self.fileProvider = fileProvider
 
-        // Observe reconnection via NotificationCenter (reliable, unlike AsyncStream)
+        // Observe reconnection via NotificationCenter (reliable, unlike AsyncStream).
+        // Filter by host to prevent cross-host cascading reconnection loops.
         reconnectObserver = NotificationCenter.default.addObserver(
             forName: .sshConnectionReconnected,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] notification in
+            guard let self = self,
+                  let host = notification.object as? String,
+                  host == self.location.host else { return }
             Task { @MainActor in
-                self?.handleReconnection()
+                self.handleReconnection()
             }
         }
 
@@ -115,6 +119,16 @@ class RemoteDocumentState {
         refreshToken += 1
 
         Task {
+            // Re-register file watcher — old server-side watcher may be stale
+            // (daemon restarted) or duplicated. setupFileWatcher unwatches the
+            // old token first, and server-side dedup handles any leftovers.
+            await setupFileWatcher()
+
+            // Re-register git watcher if we had one
+            if let root = repoRoot {
+                await setupGitWatcher(root: root)
+            }
+
             do {
                 let serverContent = try await fileProvider.readFile(at: location.path)
 
@@ -232,26 +246,28 @@ class RemoteDocumentState {
             return
         }
 
-        // Cancel any pending reload to prevent races
+        // Cancel any pending reload — acts as debounce since the new task
+        // waits 300ms before reading, giving rapid events time to coalesce.
         reloadTask?.cancel()
 
-        print("[RemoteDocumentState] reloadContent called for \(location.displayString)")
         reloadTask = Task {
+            // Debounce: wait for events to settle (atomic writes, editor saves)
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+
+            refreshLog.info("reloadContent reading \(self.location.displayString)")
             do {
                 let newContent = try await fileProvider.readFile(at: location.path)
 
                 // Check if cancelled (a write started while we were reading)
-                guard !Task.isCancelled else {
-                    print("[RemoteDocumentState] Reload cancelled (write started during read)")
-                    return
-                }
+                guard !Task.isCancelled else { return }
 
                 await MainActor.run {
                     guard newContent != content else {
-                        print("[RemoteDocumentState] Content unchanged, skipping update")
+                        refreshLog.info("reloadContent: content unchanged")
                         return
                     }
-                    print("[RemoteDocumentState] Content changed, updating (\(newContent.count) chars)")
+                    refreshLog.info("reloadContent: content changed (\(newContent.count) chars)")
                     content = newContent
                     lastKnownServerContent = newContent
                     Task {
@@ -260,7 +276,7 @@ class RemoteDocumentState {
                 }
             } catch {
                 if !Task.isCancelled {
-                    print("[RemoteDocumentState] Failed to read file: \(error)")
+                    refreshLog.error("reloadContent failed: \(error)")
                 }
             }
         }
