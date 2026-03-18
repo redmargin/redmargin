@@ -134,7 +134,8 @@ extension AppDelegate {
     /// Opens a remote directory as a folder window with sidebar
     func openRemoteFolder(connection: SSHConnection, path: String) async throws {
         let host = await connection.getHost()
-        let location = RemoteLocation(host: host, path: path)
+        let folderPath = path.hasSuffix("/") ? path : path + "/"
+        let location = RemoteLocation(host: host, path: folderPath)
 
         // Add to recent lists
         await MainActor.run {
@@ -159,7 +160,7 @@ extension AppDelegate {
 
         await MainActor.run {
             let folderView = RemoteDocumentWindowContent(
-                folderPath: path,
+                folderPath: folderPath,
                 host: host,
                 fileProvider: fileProvider,
                 showSidebar: true,

@@ -109,7 +109,23 @@ extension AppDelegate {
 
                 for location in locations {
                     do {
-                        try await openRemoteDocument(connection: conn, path: location.path)
+                        // Check if path is a directory
+                        let isDirArgs = [
+                            "-o", "BatchMode=yes",
+                            "-o", "ConnectTimeout=5",
+                            location.host,
+                            "test -d '\(location.path)'"
+                        ]
+                        let isDirResult = try await ProcessRunner.run(
+                            executable: "/usr/bin/ssh",
+                            arguments: isDirArgs,
+                            timeout: 10
+                        )
+                        if isDirResult.exitCode == 0 {
+                            try await openRemoteFolder(connection: conn, path: location.path)
+                        } else {
+                            try await openRemoteDocument(connection: conn, path: location.path)
+                        }
                         print("[AppDelegate] Restored: \(location.path)")
                     } catch {
                         print("[AppDelegate] Failed to restore \(location): \(error)")
