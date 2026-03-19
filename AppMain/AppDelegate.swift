@@ -37,7 +37,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private let folderSelectedFilesKey = "RedMargin.FolderSelectedFiles"
     private let windowOrderKey = "RedMargin.WindowOrder"
     private let frontmostWindowKey = "RedMargin.FrontmostWindow"
-    let maxRecentDocuments = 10
+    let maxRecentDocuments = 20
     let settings = DocumentSettingsStorage.shared
 
     @Published var recentDocuments: [URL] = []

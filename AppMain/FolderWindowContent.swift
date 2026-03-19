@@ -278,6 +278,7 @@ struct FolderWindowContent: View {
                     // (documentState is @State, not @ObservedObject, so SwiftUI
                     // doesn't observe its @Published property changes directly.)
                     selectedFileURL = url
+                    appDelegate?.addToRecentDocuments(url)
                     appDelegate?.updateFolderWindowFile(folder: folderURL, to: url)
                     if let window = NSApp.keyWindow {
                         window.title = url.displayPath
