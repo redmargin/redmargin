@@ -143,13 +143,11 @@ final class SidebarTests: XCTestCase {
         try await waitForProvider(provider)
 
         let rootNodes = await provider.rootNodes
-        let allNames = collectAllNames(rootNodes)
+        let rootNames = rootNodes.map { $0.name }
 
-        XCTAssertTrue(allNames.contains("README.md"))
-        XCTAssertTrue(allNames.contains("docs"))
-        XCTAssertTrue(allNames.contains("guide.md"))
-        XCTAssertTrue(allNames.contains("api"))
-        XCTAssertTrue(allNames.contains("reference.md"))
+        // Lazy loading: only root level loaded initially
+        XCTAssertTrue(rootNames.contains("README.md"))
+        XCTAssertTrue(rootNames.contains("docs"))
     }
 
     // MARK: - Directory Initializer Tests
@@ -536,6 +534,90 @@ final class SidebarTests: XCTestCase {
         XCTAssertTrue(allNames.contains("visible.md"))
         XCTAssertFalse(allNames.contains("node_modules"))
         XCTAssertFalse(allNames.contains(".build"))
+    }
+
+    // MARK: - Lazy Loading Tests
+
+    func testLazyLoadRootOnly() async throws {
+        // Create two levels: sub/ contains deep/ which contains a file
+        let subDir = tempDir.appendingPathComponent("sub")
+        let deepDir = subDir.appendingPathComponent("deep")
+        try FileManager.default.createDirectory(at: deepDir, withIntermediateDirectories: true)
+        try "# Root".write(to: tempDir.appendingPathComponent("root.md"), atomically: true, encoding: .utf8)
+        try "# Deep".write(to: deepDir.appendingPathComponent("nested.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+        try await waitForDirectoryProvider(provider)
+
+        // Root level: sub/ is at depth 0 and auto-expanded, so its children load
+        let rootNodes = await provider.rootNodes
+        let subNode = rootNodes.first { $0.name == "sub" }
+        XCTAssertNotNil(subNode)
+        XCTAssertTrue(subNode!.childrenLoaded)
+
+        // But deep/ (depth 1) should NOT have its children loaded yet
+        let deepNode = subNode!.children.first { $0.name == "deep" }
+        XCTAssertNotNil(deepNode)
+        XCTAssertFalse(deepNode!.childrenLoaded)
+        XCTAssertTrue(deepNode!.children.isEmpty)
+    }
+
+    func testLazyLoadOnExpand() async throws {
+        let subDir = tempDir.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+        try "# Root".write(to: tempDir.appendingPathComponent("root.md"), atomically: true, encoding: .utf8)
+        try "# Sub".write(to: subDir.appendingPathComponent("nested.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+        try await waitForDirectoryProvider(provider)
+
+        let subNode = await provider.rootNodes.first { $0.name == "sub" }!
+
+        // Expand the folder — triggers lazy load
+        await MainActor.run { subNode.isExpanded = true }
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertTrue(subNode.childrenLoaded)
+        XCTAssertTrue(subNode.children.contains { $0.name == "nested.md" })
+    }
+
+    func testAllFoldersShownRegardlessOfMarkdown() async throws {
+        let emptyDir = tempDir.appendingPathComponent("empty-folder")
+        try FileManager.default.createDirectory(at: emptyDir, withIntermediateDirectories: true)
+        try "# Root".write(to: tempDir.appendingPathComponent("root.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+        try await waitForDirectoryProvider(provider)
+
+        let rootNames = await provider.rootNodes.map { $0.name }
+        XCTAssertTrue(rootNames.contains("empty-folder"))
+        XCTAssertTrue(rootNames.contains("root.md"))
+    }
+
+    func testExpandedFolderChildrenSurviveRefresh() async throws {
+        let subDir = tempDir.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+        try "# Root".write(to: tempDir.appendingPathComponent("root.md"), atomically: true, encoding: .utf8)
+        try "# Sub".write(to: subDir.appendingPathComponent("nested.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+        try await waitForDirectoryProvider(provider)
+
+        // Expand and load children
+        let subNode = await provider.rootNodes.first { $0.name == "sub" }!
+        await MainActor.run { subNode.isExpanded = true }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(subNode.childrenLoaded)
+
+        // Refresh
+        await provider.refresh()
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        // Children should still be present after refresh
+        let refreshedSub = await provider.rootNodes.first { $0.name == "sub" }
+        XCTAssertNotNil(refreshedSub)
+        XCTAssertTrue(refreshedSub!.childrenLoaded)
+        XCTAssertTrue(refreshedSub!.children.contains { $0.name == "nested.md" })
     }
 
     // MARK: - Helpers

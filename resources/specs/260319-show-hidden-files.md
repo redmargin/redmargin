@@ -2,7 +2,7 @@
 
 ## Meta
 
-- Status: In Progress
+- Status: Implemented
 - Branch: feature/show-hidden-files
 
 ---
@@ -119,20 +119,20 @@ This mirrors the established per-window settings pattern used throughout the cod
 
 **Phase 5: Lazy Sidebar Loading**
 
-- [ ] Add `childrenLoaded: Bool` property to `FileTreeNode` (`src/Views/FileTreeProvider.swift`) — default `false`, set to `true` after children are populated
-- [ ] Replace `buildTreeRecursive` in `FileTreeProvider` with `loadChildren(for:)` that does a single `contentsOfDirectory` call for one directory — returns `[FileTreeNode]` with directory nodes having empty children and `childrenLoaded=false`
-- [ ] Update `FileTreeProvider` init to load only the root level (call `loadChildren` for the root directory)
+- [x] Add `childrenLoaded: Bool` property to `FileTreeNode` (`src/Views/FileTreeProvider.swift`) — default `false`, set to `true` after children are populated
+- [x] Replace `buildTreeRecursive` in `FileTreeProvider` with `loadChildren(for:)` that does a single `contentsOfDirectory` call for one directory — returns `[FileTreeNode]` with directory nodes having empty children and `childrenLoaded=false`
+- [x] Update `FileTreeProvider` init to load only the root level (call `loadChildren` for the root directory)
 - [x] Add `expandFolder(_:)` method to `FileTreeProvider` — when a directory node is expanded and `childrenLoaded` is false, load its children via `loadChildren`, then set `childrenLoaded=true`. All folders are included; only files are filtered to markdown.
-- [ ] Hook `expandFolder` into the `onExpandedChange` callback on `FileTreeNode` — when `isExpanded` becomes true and `childrenLoaded` is false, trigger loading
-- [ ] Update `refresh()` in `FileTreeProvider` to re-enumerate only the root level (and any currently-expanded directories that are already loaded)
-- [ ] Update FSEvents watcher handler to re-enumerate only the affected parent directory, not rebuild the entire tree
-- [ ] Replace `buildTreeRecursive` in `RemoteFileTreeProvider` with single-level `listDirectory` calls following the same pattern
-- [ ] Stop using `findMarkdownFiles` RPC for tree building in `RemoteFileTreeProvider` — use `listDirectory` for all tree operations
-- [ ] Add `expandFolder(_:)` to `RemoteFileTreeProvider` with the same lazy-load-on-expand behavior
-- [ ] When `showHiddenFiles` changes, reload all currently visible levels (root + expanded directories) rather than rebuilding the entire tree
-- [ ] Remove the `buildTreeFromPaths` / `convertTrieToNodes` / `PathTrie` code from `RemoteFileTreeProvider` (no longer needed)
-- [ ] Update existing hidden-files tests to work with the new lazy loading model
-- [ ] Rebuild Linux server binary (`resources/scripts/build-linux.sh`) after all changes
+- [x] Hook `expandFolder` into the `onExpandedChange` callback on `FileTreeNode` — when `isExpanded` becomes true and `childrenLoaded` is false, trigger loading
+- [x] Update `refresh()` in `FileTreeProvider` to re-enumerate only the root level (and any currently-expanded directories that are already loaded)
+- [x] Update FSEvents watcher handler to re-enumerate only the affected parent directory, not rebuild the entire tree
+- [x] Replace `buildTreeRecursive` in `RemoteFileTreeProvider` with single-level `listDirectory` calls following the same pattern
+- [x] Stop using `findMarkdownFiles` RPC for tree building in `RemoteFileTreeProvider` — use `listDirectory` for all tree operations
+- [x] Add `expandFolder(_:)` to `RemoteFileTreeProvider` with the same lazy-load-on-expand behavior
+- [x] When `showHiddenFiles` changes, reload all currently visible levels (root + expanded directories) rather than rebuilding the entire tree
+- [x] Remove the `buildTreeFromPaths` / `convertTrieToNodes` / `PathTrie` code from `RemoteFileTreeProvider` (no longer needed)
+- [x] Update existing hidden-files tests to work with the new lazy loading model
+- [x] Rebuild Linux server binary (`resources/scripts/build-linux.sh`) after all changes
 
 ---
 
@@ -156,17 +156,17 @@ Tests are implementation tasks — the implementer writes and passes each one.
 
 ### Unit Tests — Lazy Loading (`Tests/SidebarTests.swift`)
 
-- [ ] `testLazyLoadRootOnly` - Create nested dirs with markdown, init provider, assert only root-level entries are present (children of subdirs are empty)
-- [ ] `testLazyLoadOnExpand` - Create nested dirs, init provider, expand a folder node, assert its children are now populated
-- [ ] `testAllFoldersShownRegardlessOfMarkdown` - Create a folder with no markdown files inside, assert it still appears in the sidebar
-- [ ] `testExpandedFolderChildrenSurviveRefresh` - Expand a folder, trigger refresh, assert children are still present
+- [x] `testLazyLoadRootOnly` - Create nested dirs with markdown, init provider, assert only root-level entries are present (children of subdirs are empty)
+- [x] `testLazyLoadOnExpand` - Create nested dirs, init provider, expand a folder node, assert its children are now populated
+- [x] `testAllFoldersShownRegardlessOfMarkdown` - Create a folder with no markdown files inside, assert it still appears in the sidebar
+- [x] `testExpandedFolderChildrenSurviveRefresh` - Expand a folder, trigger refresh, assert children are still present
 
 ### Manual Verification (Marco)
 
 - [x] Open a folder containing hidden subdirectories (e.g., a repo with `.github/`). Confirm sidebar does not show them by default.
-- [ ] Press Cmd+Shift+. — confirm hidden folders/files appear in the sidebar immediately (under 1 second, even in HOME).
-- [ ] Press Cmd+Shift+. again — confirm they disappear.
-- [ ] Open a second window to a different folder. Toggle hidden files in one window only. Confirm each window maintains its own state independently.
+- [x] Press Cmd+Shift+. — confirm hidden folders/files appear in the sidebar immediately (under 1 second, even in HOME).
+- [x] Press Cmd+Shift+. again — confirm they disappear.
+- [x] Open a second window to a different folder. Toggle hidden files in one window only. Confirm each window maintains its own state independently.
 - [ ] Close and reopen a window — confirm the hidden files setting is restored.
 - [ ] Open Preferences > General — confirm "Show hidden files" checkbox sets the default for new windows.
 - [ ] Open HOME as a folder. Sidebar loads instantly. Expand `.config/` — children load on demand.
