@@ -1,9 +1,14 @@
 # Changelog
 
-## Unreleased
+## v1.3.0 (2026-03-19)
 
 ### New Features
 
+- Show/hide hidden files in sidebar (Cmd+Shift+.) — per-window toggle with global default in Preferences
+- Lazy sidebar loading: folders enumerate one level at a time, children load on expand — instant even for large directories
+- All folders shown in sidebar regardless of markdown content
+- Symlinked directories resolve and expand correctly
+- Copy-to-clipboard button on code blocks
 - Configurable content width: separate Text Width (Narrow/Medium/Wide/Unrestricted) and Content Width (Medium/Wide/Unrestricted) preferences in General > Appearance
 - Tables and code blocks default to unrestricted width while prose stays readable at 680px
 - YAML front matter renders as a styled metadata card above the document instead of raw text
@@ -12,6 +17,8 @@
 
 ### Improvements
 
+- Sidebar file selections now tracked in Recent Documents
+- Recent Documents limit increased from 10 to 20
 - Tables reflow when window is resized (no longer stuck at initial render width)
 - Table width calculation accounts for container padding, preventing overflow into right margin
 - Checkbox clicks only toggle on direct checkbox clicks, not when clicking surrounding text or selecting text nearby
@@ -21,6 +28,9 @@
 ### Bug Fixes
 
 - Fixed scroll position not restoring after relaunch
+- Fixed infinite refresh cycles and unreliable refresh for remote machines
+- Fixed SSH reconnection failures and stale connection detection
+- Fixed Linux server build (os.log unavailable on Linux)
 
 ## v1.2.0 (2026-02-23)
 
