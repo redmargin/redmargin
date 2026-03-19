@@ -129,9 +129,10 @@ public class FileTreeProvider: ObservableObject {
 
     /// Load a single directory's contents (non-recursive)
     private nonisolated func listDirectory(at directory: URL, depth: Int, showHiddenFiles: Bool) -> [FileTreeNode] {
+        let resolved = directory.resolvingSymlinksInPath()
         let options: FileManager.DirectoryEnumerationOptions = showHiddenFiles ? [] : [.skipsHiddenFiles]
         guard let contents = try? FileManager.default.contentsOfDirectory(
-            at: directory,
+            at: resolved,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: options
         ) else {
@@ -144,8 +145,9 @@ public class FileTreeProvider: ObservableObject {
             let isDirectory: Bool
         }
         let entries: [Entry] = contents.map { url in
-            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            return Entry(url: url, name: url.lastPathComponent, isDirectory: isDir)
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+            return Entry(url: url, name: url.lastPathComponent, isDirectory: isDir.boolValue)
         }
 
         let sorted = entries.sorted { lhs, rhs in
@@ -163,7 +165,8 @@ public class FileTreeProvider: ObservableObject {
                     name: entry.name,
                     url: entry.url,
                     isDirectory: true,
-                    depth: depth
+                    depth: depth,
+                    isExpanded: false
                 )
                 nodes.append(node)
             } else {

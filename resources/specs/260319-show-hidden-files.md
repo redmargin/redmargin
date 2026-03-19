@@ -167,7 +167,7 @@ Tests are implementation tasks — the implementer writes and passes each one.
 - [x] Press Cmd+Shift+. — confirm hidden folders/files appear in the sidebar immediately (under 1 second, even in HOME).
 - [x] Press Cmd+Shift+. again — confirm they disappear.
 - [x] Open a second window to a different folder. Toggle hidden files in one window only. Confirm each window maintains its own state independently.
-- [ ] Close and reopen a window — confirm the hidden files setting is restored.
-- [ ] Open Preferences > General — confirm "Show hidden files" checkbox sets the default for new windows.
-- [ ] Open HOME as a folder. Sidebar loads instantly. Expand `.config/` — children load on demand.
-- [ ] Open a remote folder on carlowe-dev. Sidebar loads instantly. Expanding folders loads children without lag.
+- [x] Close and reopen a window — confirm the hidden files setting is restored.
+- [x] Open Preferences > General — confirm "Show hidden files" checkbox sets the default for new windows.
+- [ ] Open HOME as a folder. Sidebar loads instantly. Expand `.config/` (symlink) — children load on demand. Symlinked directories appear correctly.
+- [x] Open a remote folder on carlowe-dev. Sidebar loads instantly. Expanding folders loads children without lag.

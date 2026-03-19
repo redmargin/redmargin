@@ -292,6 +292,7 @@ struct FolderWindowContent: View {
             let content = (try? String(contentsOf: url, encoding: .utf8)) ?? "Error loading file"
             documentState = DocumentState(content: content, fileURL: url)
             selectedFileURL = url
+            appDelegate?.addToRecentDocuments(url)
             appDelegate?.updateFolderWindowFile(folder: folderURL, to: url)
             if let window = NSApp.keyWindow {
                 window.title = url.displayPath
