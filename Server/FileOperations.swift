@@ -22,7 +22,7 @@ actor FileOperations {
             let contents = try FileManager.default.contentsOfDirectory(
                 at: url,
                 includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
-                options: [.skipsHiddenFiles]
+                options: []
             )
 
             let entries: [DirectoryEntry] = contents.compactMap { itemURL in
@@ -57,7 +57,7 @@ actor FileOperations {
         guard let enumerator = FileManager.default.enumerator(
             at: rootURL,
             includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
+            options: []
         ) else {
             return FindMarkdownFilesResponsePayload(files: nil, error: "Cannot enumerate directory")
         }

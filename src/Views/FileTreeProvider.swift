@@ -8,7 +8,7 @@ public class FileTreeNode: Identifiable, ObservableObject {
     public let name: String
     public let url: URL
     public let isDirectory: Bool
-    public let depth: Int
+    public var depth: Int
     @Published public var children: [FileTreeNode]
     @Published public var isExpanded: Bool {
         didSet {
@@ -17,6 +17,7 @@ public class FileTreeNode: Identifiable, ObservableObject {
             }
         }
     }
+    public var childrenLoaded: Bool = false
 
     /// Callback when expansion state changes
     var onExpandedChange: ((String, Bool) -> Void)?
@@ -34,12 +35,13 @@ public class FileTreeNode: Identifiable, ObservableObject {
         self.isDirectory = isDirectory
         self.depth = depth
         self.children = children
+        self.childrenLoaded = !children.isEmpty || !isDirectory
         self.isExpanded = isExpanded ?? (depth == 0)  // Root level expanded by default
     }
 }
 
 /// Provides a hierarchical tree of Markdown files from a directory for sidebar display.
-/// Uses the Git repo root if available, otherwise falls back to the file's parent directory.
+/// Uses lazy single-level loading — only enumerates one directory at a time.
 @MainActor
 public class FileTreeProvider: ObservableObject {
     @Published public private(set) var rootNodes: [FileTreeNode] = []
@@ -50,6 +52,12 @@ public class FileTreeProvider: ObservableObject {
     private var directoryWatcher: FSEventsDirectoryWatcher?
     private var expandedFolders: Set<String> = []
     private let autoExpandRoot: Bool
+
+    public var showHiddenFiles: Bool = false {
+        didSet {
+            if oldValue != showHiddenFiles { refresh() }
+        }
+    }
 
     /// Callback when expanded folders change (path of root, set of expanded folder paths)
     public var onExpandedFoldersChange: ((String, Set<String>) -> Void)?
@@ -80,7 +88,7 @@ public class FileTreeProvider: ObservableObject {
         self.autoExpandRoot = false
         self.rootDirectory = rootDirectory
         setupDirectoryWatcher(for: rootDirectory)
-        buildTreeAsync(from: rootDirectory)
+        loadRootLevel(from: rootDirectory)
     }
 
     /// Loads markdown files from the appropriate root directory
@@ -93,7 +101,7 @@ public class FileTreeProvider: ObservableObject {
         do {
             if let repoRoot = try await GitRepoDetector.detectRepoRoot(forFile: currentFileURL) {
                 rootDirectory = repoRoot
-                buildTreeAsync(from: repoRoot)
+                loadRootLevel(from: repoRoot)
                 isLoading = false
                 setupDirectoryWatcher(for: repoRoot)
                 return
@@ -105,162 +113,63 @@ public class FileTreeProvider: ObservableObject {
         // Fall back to file's parent directory
         let parentDir = currentFileURL.deletingLastPathComponent()
         rootDirectory = parentDir
-        buildTreeAsync(from: parentDir)
+        loadRootLevel(from: parentDir)
         isLoading = false
         setupDirectoryWatcher(for: parentDir)
     }
 
-    /// Refreshes the file list
+    /// Refreshes visible levels — root + any expanded directories
     public func refresh() {
         guard let root = rootDirectory else { return }
         print("[FileTreeProvider] refresh() called for \(root.lastPathComponent)")
-        buildTreeAsync(from: root)
+        reloadVisibleLevels()
     }
 
-    private func buildTree(from directory: URL) -> [FileTreeNode] {
-        let expanded = expandedFolders
-        let autoExpand = autoExpandRoot
-        return buildTreeRecursive(at: directory, depth: 0, expandedFolders: expanded, autoExpandRoot: autoExpand)
-    }
+    // MARK: - Lazy Loading
 
-    /// Builds the tree on a background thread, then applies result on main
-    private func buildTreeAsync(from directory: URL) {
-        let expanded = expandedFolders
-        let autoExpand = autoExpandRoot
-        Task.detached { [weak self] in
-            guard let self else { return }
-            let nodes = self.buildTreeRecursive(
-                at: directory,
-                depth: 0,
-                expandedFolders: expanded,
-                autoExpandRoot: autoExpand
-            )
-            await MainActor.run {
-                if self.rootNodes.isEmpty {
-                    // First load — set directly
-                    self.rootNodes = nodes
-                    self.wireUpCallbacks(nodes)
-                } else {
-                    // Subsequent refresh — merge to preserve node identity and scroll position
-                    self.rootNodes = self.mergeNodes(
-                        existing: self.rootNodes,
-                        incoming: nodes
-                    )
-                }
-            }
-        }
-    }
-
-    /// Merge incoming tree structure into existing nodes, reusing objects to preserve
-    /// SwiftUI identity (UUID) so ScrollView scroll position stays stable.
-    private func mergeNodes(existing: [FileTreeNode], incoming: [FileTreeNode]) -> [FileTreeNode] {
-        var existingByURL: [URL: FileTreeNode] = [:]
-        for node in existing {
-            existingByURL[node.url] = node
-        }
-
-        return incoming.map { newNode in
-            if let existingNode = existingByURL[newNode.url] {
-                // Reuse existing node — preserves its id (UUID) for scroll stability
-                if existingNode.isDirectory {
-                    // Sync expansion state from incoming node (built with current expandedFolders)
-                    // without triggering the save callback
-                    if existingNode.isExpanded != newNode.isExpanded {
-                        let callback = existingNode.onExpandedChange
-                        existingNode.onExpandedChange = nil
-                        existingNode.isExpanded = newNode.isExpanded
-                        existingNode.onExpandedChange = callback
-                    }
-                    existingNode.children = mergeNodes(
-                        existing: existingNode.children,
-                        incoming: newNode.children
-                    )
-                }
-                return existingNode
-            } else {
-                // Brand new node — wire up callbacks
-                wireUpCallbacks([newNode])
-                return newNode
-            }
-        }
-    }
-
-    /// Wire up expansion callbacks after tree is built (must be on MainActor)
-    private func wireUpCallbacks(_ nodes: [FileTreeNode]) {
-        for node in nodes where node.isDirectory {
-            node.onExpandedChange = { [weak self] path, expanded in
-                self?.handleFolderExpansionChange(path: path, expanded: expanded)
-            }
-            wireUpCallbacks(node.children)
-        }
-    }
-
-    /// Non-isolated tree builder — runs off the main thread
-    private nonisolated func buildTreeRecursive(
-        at directory: URL,
-        depth: Int,
-        expandedFolders: Set<String>,
-        autoExpandRoot: Bool
-    ) -> [FileTreeNode] {
-        var nodes: [FileTreeNode] = []
-
+    /// Load a single directory's contents (non-recursive)
+    private nonisolated func listDirectory(at directory: URL, depth: Int, showHiddenFiles: Bool) -> [FileTreeNode] {
+        let resolved = directory.resolvingSymlinksInPath()
+        let options: FileManager.DirectoryEnumerationOptions = showHiddenFiles ? [] : [.skipsHiddenFiles]
         guard let contents = try? FileManager.default.contentsOfDirectory(
-            at: directory,
+            at: resolved,
             includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
+            options: options
         ) else {
             return []
         }
 
-        // Pre-compute isDirectory once per entry (uses prefetched values from contentsOfDirectory)
         struct Entry {
             let url: URL
             let name: String
             let isDirectory: Bool
         }
         let entries: [Entry] = contents.map { url in
-            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            return Entry(url: url, name: url.lastPathComponent, isDirectory: isDir)
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+            return Entry(url: url, name: url.lastPathComponent, isDirectory: isDir.boolValue)
         }
 
-        // Sort: directories first, then alphabetically
         let sorted = entries.sorted { lhs, rhs in
             if lhs.isDirectory != rhs.isDirectory {
-                return lhs.isDirectory  // Directories first
+                return lhs.isDirectory
             }
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
 
+        var nodes: [FileTreeNode] = []
         for entry in sorted {
             if entry.isDirectory {
-                // Skip ignored directories
-                if Self.ignoredDirectories.contains(entry.name) {
-                    continue
-                }
-
-                // Recursively get children
-                let children = buildTreeRecursive(
-                    at: entry.url,
-                    depth: depth + 1,
-                    expandedFolders: expandedFolders,
-                    autoExpandRoot: autoExpandRoot
+                if Self.ignoredDirectories.contains(entry.name) { continue }
+                let node = FileTreeNode(
+                    name: entry.name,
+                    url: entry.url,
+                    isDirectory: true,
+                    depth: depth,
+                    isExpanded: false
                 )
-
-                // Only include directory if it has markdown files (directly or nested)
-                if !children.isEmpty {
-                    let shouldExpand = expandedFolders.contains(entry.url.path) || (autoExpandRoot && depth == 0)
-                    let node = FileTreeNode(
-                        name: entry.name,
-                        url: entry.url,
-                        isDirectory: true,
-                        depth: depth,
-                        children: children,
-                        isExpanded: shouldExpand
-                    )
-                    nodes.append(node)
-                }
+                nodes.append(node)
             } else {
-                // Check if it's a markdown file
                 let ext = entry.url.pathExtension.lowercased()
                 if Self.markdownExtensions.contains(ext) {
                     let node = FileTreeNode(
@@ -273,8 +182,164 @@ public class FileTreeProvider: ObservableObject {
                 }
             }
         }
-
         return nodes
+    }
+
+    /// Load root level on a background thread
+    private func loadRootLevel(from directory: URL) {
+        let hidden = showHiddenFiles
+        let expanded = expandedFolders
+        let autoExpand = autoExpandRoot
+        Task.detached { [weak self] in
+            guard let self else { return }
+            let nodes = self.listDirectory(at: directory, depth: 0, showHiddenFiles: hidden)
+            await MainActor.run {
+                for node in nodes {
+                    self.wireUpNode(node)
+                    if node.isDirectory {
+                        let shouldExpand = expanded.contains(node.url.path) || autoExpand
+                        if shouldExpand {
+                            node.isExpanded = shouldExpand
+                        }
+                    }
+                }
+                self.rootNodes = nodes
+                // Load children for expanded folders
+                for node in nodes where node.isDirectory && node.isExpanded {
+                    self.loadChildrenIfNeeded(for: node)
+                }
+            }
+        }
+    }
+
+    /// Load children for a folder node (single level)
+    private func loadChildrenIfNeeded(for node: FileTreeNode) {
+        guard node.isDirectory, !node.childrenLoaded else { return }
+        node.childrenLoaded = true
+
+        let hidden = showHiddenFiles
+        let expanded = expandedFolders
+        let url = node.url
+        let parentDepth = node.depth
+
+        Task.detached { [weak self] in
+            guard let self else { return }
+            let children = self.listDirectory(at: url, depth: parentDepth + 1, showHiddenFiles: hidden)
+            await MainActor.run {
+                for child in children {
+                    self.wireUpNode(child)
+                    if child.isDirectory {
+                        let shouldExpand = expanded.contains(child.url.path)
+                        if shouldExpand {
+                            child.isExpanded = shouldExpand
+                        }
+                    }
+                }
+                node.children = children
+                // Recursively load children for any expanded subdirectories
+                for child in children where child.isDirectory && child.isExpanded {
+                    self.loadChildrenIfNeeded(for: child)
+                }
+            }
+        }
+    }
+
+    /// Wire up expansion callback for a node
+    private func wireUpNode(_ node: FileTreeNode) {
+        node.onExpandedChange = { [weak self] path, expanded in
+            self?.handleFolderExpansionChange(path: path, expanded: expanded)
+            if expanded {
+                // Find the node and load its children
+                self?.expandFolder(at: path)
+            }
+        }
+    }
+
+    /// Find a node by path and load its children if needed
+    private func expandFolder(at path: String) {
+        if let node = findNode(at: path, in: rootNodes) {
+            loadChildrenIfNeeded(for: node)
+        }
+    }
+
+    private func findNode(at path: String, in nodes: [FileTreeNode]) -> FileTreeNode? {
+        for node in nodes {
+            if node.url.path == path { return node }
+            if node.isDirectory, let found = findNode(at: path, in: node.children) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Refresh
+
+    /// Reload all visible levels (root + expanded dirs)
+    private func reloadVisibleLevels() {
+        guard let root = rootDirectory else { return }
+        let hidden = showHiddenFiles
+        let expanded = expandedFolders
+        let autoExpand = autoExpandRoot
+
+        Task.detached { [weak self] in
+            guard let self else { return }
+            let newRootNodes = self.listDirectory(at: root, depth: 0, showHiddenFiles: hidden)
+            await MainActor.run {
+                let merged = self.mergeLevel(
+                    existing: self.rootNodes,
+                    incoming: newRootNodes,
+                    depth: 0,
+                    expandedFolders: expanded,
+                    autoExpandRoot: autoExpand
+                )
+                self.rootNodes = merged
+            }
+        }
+    }
+
+    /// Merge a single level, preserving existing node identity and loaded children
+    private func mergeLevel(
+        existing: [FileTreeNode],
+        incoming: [FileTreeNode],
+        depth: Int,
+        expandedFolders: Set<String>,
+        autoExpandRoot: Bool
+    ) -> [FileTreeNode] {
+        var existingByURL: [URL: FileTreeNode] = [:]
+        for node in existing {
+            existingByURL[node.url] = node
+        }
+
+        return incoming.map { newNode in
+            if let existingNode = existingByURL[newNode.url] {
+                // Reuse existing node for scroll stability
+                if existingNode.isDirectory && existingNode.childrenLoaded {
+                    // Re-enumerate this level's children if expanded
+                    let hidden = self.showHiddenFiles
+                    let childNodes = self.listDirectory(at: existingNode.url, depth: depth + 1, showHiddenFiles: hidden)
+                    existingNode.children = mergeLevel(
+                        existing: existingNode.children,
+                        incoming: childNodes,
+                        depth: depth + 1,
+                        expandedFolders: expandedFolders,
+                        autoExpandRoot: false
+                    )
+                }
+                return existingNode
+            } else {
+                wireUpNode(newNode)
+                let shouldExpand = expandedFolders.contains(newNode.url.path)
+                    || (autoExpandRoot && depth == 0)
+                if shouldExpand && newNode.isDirectory {
+                    let callback = newNode.onExpandedChange
+                    newNode.onExpandedChange = nil
+                    newNode.isExpanded = true
+                    newNode.onExpandedChange = callback
+                    loadChildrenIfNeeded(for: newNode)
+                }
+                return newNode
+            }
+        }
     }
 
     private func setupDirectoryWatcher(for directory: URL) {
@@ -306,13 +371,15 @@ public class FileTreeProvider: ObservableObject {
 
     private func applyExpandedStateToNodes(_ nodes: [FileTreeNode]) {
         for node in nodes where node.isDirectory {
-            // Temporarily remove callback to avoid triggering saves
             let callback = node.onExpandedChange
             node.onExpandedChange = nil
-            node.isExpanded = expandedFolders.contains(node.url.path) || (autoExpandRoot && node.depth == 0)
+            let shouldExpand = expandedFolders.contains(node.url.path) || (autoExpandRoot && node.depth == 0)
+            node.isExpanded = shouldExpand
             node.onExpandedChange = callback
 
-            // Recursively apply to children
+            if shouldExpand {
+                loadChildrenIfNeeded(for: node)
+            }
             applyExpandedStateToNodes(node.children)
         }
     }

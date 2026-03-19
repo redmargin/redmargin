@@ -86,4 +86,23 @@ final class PreferencesManagerTests: XCTestCase {
         let saved = UserDefaults.standard.string(forKey: "RedMargin.Preferences.InlineCodeColor")
         XCTAssertEqual(saved, "purple", "Inline code color should persist to UserDefaults")
     }
+
+    func testShowHiddenFilesDefaultsFalse() {
+        // Reset singleton and UserDefaults
+        let prefs = PreferencesManager.shared
+        prefs.showHiddenFiles = false
+        UserDefaults.standard.removeObject(forKey: "RedMargin.Preferences.ShowHiddenFiles")
+        XCTAssertEqual(prefs.showHiddenFiles, false, "Default showHiddenFiles should be false")
+    }
+
+    func testShowHiddenFilesPersists() {
+        let prefs = PreferencesManager.shared
+        prefs.showHiddenFiles = true
+
+        let saved = UserDefaults.standard.bool(forKey: "RedMargin.Preferences.ShowHiddenFiles")
+        XCTAssertEqual(saved, true, "showHiddenFiles should persist to UserDefaults")
+
+        // Reset
+        prefs.showHiddenFiles = false
+    }
 }

@@ -37,7 +37,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private let folderSelectedFilesKey = "RedMargin.FolderSelectedFiles"
     private let windowOrderKey = "RedMargin.WindowOrder"
     private let frontmostWindowKey = "RedMargin.FrontmostWindow"
-    let maxRecentDocuments = 10
+    let maxRecentDocuments = 20
     let settings = DocumentSettingsStorage.shared
 
     @Published var recentDocuments: [URL] = []
@@ -425,6 +425,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             showGutter: settings.loadGutterVisible(for: url),
             showLineNumbers: settings.loadLineNumbersVisible(for: url),
             showGitIndicators: settings.loadGitIndicatorsVisible(for: url),
+            showHiddenFiles: settings.loadHiddenFilesVisible(for: url),
             textWidth: settings.loadTextWidth(for: url),
             contentWidth: settings.loadContentWidth(for: url),
             appDelegate: self,

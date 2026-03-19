@@ -19,6 +19,7 @@ struct FolderWindowContent: View {
     @State private var showGitIndicators: Bool
     @State private var textWidth: String
     @State private var contentWidth: String
+    @State private var showHiddenFiles: Bool
     @State private var showFindBar: Bool = false
     @State private var findBarFocusTrigger: UUID = UUID()
     @State private var isExporting: Bool = false
@@ -45,6 +46,7 @@ struct FolderWindowContent: View {
         initialSelectedFile: URL? = nil,
         showSidebar: Bool? = nil,
         sidebarWidth: CGFloat? = nil,
+        showHiddenFiles: Bool? = nil,
         appDelegate: AppDelegate? = nil
     ) {
         let prefs = PreferencesManager.shared
@@ -56,6 +58,7 @@ struct FolderWindowContent: View {
         ))
         _showSidebar = State(initialValue: showSidebar ?? true)
         _sidebarWidth = State(initialValue: sidebarWidth ?? 200)
+        _showHiddenFiles = State(initialValue: showHiddenFiles ?? prefs.showHiddenFiles)
         _showGutter = State(initialValue: prefs.showGutter)
         _showLineNumbers = State(initialValue: prefs.showLineNumbers)
         _showGitIndicators = State(initialValue: prefs.showGitIndicators)
@@ -73,6 +76,7 @@ struct FolderWindowContent: View {
                 showGutter: $showGutter,
                 showLineNumbers: $showLineNumbers,
                 showGitIndicators: $showGitIndicators,
+                showHiddenFiles: $showHiddenFiles,
                 textWidth: $textWidth,
                 contentWidth: $contentWidth,
                 showFindBar: $showFindBar,
@@ -93,7 +97,12 @@ struct FolderWindowContent: View {
                 dismissFindBar()
                 return .handled
             }
+            .onChange(of: showHiddenFiles) { _, newValue in
+                DocumentSettingsStorage.shared.saveHiddenFilesVisible(newValue, for: folderURL)
+                fileTreeProvider.showHiddenFiles = newValue
+            }
             .onAppear {
+                fileTreeProvider.showHiddenFiles = showHiddenFiles
                 setupExpandedFoldersPersistence()
             }
             .onChange(of: showSidebar) { _, newValue in
@@ -269,6 +278,7 @@ struct FolderWindowContent: View {
                     // (documentState is @State, not @ObservedObject, so SwiftUI
                     // doesn't observe its @Published property changes directly.)
                     selectedFileURL = url
+                    appDelegate?.addToRecentDocuments(url)
                     appDelegate?.updateFolderWindowFile(folder: folderURL, to: url)
                     if let window = NSApp.keyWindow {
                         window.title = url.displayPath
@@ -282,6 +292,7 @@ struct FolderWindowContent: View {
             let content = (try? String(contentsOf: url, encoding: .utf8)) ?? "Error loading file"
             documentState = DocumentState(content: content, fileURL: url)
             selectedFileURL = url
+            appDelegate?.addToRecentDocuments(url)
             appDelegate?.updateFolderWindowFile(folder: folderURL, to: url)
             if let window = NSApp.keyWindow {
                 window.title = url.displayPath
@@ -384,6 +395,7 @@ private struct FolderNotificationModifiers: ViewModifier {
     @Binding var showGutter: Bool
     @Binding var showLineNumbers: Bool
     @Binding var showGitIndicators: Bool
+    @Binding var showHiddenFiles: Bool
     @Binding var textWidth: String
     @Binding var contentWidth: String
     @Binding var showFindBar: Bool
@@ -411,6 +423,9 @@ private struct FolderNotificationModifiers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .toggleGitIndicators)) { _ in
                 if checkIsKeyWindow() && hasDocument { showGitIndicators.toggle() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleHiddenFiles)) { _ in
+                if checkIsKeyWindow() { showHiddenFiles.toggle() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
                 if checkIsKeyWindow() && hasDocument { onRefresh() }

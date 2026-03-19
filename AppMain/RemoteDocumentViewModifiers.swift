@@ -34,6 +34,7 @@ struct RemoteNotificationModifiers: ViewModifier {
     @Binding var showGutter: Bool
     @Binding var showLineNumbers: Bool
     @Binding var showGitIndicators: Bool
+    @Binding var showHiddenFiles: Bool
     @Binding var textWidth: String
     @Binding var contentWidth: String
     @Binding var showFindBar: Bool
@@ -60,6 +61,9 @@ struct RemoteNotificationModifiers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .toggleGitIndicators)) { _ in
                 if checkIsKeyWindow() { showGitIndicators.toggle() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleHiddenFiles)) { _ in
+                if checkIsKeyWindow() { showHiddenFiles.toggle() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
                 if checkIsKeyWindow() { onRefresh() }
@@ -138,6 +142,7 @@ struct RemotePersistenceModifiers: ViewModifier {
     let showGutter: Bool
     let showLineNumbers: Bool
     let showGitIndicators: Bool
+    let showHiddenFiles: Bool
     let textWidth: String
     let contentWidth: String
     let showSidebar: Bool
@@ -157,6 +162,9 @@ struct RemotePersistenceModifiers: ViewModifier {
             }
             .onChange(of: showGitIndicators) { _, newValue in
                 settings.saveGitIndicatorsVisible(newValue, for: location)
+            }
+            .onChange(of: showHiddenFiles) { _, newValue in
+                settings.saveHiddenFilesVisible(newValue, for: location)
             }
             .onChange(of: textWidth) { _, newValue in
                 settings.saveTextWidth(newValue, for: location)

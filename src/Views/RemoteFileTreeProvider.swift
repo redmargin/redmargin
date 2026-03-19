@@ -1,8 +1,8 @@
 import Foundation
 import RedmarginCore
 
-/// Provides a hierarchical tree of Markdown files from a remote directory for sidebar display.
-/// Uses the Git repo root if available, otherwise falls back to the file's parent directory.
+/// Provides a hierarchical tree of files from a remote directory for sidebar display.
+/// Uses lazy single-level loading — only enumerates one directory at a time via listDirectory RPC.
 @MainActor
 public class RemoteFileTreeProvider: ObservableObject {
     @Published public private(set) var rootNodes: [FileTreeNode] = []
@@ -15,11 +15,24 @@ public class RemoteFileTreeProvider: ObservableObject {
     private var expandedFolders: Set<String> = []
     private var directoryWatchToken: WatchToken?
     private var stateObserverTask: Task<Void, Never>?
-    private var refreshTask: Task<Void, Never>?
-    private var refreshGeneration = 0
 
     /// Callback when expanded folders change (path of root, set of expanded folder paths)
     public var onExpandedFoldersChange: ((String, Set<String>) -> Void)?
+
+    public var showHiddenFiles: Bool = false {
+        didSet {
+            if oldValue != showHiddenFiles { refresh() }
+        }
+    }
+
+    /// Directories to skip
+    private static let ignoredDirectories: Set<String> = [
+        ".git", "node_modules", ".build", "build", "DerivedData",
+        ".cache", ".npm", "vendor", "Pods", ".svn", ".hg"
+    ]
+
+    /// File extensions to include
+    private static let markdownExtensions: Set<String> = ["md", "markdown"]
 
     public init(
         currentFilePath: String,
@@ -53,7 +66,7 @@ public class RemoteFileTreeProvider: ObservableObject {
         }
     }
 
-    /// Loads markdown files from the appropriate root directory
+    /// Loads the root directory
     public func loadFiles() async {
         isLoading = true
         defer { isLoading = false }
@@ -62,7 +75,7 @@ public class RemoteFileTreeProvider: ObservableObject {
         do {
             if let repoRoot = try await fileProvider.detectGitRepo(for: currentFilePath) {
                 rootDirectory = repoRoot
-                rootNodes = await buildTree(from: repoRoot)
+                await loadRootLevel(from: repoRoot)
                 await setupDirectoryWatching(for: repoRoot)
                 return
             }
@@ -75,106 +88,93 @@ public class RemoteFileTreeProvider: ObservableObject {
             ? currentFilePath
             : (currentFilePath as NSString).deletingLastPathComponent
         rootDirectory = fallbackDir
-        rootNodes = await buildTree(from: fallbackDir)
+        await loadRootLevel(from: fallbackDir)
         await setupDirectoryWatching(for: fallbackDir)
     }
 
     private func setupDirectoryWatching(for path: String) async {
-        // Clean up any existing watch
         if let token = directoryWatchToken {
             await fileProvider.unwatchDirectory(token)
         }
 
-        directoryWatchToken = await fileProvider.watchDirectory(at: path) { [weak self] files in
+        directoryWatchToken = await fileProvider.watchDirectory(at: path) { [weak self] _ in
             Task { @MainActor in
-                self?.handleDirectoryChanged(files: files)
+                self?.refresh()
             }
         }
     }
 
-    private func handleDirectoryChanged(files: [String]) {
-        guard let root = rootDirectory else { return }
-        print("[RemoteFileTreeProvider] Directory changed, rebuilding tree (\(files.count) files)")
-        rootNodes = buildTreeFromPaths(files, rootPath: root)
-    }
-
-    /// Refreshes the file list with cancellation support and overall timeout.
-    /// Uses a generation counter so a stale task cannot flip isLoading off while a newer refresh is running.
+    /// Refreshes visible levels — root + any expanded directories
     public func refresh() {
-        refreshTask?.cancel()
-        refreshGeneration += 1
-        let myGeneration = refreshGeneration
-        isLoading = true
+        guard let root = rootDirectory else { return }
+        print("[RemoteFileTreeProvider] refresh() for \(root)")
 
-        refreshTask = Task {
-            defer {
-                // Only this generation may clear the spinner
-                if myGeneration == refreshGeneration {
-                    isLoading = false
+        Task {
+            let entries = try? await fileProvider.listDirectory(at: root)
+            guard let entries else { return }
+            let newNodes = buildNodes(from: entries, parentPath: root, depth: 0)
+            rootNodes = mergeLevel(existing: rootNodes, incoming: newNodes, parentPath: root, depth: 0)
+        }
+    }
+
+    // MARK: - Lazy Loading
+
+    /// Load root level via a single listDirectory call
+    private func loadRootLevel(from directory: String) async {
+        do {
+            let entries = try await fileProvider.listDirectory(at: directory)
+            let nodes = buildNodes(from: entries, parentPath: directory, depth: 0)
+            for node in nodes {
+                wireUpNode(node)
+                if node.isDirectory {
+                    let shouldExpand = expandedFolders.contains(node.url.path)
+                    if shouldExpand {
+                        node.isExpanded = true
+                    }
                 }
             }
-
-            guard let root = rootDirectory else { return }
-            print("[RemoteFileTreeProvider] refresh() gen=\(myGeneration) starting for \(root)")
-
-            // Race buildTree against a 15s timeout — whichever finishes first wins
-            let nodes: [FileTreeNode] = await withTaskGroup(of: [FileTreeNode]?.self) { group in
-                group.addTask {
-                    await self.buildTree(from: root)
-                }
-                group.addTask {
-                    try? await Task.sleep(nanoseconds: 15_000_000_000)
-                    return nil // sentinel for timeout
-                }
-                // First result back: real nodes or nil (timeout)
-                let first = await group.next() ?? nil
-                group.cancelAll()
-                if let nodes = first {
-                    return nodes
-                }
-                print("[RemoteFileTreeProvider] refresh() gen=\(myGeneration) timed out after 15s")
-                return []
-            }
-
-            guard !Task.isCancelled, myGeneration == refreshGeneration else { return }
             rootNodes = nodes
-            print("[RemoteFileTreeProvider] refresh() gen=\(myGeneration) completed, \(nodes.count) root nodes")
+            // Load children for expanded folders
+            for node in nodes where node.isDirectory && node.isExpanded {
+                await loadChildrenIfNeeded(for: node)
+            }
+        } catch {
+            print("[RemoteFileTreeProvider] Failed to list root \(directory): \(error)")
         }
     }
 
-    /// Directories to skip when enumerating files (used by legacy recursive fallback)
-    private static let ignoredDirectories: Set<String> = [
-        ".git", "node_modules", ".build", "build", "DerivedData",
-        ".cache", ".npm", "vendor", "Pods", ".svn", ".hg"
-    ]
+    /// Load children for a folder node (single level)
+    private func loadChildrenIfNeeded(for node: FileTreeNode) async {
+        guard node.isDirectory, !node.childrenLoaded else { return }
+        node.childrenLoaded = true
 
-    /// File extensions to include (used by legacy recursive fallback)
-    private static let markdownExtensions: Set<String> = ["md", "markdown"]
+        let path = node.url.path
+        let parentDepth = node.depth
 
-    private func buildTree(from directory: String) async -> [FileTreeNode] {
-        // Try single-call approach (requires server with FindMarkdownFiles support)
         do {
-            let paths = try await fileProvider.findMarkdownFiles(in: directory)
-            return buildTreeFromPaths(paths, rootPath: directory)
+            let entries = try await fileProvider.listDirectory(at: path)
+            let children = buildNodes(from: entries, parentPath: path, depth: parentDepth + 1)
+            for child in children {
+                wireUpNode(child)
+                if child.isDirectory {
+                    let shouldExpand = expandedFolders.contains(child.url.path)
+                    if shouldExpand {
+                        child.isExpanded = true
+                    }
+                }
+            }
+            node.children = children
+            // Recursively load children for expanded subdirectories
+            for child in children where child.isDirectory && child.isExpanded {
+                await loadChildrenIfNeeded(for: child)
+            }
         } catch {
-            // Fall back to recursive listing for older servers
-            print("[RemoteFileTreeProvider] FindMarkdownFiles not available, falling back to recursive listing")
-            return await buildTreeRecursive(at: directory, depth: 0)
+            print("[RemoteFileTreeProvider] Failed to list \(path): \(error)")
         }
     }
 
-    private func buildTreeRecursive(at directory: String, depth: Int) async -> [FileTreeNode] {
-        guard !Task.isCancelled else { return [] }
-        var nodes: [FileTreeNode] = []
-
-        let entries: [DirectoryEntry]
-        do {
-            entries = try await fileProvider.listDirectory(at: directory)
-        } catch {
-            print("[RemoteFileTreeProvider] Failed to list \(directory): \(error)")
-            return []
-        }
-
+    /// Build FileTreeNode array from DirectoryEntry array (single level, no recursion)
+    private func buildNodes(from entries: [DirectoryEntry], parentPath: String, depth: Int) -> [FileTreeNode] {
         let sorted = entries.sorted { lhs, rhs in
             if lhs.isDirectory != rhs.isDirectory {
                 return lhs.isDirectory
@@ -182,30 +182,21 @@ public class RemoteFileTreeProvider: ObservableObject {
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
 
+        var nodes: [FileTreeNode] = []
         for entry in sorted {
-            guard !Task.isCancelled else { return nodes }
-            let fullPath = (directory as NSString).appendingPathComponent(entry.name)
+            if !showHiddenFiles && entry.name.hasPrefix(".") { continue }
+            let fullPath = (parentPath as NSString).appendingPathComponent(entry.name)
             let url = URL(fileURLWithPath: fullPath)
 
             if entry.isDirectory {
                 if Self.ignoredDirectories.contains(entry.name) { continue }
-
-                let children = await buildTreeRecursive(at: fullPath, depth: depth + 1)
-                if !children.isEmpty {
-                    let shouldExpand = expandedFolders.contains(fullPath) || depth == 0
-                    let node = FileTreeNode(
-                        name: entry.name,
-                        url: url,
-                        isDirectory: true,
-                        depth: depth,
-                        children: children,
-                        isExpanded: shouldExpand
-                    )
-                    node.onExpandedChange = { [weak self] path, expanded in
-                        self?.handleFolderExpansionChange(path: path, expanded: expanded)
-                    }
-                    nodes.append(node)
-                }
+                let node = FileTreeNode(
+                    name: entry.name,
+                    url: url,
+                    isDirectory: true,
+                    depth: depth
+                )
+                nodes.append(node)
             } else {
                 let ext = (entry.name as NSString).pathExtension.lowercased()
                 if Self.markdownExtensions.contains(ext) {
@@ -219,75 +210,84 @@ public class RemoteFileTreeProvider: ObservableObject {
                 }
             }
         }
-
         return nodes
     }
 
-    /// Builds a hierarchical tree from a flat list of relative file paths.
-    /// Uses a trie to group files into their directory structure.
-    private func buildTreeFromPaths(_ relativePaths: [String], rootPath: String) -> [FileTreeNode] {
-        // Build intermediate trie from flat paths
-        let root = PathTrie()
-        for path in relativePaths {
-            let components = path.split(separator: "/").map(String.init)
-            var current = root
-            for (index, component) in components.enumerated() {
-                if index == components.count - 1 {
-                    current.files.append(component)
-                } else {
-                    if current.subdirs[component] == nil {
-                        current.subdirs[component] = PathTrie()
+    /// Wire up expansion callback
+    private func wireUpNode(_ node: FileTreeNode) {
+        node.onExpandedChange = { [weak self] path, expanded in
+            self?.handleFolderExpansionChange(path: path, expanded: expanded)
+            if expanded {
+                self?.expandFolder(at: path)
+            }
+        }
+    }
+
+    /// Find and load children for a folder
+    private func expandFolder(at path: String) {
+        guard let node = findNode(at: path, in: rootNodes) else { return }
+        Task {
+            await loadChildrenIfNeeded(for: node)
+        }
+    }
+
+    private func findNode(at path: String, in nodes: [FileTreeNode]) -> FileTreeNode? {
+        for node in nodes {
+            if node.url.path == path { return node }
+            if node.isDirectory, let found = findNode(at: path, in: node.children) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Merge
+
+    /// Merge a single level, preserving existing node identity and loaded children
+    private func mergeLevel(
+        existing: [FileTreeNode],
+        incoming: [FileTreeNode],
+        parentPath: String,
+        depth: Int
+    ) -> [FileTreeNode] {
+        var existingByURL: [URL: FileTreeNode] = [:]
+        for node in existing {
+            existingByURL[node.url] = node
+        }
+
+        return incoming.map { newNode in
+            if let existingNode = existingByURL[newNode.url] {
+                if existingNode.isDirectory && existingNode.childrenLoaded {
+                    // Re-enumerate this loaded directory
+                    Task {
+                        let path = existingNode.url.path
+                        let childDepth = depth + 1
+                        guard let entries = try? await self.fileProvider.listDirectory(at: path) else { return }
+                        let newChildren = self.buildNodes(from: entries, parentPath: path, depth: childDepth)
+                        existingNode.children = self.mergeLevel(
+                            existing: existingNode.children,
+                            incoming: newChildren,
+                            parentPath: path,
+                            depth: childDepth
+                        )
                     }
-                    current = current.subdirs[component]!
                 }
+                return existingNode
+            } else {
+                wireUpNode(newNode)
+                let shouldExpand = expandedFolders.contains(newNode.url.path)
+                if shouldExpand && newNode.isDirectory {
+                    let callback = newNode.onExpandedChange
+                    newNode.onExpandedChange = nil
+                    newNode.isExpanded = true
+                    newNode.onExpandedChange = callback
+                    Task {
+                        await self.loadChildrenIfNeeded(for: newNode)
+                    }
+                }
+                return newNode
             }
         }
-
-        return convertTrieToNodes(root, parentPath: rootPath, depth: 0)
-    }
-
-    private func convertTrieToNodes(_ trie: PathTrie, parentPath: String, depth: Int) -> [FileTreeNode] {
-        var nodes: [FileTreeNode] = []
-
-        // Directories first, sorted
-        let sortedDirNames = trie.subdirs.keys.sorted {
-            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-        }
-
-        for dirName in sortedDirNames {
-            let dirContent = trie.subdirs[dirName]!
-            let fullPath = (parentPath as NSString).appendingPathComponent(dirName)
-            let url = URL(fileURLWithPath: fullPath)
-            let children = convertTrieToNodes(dirContent, parentPath: fullPath, depth: depth + 1)
-
-            let shouldExpand = expandedFolders.contains(fullPath) || depth == 0
-            let node = FileTreeNode(
-                name: dirName,
-                url: url,
-                isDirectory: true,
-                depth: depth,
-                children: children,
-                isExpanded: shouldExpand
-            )
-            node.onExpandedChange = { [weak self] path, expanded in
-                self?.handleFolderExpansionChange(path: path, expanded: expanded)
-            }
-            nodes.append(node)
-        }
-
-        // Files, sorted
-        let sortedFiles = trie.files.sorted {
-            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-        }
-
-        for fileName in sortedFiles {
-            let fullPath = (parentPath as NSString).appendingPathComponent(fileName)
-            let url = URL(fileURLWithPath: fullPath)
-            let node = FileTreeNode(name: fileName, url: url, isDirectory: false, depth: depth)
-            nodes.append(node)
-        }
-
-        return nodes
     }
 
     private func handleFolderExpansionChange(path: String, expanded: Bool) {
@@ -297,7 +297,6 @@ public class RemoteFileTreeProvider: ObservableObject {
             expandedFolders.remove(path)
         }
 
-        // Notify via callback
         if let rootPath = rootDirectory {
             onExpandedFoldersChange?(rootPath, expandedFolders)
         }
@@ -311,20 +310,18 @@ public class RemoteFileTreeProvider: ObservableObject {
 
     private func applyExpandedStateToNodes(_ nodes: [FileTreeNode]) {
         for node in nodes where node.isDirectory {
-            // Temporarily remove callback to avoid triggering saves
             let callback = node.onExpandedChange
             node.onExpandedChange = nil
-            node.isExpanded = expandedFolders.contains(node.url.path) || node.depth == 0
+            let shouldExpand = expandedFolders.contains(node.url.path) || node.depth == 0
+            node.isExpanded = shouldExpand
             node.onExpandedChange = callback
 
-            // Recursively apply to children
+            if shouldExpand {
+                Task {
+                    await loadChildrenIfNeeded(for: node)
+                }
+            }
             applyExpandedStateToNodes(node.children)
         }
     }
-}
-
-/// Intermediate trie node for building file tree from flat paths
-private class PathTrie {
-    var subdirs: [String: PathTrie] = [:]
-    var files: [String] = []
 }

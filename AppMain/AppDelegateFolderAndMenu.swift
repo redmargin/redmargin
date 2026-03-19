@@ -23,6 +23,7 @@ extension AppDelegate {
             initialSelectedFile: selectedFile,
             showSidebar: settings.loadSidebarVisible(for: standardized),
             sidebarWidth: settings.loadSidebarWidth(for: standardized),
+            showHiddenFiles: settings.loadHiddenFilesVisible(for: standardized),
             appDelegate: self
         )
 
@@ -215,6 +216,10 @@ extension AppDelegate {
 
     @objc func toggleGitIndicators(_ sender: Any?) {
         NotificationCenter.default.post(name: .toggleGitIndicators, object: nil)
+    }
+
+    @objc func toggleHiddenFiles(_ sender: Any?) {
+        NotificationCenter.default.post(name: .toggleHiddenFiles, object: nil)
     }
 
     @objc func toggleSidebar(_ sender: Any?) {
