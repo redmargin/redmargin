@@ -165,6 +165,12 @@ private struct GeneralSettingsView: View {
             }
 
             Section {
+                Toggle("Show hidden files", isOn: $prefs.showHiddenFiles)
+            } header: {
+                Text("Sidebar (defaults for new windows)")
+            }
+
+            Section {
                 Toggle("Allow remote images", isOn: $prefs.allowRemoteImages)
             } header: {
                 Text("Security")

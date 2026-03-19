@@ -17,6 +17,8 @@ final class DocumentSettingsStorage {
     private let remoteSidebarVisibleKey = "RedMargin.RemoteDocumentSidebarVisible"
     private let sidebarWidthKey = "RedMargin.DocumentSidebarWidth"
     private let remoteSidebarWidthKey = "RedMargin.RemoteDocumentSidebarWidth"
+    private let hiddenFilesKey = "RedMargin.DocumentHiddenFiles"
+    private let remoteHiddenFilesKey = "RedMargin.RemoteDocumentHiddenFiles"
     private let expandedFoldersKey = "RedMargin.ExpandedFolders"
     private let remoteExpandedFoldersKey = "RedMargin.RemoteExpandedFolders"
 
@@ -115,6 +117,30 @@ final class DocumentSettingsStorage {
 
     func loadGitIndicatorsVisible(for location: RemoteLocation) -> Bool? {
         let settings = UserDefaults.standard.dictionary(forKey: remoteGitIndicatorsKey) as? [String: Bool] ?? [:]
+        return settings[location.storageKey]
+    }
+
+    // MARK: - Hidden Files
+
+    func saveHiddenFilesVisible(_ visible: Bool, for url: URL) {
+        var settings = UserDefaults.standard.dictionary(forKey: hiddenFilesKey) as? [String: Bool] ?? [:]
+        settings[url.path] = visible
+        UserDefaults.standard.set(settings, forKey: hiddenFilesKey)
+    }
+
+    func loadHiddenFilesVisible(for url: URL) -> Bool? {
+        let settings = UserDefaults.standard.dictionary(forKey: hiddenFilesKey) as? [String: Bool] ?? [:]
+        return settings[url.path]
+    }
+
+    func saveHiddenFilesVisible(_ visible: Bool, for location: RemoteLocation) {
+        var settings = UserDefaults.standard.dictionary(forKey: remoteHiddenFilesKey) as? [String: Bool] ?? [:]
+        settings[location.storageKey] = visible
+        UserDefaults.standard.set(settings, forKey: remoteHiddenFilesKey)
+    }
+
+    func loadHiddenFilesVisible(for location: RemoteLocation) -> Bool? {
+        let settings = UserDefaults.standard.dictionary(forKey: remoteHiddenFilesKey) as? [String: Bool] ?? [:]
         return settings[location.storageKey]
     }
 

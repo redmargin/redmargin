@@ -39,6 +39,7 @@ public class PreferencesManager: ObservableObject {
     private let textWidthKey = "RedMargin.Preferences.TextWidth"
     private let contentWidthKey = "RedMargin.Preferences.ContentWidth"
     private let printMarginKey = "RedMargin.Preferences.PrintMargin"
+    private let showHiddenFilesKey = "RedMargin.Preferences.ShowHiddenFiles"
 
     @Published public var theme: Theme {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: themeKey) }
@@ -76,6 +77,10 @@ public class PreferencesManager: ObservableObject {
         didSet { UserDefaults.standard.set(printMargin, forKey: printMarginKey) }
     }
 
+    @Published public var showHiddenFiles: Bool {
+        didSet { UserDefaults.standard.set(showHiddenFiles, forKey: showHiddenFilesKey) }
+    }
+
     private init() {
         let themeString = UserDefaults.standard.string(forKey: themeKey) ?? Theme.system.rawValue
         self.theme = Theme(rawValue: themeString) ?? .system
@@ -97,5 +102,7 @@ public class PreferencesManager: ObservableObject {
         self.contentWidth = ContentWidth(rawValue: contentWidthString) ?? .unrestricted
 
         self.printMargin = UserDefaults.standard.object(forKey: printMarginKey) as? Double ?? 28
+
+        self.showHiddenFiles = UserDefaults.standard.object(forKey: showHiddenFilesKey) as? Bool ?? false
     }
 }

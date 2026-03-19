@@ -17,6 +17,7 @@ struct RemoteDocumentWindowContent: View {
     @State private var showGitIndicators: Bool
     @State private var textWidth: String
     @State private var contentWidth: String
+    @State private var showHiddenFiles: Bool = false
     @State private var showFindBar: Bool = false
     @State private var findBarFocusTrigger: UUID = UUID()
     @State private var isExporting: Bool = false
@@ -115,6 +116,7 @@ struct RemoteDocumentWindowContent: View {
                 showGutter: $showGutter,
                 showLineNumbers: $showLineNumbers,
                 showGitIndicators: $showGitIndicators,
+                showHiddenFiles: $showHiddenFiles,
                 textWidth: $textWidth,
                 contentWidth: $contentWidth,
                 showFindBar: $showFindBar,
@@ -134,6 +136,7 @@ struct RemoteDocumentWindowContent: View {
                 showGutter: showGutter,
                 showLineNumbers: showLineNumbers,
                 showGitIndicators: showGitIndicators,
+                showHiddenFiles: showHiddenFiles,
                 textWidth: textWidth,
                 contentWidth: contentWidth,
                 showSidebar: showSidebar,
@@ -145,6 +148,9 @@ struct RemoteDocumentWindowContent: View {
                 guard showFindBar else { return .ignored }
                 dismissFindBar()
                 return .handled
+            }
+            .onChange(of: showHiddenFiles) { _, newValue in
+                fileTreeProvider.showHiddenFiles = newValue
             }
             .alert("Remote File Changed", isPresented: $state.showConflictDialog) {
                 Button("Overwrite Remote") {
@@ -207,6 +213,10 @@ struct RemoteDocumentWindowContent: View {
         if let loaded = settings.loadSidebarWidth(for: loc) {
             sidebarWidth = loaded
         }
+        if let loaded = settings.loadHiddenFilesVisible(for: loc) {
+            showHiddenFiles = loaded
+        }
+        fileTreeProvider.showHiddenFiles = showHiddenFiles
 
         // Set up expanded folders persistence
         setupExpandedFoldersPersistence()

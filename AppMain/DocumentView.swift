@@ -17,6 +17,7 @@ struct DocumentWindowContent: View {
     @State private var showGitIndicators: Bool
     @State private var textWidth: String
     @State private var contentWidth: String
+    @State private var showHiddenFiles: Bool
     @State private var showFindBar: Bool = false
     @State private var findBarFocusTrigger: UUID = UUID()
     @State private var isExporting: Bool = false
@@ -49,6 +50,7 @@ struct DocumentWindowContent: View {
         showGutter: Bool? = nil,
         showLineNumbers: Bool? = nil,
         showGitIndicators: Bool? = nil,
+        showHiddenFiles: Bool? = nil,
         textWidth: String? = nil,
         contentWidth: String? = nil,
         appDelegate: AppDelegate? = nil,
@@ -63,6 +65,7 @@ struct DocumentWindowContent: View {
         _showGutter = State(initialValue: showGutter ?? prefs.showGutter)
         _showLineNumbers = State(initialValue: showLineNumbers ?? prefs.showLineNumbers)
         _showGitIndicators = State(initialValue: showGitIndicators ?? prefs.showGitIndicators)
+        _showHiddenFiles = State(initialValue: showHiddenFiles ?? prefs.showHiddenFiles)
         _textWidth = State(initialValue: textWidth ?? prefs.textWidth.rawValue)
         _contentWidth = State(initialValue: contentWidth ?? prefs.contentWidth.rawValue)
         self.initialScrollPosition = initialScrollPosition
@@ -79,6 +82,7 @@ struct DocumentWindowContent: View {
                 showGutter: $showGutter,
                 showLineNumbers: $showLineNumbers,
                 showGitIndicators: $showGitIndicators,
+                showHiddenFiles: $showHiddenFiles,
                 textWidth: $textWidth,
                 contentWidth: $contentWidth,
                 showFindBar: $showFindBar,
@@ -98,6 +102,7 @@ struct DocumentWindowContent: View {
                 showGutter: showGutter,
                 showLineNumbers: showLineNumbers,
                 showGitIndicators: showGitIndicators,
+                showHiddenFiles: showHiddenFiles,
                 textWidth: textWidth,
                 contentWidth: contentWidth,
                 showSidebar: showSidebar,
@@ -110,7 +115,11 @@ struct DocumentWindowContent: View {
                 dismissFindBar()
                 return .handled
             }
+            .onChange(of: showHiddenFiles) { _, newValue in
+                fileTreeProvider.showHiddenFiles = newValue
+            }
             .onAppear {
+                fileTreeProvider.showHiddenFiles = showHiddenFiles
                 setupExpandedFoldersPersistence()
             }
     }
@@ -405,6 +414,7 @@ private struct NotificationModifiers: ViewModifier {
     @Binding var showGutter: Bool
     @Binding var showLineNumbers: Bool
     @Binding var showGitIndicators: Bool
+    @Binding var showHiddenFiles: Bool
     @Binding var textWidth: String
     @Binding var contentWidth: String
     @Binding var showFindBar: Bool
@@ -431,6 +441,9 @@ private struct NotificationModifiers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .toggleGitIndicators)) { _ in
                 if checkIsKeyWindow() { showGitIndicators.toggle() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleHiddenFiles)) { _ in
+                if checkIsKeyWindow() { showHiddenFiles.toggle() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .refreshDocument)) { _ in
                 if checkIsKeyWindow() { onRefresh() }
@@ -509,6 +522,7 @@ private struct PersistenceModifiers: ViewModifier {
     let showGutter: Bool
     let showLineNumbers: Bool
     let showGitIndicators: Bool
+    let showHiddenFiles: Bool
     let textWidth: String
     let contentWidth: String
     let showSidebar: Bool
@@ -528,6 +542,9 @@ private struct PersistenceModifiers: ViewModifier {
             }
             .onChange(of: showGitIndicators) { _, newValue in
                 settings.saveGitIndicatorsVisible(newValue, for: fileURL)
+            }
+            .onChange(of: showHiddenFiles) { _, newValue in
+                settings.saveHiddenFilesVisible(newValue, for: fileURL)
             }
             .onChange(of: textWidth) { _, newValue in
                 settings.saveTextWidth(newValue, for: fileURL)

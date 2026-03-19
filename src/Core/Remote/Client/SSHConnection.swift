@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(os)
 import os.log
+#endif
 
 // SSHConnectionState, SSHConnectionError, and StderrCollector are in SSHConnectionTypes.swift
 
@@ -87,7 +89,9 @@ public actor SSHConnection {
     /// Used when the system wakes from sleep and the TCP connection is likely dead
     /// but the process hasn't detected it yet.
     public func forceReconnect() {
+        #if canImport(os)
         sshLog.info("forceReconnect() called, state=\(String(describing: self.state), privacy: .public)")
+        #endif
         switch state {
         case .disconnected:
             // Was fully disconnected (e.g. all reconnect attempts exhausted) — restart from scratch
@@ -389,9 +393,13 @@ public actor SSHConnection {
     }
 
     public func send(type: String, payload: some Codable, timeout: TimeInterval = 10) async throws -> Data {
+        #if canImport(os)
         sshLog.info("send() type=\(type)")
+        #endif
         if state != .connected && state != .connecting {
+            #if canImport(os)
             sshLog.error("send() rejected: state=\(String(describing: self.state))")
+            #endif
             throw SSHConnectionError.serverNotResponding(host: host)
         }
 
@@ -401,13 +409,17 @@ public actor SSHConnection {
         let data = try RPCStreamHandler.encode(id: id, type: type, payload: payload)
 
         guard let stdin = stdinPipe?.fileHandleForWriting else {
+            #if canImport(os)
             sshLog.error("send() id=\(id): no stdin pipe")
+            #endif
             throw SSHConnectionError.unexpectedDisconnect
         }
 
         // Serialize writes on a dedicated queue so concurrent send() calls
         // (possible via actor reentrancy) don't interleave on the pipe.
+        #if canImport(os)
         sshLog.info("send() id=\(id): writing \(data.count) bytes to stdin...")
+        #endif
         let stdinHandle = stdin
         let writeData = data
         let writeQueue = stdinWriteQueue
@@ -423,12 +435,16 @@ public actor SSHConnection {
         }
 
         if let writeError {
+            #if canImport(os)
             sshLog.error("send() id=\(id): stdin write failed — \(writeError.localizedDescription, privacy: .public)")
+            #endif
             handleDisconnect()
             throw SSHConnectionError.unexpectedDisconnect
         }
 
+        #if canImport(os)
         sshLog.info("send() id=\(id): written, waiting for response (timeout=\(timeout)s)")
+        #endif
 
         // Wait for response with timeout - poll-based to ensure timeout works
         let deadline = Date().addingTimeInterval(timeout)
@@ -436,7 +452,9 @@ public actor SSHConnection {
 
         while Date() < deadline {
             if let response = completedResponses.removeValue(forKey: id) {
+                #if canImport(os)
                 sshLog.info("send() id=\(id): got response")
+                #endif
                 return response
             }
 
@@ -449,7 +467,9 @@ public actor SSHConnection {
         }
 
         // Timeout - connection is stale; force reconnect so it recovers
+        #if canImport(os)
         sshLog.error("send() id=\(id): timeout after \(timeout)s — forcing reconnect")
+        #endif
         pendingRequestIds.remove(id)
         completedResponses.removeValue(forKey: id)
         handleDisconnect()

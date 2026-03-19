@@ -160,6 +160,7 @@ final class SidebarTests: XCTestCase {
         try "# Test 2".write(to: tempDir.appendingPathComponent("file2.md"), atomically: true, encoding: .utf8)
 
         let provider = await FileTreeProvider(rootDirectory: tempDir)
+        try await waitForDirectoryProvider(provider)
 
         let rootDirectory = await provider.rootDirectory
         let rootNodes = await provider.rootNodes
@@ -191,6 +192,7 @@ final class SidebarTests: XCTestCase {
         try "# Visible".write(to: tempDir.appendingPathComponent("visible.md"), atomically: true, encoding: .utf8)
 
         let provider = await FileTreeProvider(rootDirectory: tempDir)
+        try await waitForDirectoryProvider(provider)
 
         let rootNodes = await provider.rootNodes
         let allNames = collectAllNames(rootNodes)
@@ -213,6 +215,7 @@ final class SidebarTests: XCTestCase {
         try "{}".write(to: tempDir.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
 
         let provider = await FileTreeProvider(rootDirectory: tempDir)
+        try await waitForDirectoryProvider(provider)
 
         let rootNodes = await provider.rootNodes
         let fileNames = rootNodes.map { $0.name }.sorted()
@@ -435,7 +438,120 @@ final class SidebarTests: XCTestCase {
         appDelegate.folderWindows[standardized]?.close()
     }
 
+    // MARK: - Hidden Files Tests
+
+    func testHiddenFilesExcludedByDefault() async throws {
+        try "# Hidden".write(to: tempDir.appendingPathComponent(".hidden.md"), atomically: true, encoding: .utf8)
+        try "# Visible".write(to: tempDir.appendingPathComponent("visible.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+        try await waitForDirectoryProvider(provider)
+
+        let allNames = collectAllNames(await provider.rootNodes)
+        XCTAssertTrue(allNames.contains("visible.md"))
+        XCTAssertFalse(allNames.contains(".hidden.md"))
+    }
+
+    func testHiddenFilesIncludedWhenEnabled() async throws {
+        try "# Hidden".write(to: tempDir.appendingPathComponent(".hidden.md"), atomically: true, encoding: .utf8)
+        try "# Visible".write(to: tempDir.appendingPathComponent("visible.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+        await MainActor.run { provider.showHiddenFiles = true }
+        try await waitForDirectoryProvider(provider)
+
+        let allNames = collectAllNames(await provider.rootNodes)
+        XCTAssertTrue(allNames.contains("visible.md"))
+        XCTAssertTrue(allNames.contains(".hidden.md"))
+    }
+
+    func testHiddenFoldersExcludedByDefault() async throws {
+        let hiddenDir = tempDir.appendingPathComponent(".hidden")
+        try FileManager.default.createDirectory(at: hiddenDir, withIntermediateDirectories: true)
+        try "# In Hidden".write(to: hiddenDir.appendingPathComponent("note.md"), atomically: true, encoding: .utf8)
+
+        let visibleDir = tempDir.appendingPathComponent("visible")
+        try FileManager.default.createDirectory(at: visibleDir, withIntermediateDirectories: true)
+        try "# In Visible".write(to: visibleDir.appendingPathComponent("note.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+        try await waitForDirectoryProvider(provider)
+
+        let allNames = collectAllNames(await provider.rootNodes)
+        XCTAssertTrue(allNames.contains("visible"))
+        XCTAssertFalse(allNames.contains(".hidden"))
+    }
+
+    func testHiddenFoldersIncludedWhenEnabled() async throws {
+        let hiddenDir = tempDir.appendingPathComponent(".hidden")
+        try FileManager.default.createDirectory(at: hiddenDir, withIntermediateDirectories: true)
+        try "# In Hidden".write(to: hiddenDir.appendingPathComponent("note.md"), atomically: true, encoding: .utf8)
+
+        let visibleDir = tempDir.appendingPathComponent("visible")
+        try FileManager.default.createDirectory(at: visibleDir, withIntermediateDirectories: true)
+        try "# In Visible".write(to: visibleDir.appendingPathComponent("note.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+        await MainActor.run { provider.showHiddenFiles = true }
+        try await waitForDirectoryProvider(provider)
+
+        let allNames = collectAllNames(await provider.rootNodes)
+        XCTAssertTrue(allNames.contains("visible"))
+        XCTAssertTrue(allNames.contains(".hidden"))
+    }
+
+    func testGitDirectoryAlwaysExcluded() async throws {
+        let gitDir = tempDir.appendingPathComponent(".git")
+        try FileManager.default.createDirectory(at: gitDir, withIntermediateDirectories: true)
+        try "# Git".write(to: gitDir.appendingPathComponent("config.md"), atomically: true, encoding: .utf8)
+
+        try "# Visible".write(to: tempDir.appendingPathComponent("visible.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+        await MainActor.run { provider.showHiddenFiles = true }
+        try await waitForDirectoryProvider(provider)
+
+        let allNames = collectAllNames(await provider.rootNodes)
+        XCTAssertTrue(allNames.contains("visible.md"))
+        XCTAssertFalse(allNames.contains(".git"))
+        XCTAssertFalse(allNames.contains("config.md"))
+    }
+
+    func testIgnoredDirectoriesStillExcludedWhenShowingHidden() async throws {
+        let nodeDir = tempDir.appendingPathComponent("node_modules")
+        try FileManager.default.createDirectory(at: nodeDir, withIntermediateDirectories: true)
+        try "# Node".write(to: nodeDir.appendingPathComponent("pkg.md"), atomically: true, encoding: .utf8)
+
+        let buildDir = tempDir.appendingPathComponent(".build")
+        try FileManager.default.createDirectory(at: buildDir, withIntermediateDirectories: true)
+        try "# Build".write(to: buildDir.appendingPathComponent("out.md"), atomically: true, encoding: .utf8)
+
+        try "# Visible".write(to: tempDir.appendingPathComponent("visible.md"), atomically: true, encoding: .utf8)
+
+        let provider = await FileTreeProvider(rootDirectory: tempDir)
+        await MainActor.run { provider.showHiddenFiles = true }
+        try await waitForDirectoryProvider(provider)
+
+        let allNames = collectAllNames(await provider.rootNodes)
+        XCTAssertTrue(allNames.contains("visible.md"))
+        XCTAssertFalse(allNames.contains("node_modules"))
+        XCTAssertFalse(allNames.contains(".build"))
+    }
+
     // MARK: - Helpers
+
+    /// Waits for a directory-initialized FileTreeProvider to finish building its tree.
+    private func waitForDirectoryProvider(_ provider: FileTreeProvider, timeout: TimeInterval = 5) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        while await provider.rootNodes.isEmpty {
+            if Date() > deadline {
+                XCTFail("FileTreeProvider tree build timed out after \(timeout)s")
+                return
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+    }
 
     /// Waits for a FileTreeProvider to finish its async loading, with a timeout.
     private func waitForProvider(_ provider: FileTreeProvider, timeout: TimeInterval = 5) async throws {

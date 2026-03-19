@@ -425,6 +425,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             showGutter: settings.loadGutterVisible(for: url),
             showLineNumbers: settings.loadLineNumbersVisible(for: url),
             showGitIndicators: settings.loadGitIndicatorsVisible(for: url),
+            showHiddenFiles: settings.loadHiddenFilesVisible(for: url),
             textWidth: settings.loadTextWidth(for: url),
             contentWidth: settings.loadContentWidth(for: url),
             appDelegate: self,

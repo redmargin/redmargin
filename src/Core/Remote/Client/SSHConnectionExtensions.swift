@@ -1,7 +1,8 @@
 import Foundation
+#if canImport(os)
 import os.log
-
 let sshLog = Logger(subsystem: "com.redmargin", category: "SSHConnection")
+#endif
 
 // MARK: - Connection Lifecycle
 
@@ -10,12 +11,16 @@ extension SSHConnection {
         // Guard against cascade: if already reconnecting/disconnected, skip.
         // Multiple concurrent send() failures can all call this in quick succession.
         guard state == .connected || state == .connecting else {
+            #if canImport(os)
             sshLog.info(
                 "handleDisconnect() skipped (already \(String(describing: self.state), privacy: .public))"
             )
+            #endif
             return
         }
+        #if canImport(os)
         sshLog.info("handleDisconnect() state=\(String(describing: self.state), privacy: .public)")
+        #endif
         healthCheckTask?.cancel()
         healthCheckTask = nil
 
@@ -41,7 +46,9 @@ extension SSHConnection {
             reconnectTask = nil
             scheduleReconnect()
         } else {
+            #if canImport(os)
             sshLog.info("handleDisconnect() intentional, not reconnecting")
+            #endif
             state = .disconnected
         }
     }
@@ -56,7 +63,9 @@ extension SSHConnection {
                 try? await Task.sleep(nanoseconds: 15_000_000_000) // 15s
                 guard !Task.isCancelled, state == .connected else { continue }
                 if process?.isRunning != true {
+                    #if canImport(os)
                     sshLog.error("Health check: SSH process is dead, triggering reconnect")
+                    #endif
                     handleDisconnect()
                 }
             }
@@ -66,11 +75,15 @@ extension SSHConnection {
     func scheduleReconnect() {
         reconnectTask = Task {
             let delay = min(pow(2.0, Double(reconnectAttempts)), maxReconnectDelay)
+            #if canImport(os)
             sshLog.info("scheduleReconnect() attempt=\(self.reconnectAttempts) delay=\(delay)s")
+            #endif
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
 
             guard !Task.isCancelled, !isIntentionallyDisconnected else {
+                #if canImport(os)
                 sshLog.info("scheduleReconnect() cancelled or intentionally disconnected")
+                #endif
                 return
             }
 
@@ -81,7 +94,9 @@ extension SSHConnection {
                 state = .connected
                 startHealthCheck()
                 reconnectAttempts = 0
+                #if canImport(os)
                 sshLog.info("Reconnected successfully!")
+                #endif
                 NotificationCenter.default.post(
                     name: .sshConnectionReconnected,
                     object: self.host
@@ -89,7 +104,9 @@ extension SSHConnection {
             } catch {
                 guard !Task.isCancelled else { return }
                 state = .reconnecting
+                #if canImport(os)
                 sshLog.error("Reconnection failed: \(error.localizedDescription, privacy: .public)")
+                #endif
                 scheduleReconnect()
             }
         }

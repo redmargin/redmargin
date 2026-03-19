@@ -129,6 +129,16 @@ private func createViewMenu(target: AppDelegate) -> NSMenuItem {
     sidebarItem.image = menuIcon("sidebar.left")
     viewMenu.addItem(sidebarItem)
 
+    let hiddenFilesItem = NSMenuItem(
+        title: "Show Hidden Files",
+        action: #selector(AppDelegate.toggleHiddenFiles(_:)),
+        keyEquivalent: ".")
+    hiddenFilesItem.keyEquivalentModifierMask = [.command, .shift]
+    hiddenFilesItem.target = target
+    hiddenFilesItem.tag = ViewMenuTag.hiddenFiles
+    hiddenFilesItem.image = menuIcon("eye")
+    viewMenu.addItem(hiddenFilesItem)
+
     viewMenu.addItem(NSMenuItem.separator())
 
     let refreshItem = NSMenuItem(
@@ -215,6 +225,7 @@ private func menuIcon(_ name: String) -> NSImage? {
 
 private enum ViewMenuTag {
     static let sidebar = 99
+    static let hiddenFiles = 98
     static let gutter = 100
     static let lineNumbers = 101
     static let gitIndicators = 102
@@ -236,6 +247,7 @@ final class ViewMenuDelegate: NSObject, NSMenuDelegate {
 
         // Determine state based on current document, falling back to preferences
         var sidebarVisible = false
+        var hiddenFilesVisible = prefs.showHiddenFiles
         var gutterVisible = prefs.showGutter
         var lineNumbersVisible = prefs.showLineNumbers
         var gitIndicatorsVisible = prefs.showGitIndicators
@@ -247,6 +259,7 @@ final class ViewMenuDelegate: NSObject, NSMenuDelegate {
             if let hostingVC = window.contentViewController as? NSHostingController<DocumentWindowContent> {
                 let url = hostingVC.rootView.fileURL
                 sidebarVisible = settings.loadSidebarVisible(for: url) ?? false
+                hiddenFilesVisible = settings.loadHiddenFilesVisible(for: url) ?? prefs.showHiddenFiles
                 gutterVisible = settings.loadGutterVisible(for: url) ?? prefs.showGutter
                 lineNumbersVisible = settings.loadLineNumbersVisible(for: url)
                 gitIndicatorsVisible = settings.loadGitIndicatorsVisible(for: url) ?? prefs.showGitIndicators
@@ -256,6 +269,7 @@ final class ViewMenuDelegate: NSObject, NSMenuDelegate {
                         as? NSHostingController<FolderWindowContent> {
                 let url = hostingVC.rootView.folderURL
                 sidebarVisible = settings.loadSidebarVisible(for: url) ?? true
+                hiddenFilesVisible = settings.loadHiddenFilesVisible(for: url) ?? prefs.showHiddenFiles
                 gutterVisible = settings.loadGutterVisible(for: url) ?? prefs.showGutter
                 lineNumbersVisible = settings.loadLineNumbersVisible(for: url)
                 gitIndicatorsVisible = settings.loadGitIndicatorsVisible(for: url) ?? prefs.showGitIndicators
@@ -265,6 +279,7 @@ final class ViewMenuDelegate: NSObject, NSMenuDelegate {
                         as? NSHostingController<RemoteDocumentWindowContent> {
                 let location = hostingVC.rootView.location
                 sidebarVisible = settings.loadSidebarVisible(for: location) ?? false
+                hiddenFilesVisible = settings.loadHiddenFilesVisible(for: location) ?? prefs.showHiddenFiles
                 gutterVisible = settings.loadGutterVisible(for: location) ?? prefs.showGutter
                 lineNumbersVisible = settings.loadLineNumbersVisible(for: location)
                 gitIndicatorsVisible = settings.loadGitIndicatorsVisible(for: location) ?? prefs.showGitIndicators
@@ -277,6 +292,8 @@ final class ViewMenuDelegate: NSObject, NSMenuDelegate {
             switch item.tag {
             case ViewMenuTag.sidebar:
                 item.title = sidebarVisible ? "Hide Sidebar" : "Show Sidebar"
+            case ViewMenuTag.hiddenFiles:
+                item.title = hiddenFilesVisible ? "Hide Hidden Files" : "Show Hidden Files"
             case ViewMenuTag.gutter:
                 item.title = gutterVisible ? "Hide Gutter" : "Show Gutter"
             case ViewMenuTag.lineNumbers:
