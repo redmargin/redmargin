@@ -19,6 +19,9 @@ public class RemoteFileTreeProvider: ObservableObject {
     /// Callback when expanded folders change (path of root, set of expanded folder paths)
     public var onExpandedFoldersChange: ((String, Set<String>) -> Void)?
 
+    /// Called once rootDirectory is determined to load persisted expanded folders
+    private let expandedFoldersLoader: ((String) -> Set<String>)?
+
     public var showHiddenFiles: Bool = false {
         didSet {
             if oldValue != showHiddenFiles { refresh() }
@@ -39,12 +42,14 @@ public class RemoteFileTreeProvider: ObservableObject {
         fileProvider: RemoteFileProvider,
         stateChanges: AsyncStream<SSHConnectionState>? = nil,
         expandedFolders: Set<String> = [],
-        isDirectory: Bool = false
+        isDirectory: Bool = false,
+        expandedFoldersLoader: ((String) -> Set<String>)? = nil
     ) {
         self.currentFilePath = currentFilePath
         self.fileProvider = fileProvider
         self.pathIsDirectory = isDirectory
         self.expandedFolders = expandedFolders
+        self.expandedFoldersLoader = expandedFoldersLoader
         Task {
             await loadFiles()
         }
@@ -75,6 +80,7 @@ public class RemoteFileTreeProvider: ObservableObject {
         do {
             if let repoRoot = try await fileProvider.detectGitRepo(for: currentFilePath) {
                 rootDirectory = repoRoot
+                loadExpandedFoldersFromStorage(rootPath: repoRoot)
                 await loadRootLevel(from: repoRoot)
                 await setupDirectoryWatching(for: repoRoot)
                 return
@@ -88,8 +94,19 @@ public class RemoteFileTreeProvider: ObservableObject {
             ? currentFilePath
             : (currentFilePath as NSString).deletingLastPathComponent
         rootDirectory = fallbackDir
+        loadExpandedFoldersFromStorage(rootPath: fallbackDir)
         await loadRootLevel(from: fallbackDir)
         await setupDirectoryWatching(for: fallbackDir)
+    }
+
+    /// Populate expandedFolders from persisted storage before building the tree
+    private func loadExpandedFoldersFromStorage(rootPath: String) {
+        if let loader = expandedFoldersLoader {
+            let loaded = loader(rootPath)
+            if !loaded.isEmpty {
+                expandedFolders = loaded
+            }
+        }
     }
 
     private func setupDirectoryWatching(for path: String) async {
@@ -305,10 +322,12 @@ public class RemoteFileTreeProvider: ObservableObject {
     /// Apply expanded folders state to existing nodes
     public func applyExpandedFolders(_ folders: Set<String>) {
         expandedFolders = folders
-        applyExpandedStateToNodes(rootNodes)
+        Task {
+            await applyExpandedStateToNodes(rootNodes)
+        }
     }
 
-    private func applyExpandedStateToNodes(_ nodes: [FileTreeNode]) {
+    private func applyExpandedStateToNodes(_ nodes: [FileTreeNode]) async {
         for node in nodes where node.isDirectory {
             let callback = node.onExpandedChange
             node.onExpandedChange = nil
@@ -317,11 +336,9 @@ public class RemoteFileTreeProvider: ObservableObject {
             node.onExpandedChange = callback
 
             if shouldExpand {
-                Task {
-                    await loadChildrenIfNeeded(for: node)
-                }
+                await loadChildrenIfNeeded(for: node)
             }
-            applyExpandedStateToNodes(node.children)
+            await applyExpandedStateToNodes(node.children)
         }
     }
 }

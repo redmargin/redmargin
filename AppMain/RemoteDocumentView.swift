@@ -63,10 +63,14 @@ struct RemoteDocumentWindowContent: View {
             location: location,
             fileProvider: fileProvider
         ))
+        let hostForLoader = location.host
         _fileTreeProvider = StateObject(wrappedValue: RemoteFileTreeProvider(
             currentFilePath: location.path,
             fileProvider: fileProvider,
-            stateChanges: fileProvider.stateChanges
+            stateChanges: fileProvider.stateChanges,
+            expandedFoldersLoader: { rootPath in
+                DocumentSettingsStorage.shared.loadExpandedFolders(forRemoteHost: hostForLoader, rootPath: rootPath)
+            }
         ))
     }
 
@@ -99,7 +103,10 @@ struct RemoteDocumentWindowContent: View {
             currentFilePath: folderPath,
             fileProvider: fileProvider,
             stateChanges: fileProvider.stateChanges,
-            isDirectory: true
+            isDirectory: true,
+            expandedFoldersLoader: { rootPath in
+                DocumentSettingsStorage.shared.loadExpandedFolders(forRemoteHost: host, rootPath: rootPath)
+            }
         ))
     }
 
@@ -229,21 +236,6 @@ struct RemoteDocumentWindowContent: View {
         // Set up callback for saving expanded folders
         fileTreeProvider.onExpandedFoldersChange = { rootPath, expandedPaths in
             settings.saveExpandedFolders(expandedPaths, forRemoteHost: host, rootPath: rootPath)
-        }
-
-        // Load and apply saved expanded folders once rootDirectory is available
-        Task { @MainActor in
-            // Wait for FileTreeProvider to finish loading
-            while fileTreeProvider.isLoading {
-                try? await Task.sleep(nanoseconds: 50_000_000)  // 50ms
-            }
-
-            if let rootPath = fileTreeProvider.rootDirectory {
-                let expandedFolders = settings.loadExpandedFolders(forRemoteHost: host, rootPath: rootPath)
-                if !expandedFolders.isEmpty {
-                    fileTreeProvider.applyExpandedFolders(expandedFolders)
-                }
-            }
         }
     }
 
