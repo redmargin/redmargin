@@ -1,6 +1,15 @@
 import Foundation
 import RedmarginCore
 
+protocol RemoteFileTreeProviding {
+    func detectGitRepo(for path: String) async throws -> String?
+    func listDirectory(at path: String) async throws -> [DirectoryEntry]
+    func watchDirectory(at path: String, onChange: @escaping ([String]) -> Void) async -> WatchToken
+    func unwatchDirectory(_ token: WatchToken) async
+}
+
+extension RemoteFileProvider: RemoteFileTreeProviding {}
+
 /// Provides a hierarchical tree of files from a remote directory for sidebar display.
 /// Uses lazy single-level loading — only enumerates one directory at a time via listDirectory RPC.
 @MainActor
@@ -10,11 +19,14 @@ public class RemoteFileTreeProvider: ObservableObject {
     @Published public private(set) var isLoading = false
 
     private let currentFilePath: String
-    private let fileProvider: RemoteFileProvider
+    private let fileProvider: any RemoteFileTreeProviding
     private let pathIsDirectory: Bool
     private var expandedFolders: Set<String> = []
+    private var expandedFoldersRootPath: String?
     private var directoryWatchToken: WatchToken?
     private var stateObserverTask: Task<Void, Never>?
+    private var restoreExpandedFoldersTask: Task<Void, Never>?
+    private var loadGeneration = 0
 
     /// Callback when expanded folders change (path of root, set of expanded folder paths)
     public var onExpandedFoldersChange: ((String, Set<String>) -> Void)?
@@ -58,6 +70,27 @@ public class RemoteFileTreeProvider: ObservableObject {
         }
     }
 
+    init(
+        currentFilePath: String,
+        fileProvider: any RemoteFileTreeProviding,
+        stateChanges: AsyncStream<SSHConnectionState>? = nil,
+        expandedFolders: Set<String> = [],
+        isDirectory: Bool = false,
+        expandedFoldersLoader: ((String) -> Set<String>)? = nil
+    ) {
+        self.currentFilePath = currentFilePath
+        self.fileProvider = fileProvider
+        self.pathIsDirectory = isDirectory
+        self.expandedFolders = expandedFolders
+        self.expandedFoldersLoader = expandedFoldersLoader
+        Task {
+            await loadFiles()
+        }
+        if let stateChanges = stateChanges {
+            observeConnectionState(stateChanges)
+        }
+    }
+
     private func observeConnectionState(_ stateChanges: AsyncStream<SSHConnectionState>) {
         stateObserverTask = Task { [weak self] in
             var previousState: SSHConnectionState?
@@ -73,16 +106,23 @@ public class RemoteFileTreeProvider: ObservableObject {
 
     /// Loads the root directory
     public func loadFiles() async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        restoreExpandedFoldersTask?.cancel()
+        restoreExpandedFoldersTask = nil
         isLoading = true
-        defer { isLoading = false }
 
         // Try to find Git repo root first
         do {
             if let repoRoot = try await fileProvider.detectGitRepo(for: currentFilePath) {
+                guard isCurrentLoad(generation) else { return }
                 rootDirectory = repoRoot
-                loadExpandedFoldersFromStorage(rootPath: repoRoot)
-                await loadRootLevel(from: repoRoot)
+                await loadRootLevel(from: repoRoot, loadGeneration: generation)
+                guard isCurrentLoad(generation) else { return }
                 await setupDirectoryWatching(for: repoRoot)
+                guard isCurrentLoad(generation) else { return }
+                isLoading = false
+                restoreExpandedFoldersAfterLoad(rootPath: repoRoot, loadGeneration: generation)
                 return
             }
         } catch {
@@ -93,20 +133,49 @@ public class RemoteFileTreeProvider: ObservableObject {
         let fallbackDir = pathIsDirectory
             ? currentFilePath
             : (currentFilePath as NSString).deletingLastPathComponent
+        guard isCurrentLoad(generation) else { return }
         rootDirectory = fallbackDir
-        loadExpandedFoldersFromStorage(rootPath: fallbackDir)
-        await loadRootLevel(from: fallbackDir)
+        await loadRootLevel(from: fallbackDir, loadGeneration: generation)
+        guard isCurrentLoad(generation) else { return }
         await setupDirectoryWatching(for: fallbackDir)
+        guard isCurrentLoad(generation) else { return }
+        isLoading = false
+        restoreExpandedFoldersAfterLoad(rootPath: fallbackDir, loadGeneration: generation)
     }
 
-    /// Populate expandedFolders from persisted storage before building the tree
-    private func loadExpandedFoldersFromStorage(rootPath: String) {
-        if let loader = expandedFoldersLoader {
-            let loaded = loader(rootPath)
-            if !loaded.isEmpty {
-                expandedFolders = loaded
-            }
+    private func isCurrentLoad(_ generation: Int, rootPath: String? = nil) -> Bool {
+        guard loadGeneration == generation else { return false }
+        if let rootPath {
+            return rootDirectory == rootPath
         }
+        return true
+    }
+
+    private func restoredExpandedFolders(for rootPath: String) -> Set<String> {
+        if expandedFoldersRootPath == rootPath {
+            return expandedFolders
+        }
+        return expandedFoldersLoader?(rootPath) ?? []
+    }
+
+    private func restoreExpandedFoldersAfterLoad(rootPath: String, loadGeneration: Int) {
+        let foldersToRestore = restoredExpandedFolders(for: rootPath)
+        expandedFoldersRootPath = rootPath
+        expandedFolders = foldersToRestore
+
+        guard !foldersToRestore.isEmpty else { return }
+
+        restoreExpandedFoldersTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.applyExpandedFolders(foldersToRestore, rootPath: rootPath, loadGeneration: loadGeneration)
+        }
+    }
+
+    private func setExpandedState(_ expanded: Bool, for node: FileTreeNode) {
+        let callback = node.onExpandedChange
+        node.onExpandedChange = nil
+        node.isExpanded = expanded
+        node.onExpandedChange = callback
     }
 
     private func setupDirectoryWatching(for path: String) async {
@@ -137,24 +206,15 @@ public class RemoteFileTreeProvider: ObservableObject {
     // MARK: - Lazy Loading
 
     /// Load root level via a single listDirectory call
-    private func loadRootLevel(from directory: String) async {
+    private func loadRootLevel(from directory: String, loadGeneration: Int) async {
         do {
             let entries = try await fileProvider.listDirectory(at: directory)
+            guard isCurrentLoad(loadGeneration, rootPath: directory) else { return }
             let nodes = buildNodes(from: entries, parentPath: directory, depth: 0)
             for node in nodes {
                 wireUpNode(node)
-                if node.isDirectory {
-                    let shouldExpand = expandedFolders.contains(node.url.path)
-                    if shouldExpand {
-                        node.isExpanded = true
-                    }
-                }
             }
             rootNodes = nodes
-            // Load children for expanded folders
-            for node in nodes where node.isDirectory && node.isExpanded {
-                await loadChildrenIfNeeded(for: node)
-            }
         } catch {
             print("[RemoteFileTreeProvider] Failed to list root \(directory): \(error)")
         }
@@ -176,7 +236,7 @@ public class RemoteFileTreeProvider: ObservableObject {
                 if child.isDirectory {
                     let shouldExpand = expandedFolders.contains(child.url.path)
                     if shouldExpand {
-                        child.isExpanded = true
+                        setExpandedState(true, for: child)
                     }
                 }
             }
@@ -211,7 +271,8 @@ public class RemoteFileTreeProvider: ObservableObject {
                     name: entry.name,
                     url: url,
                     isDirectory: true,
-                    depth: depth
+                    depth: depth,
+                    isExpanded: false
                 )
                 nodes.append(node)
             } else {
@@ -294,10 +355,7 @@ public class RemoteFileTreeProvider: ObservableObject {
                 wireUpNode(newNode)
                 let shouldExpand = expandedFolders.contains(newNode.url.path)
                 if shouldExpand && newNode.isDirectory {
-                    let callback = newNode.onExpandedChange
-                    newNode.onExpandedChange = nil
-                    newNode.isExpanded = true
-                    newNode.onExpandedChange = callback
+                    setExpandedState(true, for: newNode)
                     Task {
                         await self.loadChildrenIfNeeded(for: newNode)
                     }
@@ -321,24 +379,33 @@ public class RemoteFileTreeProvider: ObservableObject {
 
     /// Apply expanded folders state to existing nodes
     public func applyExpandedFolders(_ folders: Set<String>) {
-        expandedFolders = folders
-        Task {
-            await applyExpandedStateToNodes(rootNodes)
+        guard let rootPath = rootDirectory else { return }
+        restoreExpandedFoldersTask?.cancel()
+        restoreExpandedFoldersTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.applyExpandedFolders(folders, rootPath: rootPath, loadGeneration: self.loadGeneration)
         }
     }
 
-    private func applyExpandedStateToNodes(_ nodes: [FileTreeNode]) async {
+    private func applyExpandedFolders(_ folders: Set<String>, rootPath: String, loadGeneration: Int) async {
+        guard isCurrentLoad(loadGeneration, rootPath: rootPath) else { return }
+        expandedFoldersRootPath = rootPath
+        expandedFolders = folders
+        await applyExpandedStateToNodes(rootNodes, rootPath: rootPath, loadGeneration: loadGeneration)
+    }
+
+    private func applyExpandedStateToNodes(_ nodes: [FileTreeNode], rootPath: String, loadGeneration: Int) async {
         for node in nodes where node.isDirectory {
-            let callback = node.onExpandedChange
-            node.onExpandedChange = nil
-            let shouldExpand = expandedFolders.contains(node.url.path) || node.depth == 0
-            node.isExpanded = shouldExpand
-            node.onExpandedChange = callback
+            guard !Task.isCancelled else { return }
+            guard isCurrentLoad(loadGeneration, rootPath: rootPath) else { return }
+            let shouldExpand = expandedFolders.contains(node.url.path)
+            setExpandedState(shouldExpand, for: node)
 
             if shouldExpand {
                 await loadChildrenIfNeeded(for: node)
             }
-            await applyExpandedStateToNodes(node.children)
+            guard isCurrentLoad(loadGeneration, rootPath: rootPath) else { return }
+            await applyExpandedStateToNodes(node.children, rootPath: rootPath, loadGeneration: loadGeneration)
         }
     }
 }

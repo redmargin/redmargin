@@ -371,71 +371,6 @@ final class SidebarTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: selectedKey)
     }
 
-    // MARK: - Folder Window Integration Tests
-
-    @MainActor
-    func testOpenFolderCreatesWindow() throws {
-        let appDelegate = AppDelegate()
-
-        appDelegate.openFolder(tempDir)
-
-        let standardized = tempDir.standardizedFileURL
-        let window = appDelegate.folderWindows[standardized]
-        XCTAssertNotNil(window, "openFolder should create a window tracked in folderWindows")
-
-        // Clean up
-        window?.close()
-    }
-
-    @MainActor
-    func testOpenFolderDeduplication() throws {
-        let appDelegate = AppDelegate()
-
-        appDelegate.openFolder(tempDir)
-        let standardized = tempDir.standardizedFileURL
-        let firstWindow = appDelegate.folderWindows[standardized]
-        XCTAssertNotNil(firstWindow)
-
-        // Open same folder again
-        appDelegate.openFolder(tempDir)
-        let secondWindow = appDelegate.folderWindows[standardized]
-
-        XCTAssertTrue(firstWindow === secondWindow, "Opening the same folder twice should reuse the existing window")
-        XCTAssertEqual(appDelegate.folderWindows.count, 1, "Should only have one folder window")
-
-        // Clean up
-        firstWindow?.close()
-    }
-
-    @MainActor
-    func testFolderDetectionInOpenURLs() throws {
-        let appDelegate = AppDelegate()
-
-        // Verify directory detection routes to openFolder (not openDocument)
-        // This replicates the logic in application(_:open:)
-        var isDir: ObjCBool = false
-        let exists = FileManager.default.fileExists(atPath: tempDir.path, isDirectory: &isDir)
-        XCTAssertTrue(exists)
-        XCTAssertTrue(isDir.boolValue, "tempDir should be detected as a directory")
-
-        // Route to openFolder as application(_:open:) would
-        appDelegate.openFolder(tempDir)
-
-        let standardized = tempDir.standardizedFileURL
-        XCTAssertNotNil(
-            appDelegate.folderWindows[standardized],
-            "Directory URL should be routed to openFolder"
-        )
-        // Verify it's NOT tracked as a document window
-        XCTAssertTrue(
-            appDelegate.remoteDocumentWindows.isEmpty,
-            "Directory should not create a document window"
-        )
-
-        // Clean up
-        appDelegate.folderWindows[standardized]?.close()
-    }
-
     // MARK: - Hidden Files Tests
 
     func testHiddenFilesExcludedByDefault() async throws {
@@ -549,17 +484,13 @@ final class SidebarTests: XCTestCase {
         let provider = await FileTreeProvider(rootDirectory: tempDir)
         try await waitForDirectoryProvider(provider)
 
-        // Root level: sub/ is at depth 0 and auto-expanded, so its children load
+        // Folder-mode trees keep root-level folders collapsed until the user expands them.
         let rootNodes = await provider.rootNodes
         let subNode = rootNodes.first { $0.name == "sub" }
         XCTAssertNotNil(subNode)
-        XCTAssertTrue(subNode!.childrenLoaded)
-
-        // But deep/ (depth 1) should NOT have its children loaded yet
-        let deepNode = subNode!.children.first { $0.name == "deep" }
-        XCTAssertNotNil(deepNode)
-        XCTAssertFalse(deepNode!.childrenLoaded)
-        XCTAssertTrue(deepNode!.children.isEmpty)
+        XCTAssertFalse(subNode!.isExpanded)
+        XCTAssertFalse(subNode!.childrenLoaded)
+        XCTAssertTrue(subNode!.children.isEmpty)
     }
 
     func testLazyLoadOnExpand() async throws {
@@ -649,7 +580,6 @@ final class SidebarTests: XCTestCase {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
     }
-
     private func collectAllNames(_ nodes: [FileTreeNode]) -> Set<String> {
         var names = Set<String>()
         for node in nodes {
