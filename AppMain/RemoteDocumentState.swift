@@ -53,6 +53,7 @@ class RemoteDocumentState {
 
         // Observe reconnection via NotificationCenter (reliable, unlike AsyncStream).
         // Filter by host to prevent cross-host cascading reconnection loops.
+        let reconnectHost = location.host
         reconnectObserver = NotificationCenter.default.addObserver(
             forName: .sshConnectionReconnected,
             object: nil,
@@ -60,7 +61,7 @@ class RemoteDocumentState {
         ) { [weak self] notification in
             guard let self = self,
                   let host = notification.object as? String,
-                  host == self.location.host else { return }
+                  host == reconnectHost else { return }
             Task { @MainActor in
                 self.handleReconnection()
             }
