@@ -160,6 +160,17 @@ final class PrintTests: XCTestCase {
         return evaluateJavaScriptValue(script) as? String ?? ""
     }
 
+    private func mermaidBlockBackgroundColor() -> String {
+        let script = """
+        (function() {
+            var block = document.querySelector('.mermaid-block');
+            return block ? getComputedStyle(block).backgroundColor : '';
+        })()
+        """
+
+        return evaluateJavaScriptValue(script) as? String ?? ""
+    }
+
     private func waitForMermaidColorSignature(
         _ expected: String,
         timeout: TimeInterval = 5.0,
@@ -349,6 +360,52 @@ final class PrintTests: XCTestCase {
             evaluateJavaScriptValue("document.querySelectorAll('.mermaid-block > svg').length") as? Int,
             1,
             "Mermaid diagram should stay visible during print preparation"
+        )
+    }
+
+    func testPreparePrintAppliesLightMermaidBlockChromeFromDarkScreenTheme() {
+        loadRenderer(
+            markdown: """
+            ```mermaid
+            graph TD
+              A-->B
+            ```
+            """,
+            theme: "dark"
+        )
+
+        waitForJavaScriptCondition("!!document.querySelector('.mermaid-block > svg')")
+        let screenBackground = mermaidBlockBackgroundColor()
+
+        let expectation = XCTestExpectation(description: "preparePrint completes")
+        let config = PrintConfiguration(includeGutter: true, includeLineNumbers: false)
+        MarkdownWebView.preparePrint(webView: webView, config: config) {
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 5.0)
+
+        waitForJavaScriptCondition(
+            """
+            document.body.classList.contains('print-light-theme') &&
+            getComputedStyle(document.querySelector('.mermaid-block')).backgroundColor === 'rgb(245, 243, 237)'
+            """
+        )
+
+        let printBackground = mermaidBlockBackgroundColor()
+        XCTAssertEqual(
+            screenBackground,
+            "rgb(37, 37, 40)",
+            "Dark mode Mermaid blocks should start with the dark code-block chrome"
+        )
+        XCTAssertEqual(
+            printBackground,
+            "rgb(245, 243, 237)",
+            "Print preparation should switch Mermaid blocks to the light print chrome"
+        )
+        XCTAssertNotEqual(
+            printBackground,
+            screenBackground,
+            "Print preparation should not retain the dark screen block background"
         )
     }
 

@@ -58,7 +58,7 @@ Theme changes require a full Mermaid re-render because Mermaid bakes colors into
 
 Modify `WebRenderer/src/index.js` so exact `mermaid` fences emit a `.mermaid-block` wrapper that preserves the fence's `data-sourcepos` and stores the original Mermaid text in a `data-source` attribute. After Markdown HTML is sanitized and inserted into `#content-container`, call `window.MermaidRenderer.renderBlocks()` (which returns a Promise), then regenerate line numbers and gutter markers in the `.then()` callback. In `setTheme()`, after swapping stylesheets, call `window.MermaidRenderer.rerenderForTheme(newTheme)` and chain `LineNumbers.generate()` and `Gutter.update()` on the returned Promise via `.then()`. Use `requestAnimationFrame` with a short timeout fallback when scheduling this post-DOM work so offscreen WKWebViews (tests, print prep) still run Mermaid rendering even when WebKit throttles animation frames.
 
-Print preparation and PDF export call `window.MermaidRenderer.prepareMermaidForPrint(theme)` and `window.MermaidRenderer.restoreMermaidFromPrint(screenTheme)` directly from Swift via `callAsyncJavaScript`. These functions live on `window.MermaidRenderer` (exposed by `WebRenderer/src/mermaid.js`), not on `window.App`. Swift callers: `src/Views/MarkdownWebView.swift`, `AppMain/DocumentView.swift`, `AppMain/FolderWindowContent.swift`, `AppMain/RemoteDocumentView.swift`, and `src/Printing/PDFExporter.swift`.
+Print preparation and PDF export call `window.MermaidRenderer.prepareMermaidForPrint(theme)` and `window.MermaidRenderer.restoreMermaidFromPrint(screenTheme)` directly from Swift via `callAsyncJavaScript`. These functions live on `window.MermaidRenderer` (exposed by `WebRenderer/src/mermaid.js`), not on `window.App`. Swift callers: `src/Views/MarkdownWebView.swift`, `AppMain/DocumentView.swift`, `AppMain/FolderWindowContent.swift`, `AppMain/RemoteDocumentView.swift`, and `src/Printing/PDFExporter.swift`. Because Redmargin swaps a single theme stylesheet at runtime, the light print palette cannot rely on `light.css` being mounted; `WebRenderer/styles/print.css` must define the `print-light-theme` CSS variables needed for Mermaid block chrome and other print-only light styling when the screen is currently dark.
 
 ### Approach Validation
 
@@ -102,7 +102,7 @@ User feedback across Markdown apps (Reddit, GitHub issues, forum threads) confir
 
 - [x] Add `window.Sanitizer.sanitizeMermaidSvg(svgString)` to `WebRenderer/src/sanitizer.js`. This function parses the SVG string via DOMParser, removes `<script>`, `<foreignObject>`, and `<iframe>` elements, strips all `on*` event handler attributes, removes `javascript:` and `data:` URLs from `href`/`xlink:href` attributes, and returns the sanitized SVG string. Keep this separate from the existing `sanitize()` HTML path — SVG has a different element/attribute allowlist (allow `<svg>`, `<g>`, `<path>`, `<rect>`, `<circle>`, `<ellipse>`, `<line>`, `<polyline>`, `<polygon>`, `<text>`, `<tspan>`, `<defs>`, `<marker>`, `<use>`, `<clipPath>`, `<mask>`, `<pattern>`, `<linearGradient>`, `<radialGradient>`, `<stop>`, `<title>`, `<desc>`)
 - [x] Preserve `data-sourcepos` on `.mermaid-block` wrappers (already emitted by Phase 1 changes to `index.js`) and update `WebRenderer/src/lineNumbers.js` to treat `.mermaid-block` elements the same way it currently treats `pre` elements for multi-line blocks: distribute line number positions evenly across the element's rendered height for the full source range
-- [x] Add styles for `.mermaid-block` (border, padding, background matching code blocks, `overflow-x: auto` for wide diagrams that exceed the content width), `.mermaid-error` (red/orange error banner text, `font-size: 0.85em`), and `.mermaid-block .copy-btn` (positioned like the existing `pre .copy-btn`) in `WebRenderer/styles/light.css` and `WebRenderer/styles/dark.css`. Add print-specific Mermaid styles in `WebRenderer/styles/print.css`: ensure `.mermaid-block` gets `page-break-inside: avoid` (diagrams taller than a full page will still break — this is acceptable and out of scope to fix), hide copy buttons in print, and hide error banners in print
+- [x] Add styles for `.mermaid-block` (border, padding, background matching code blocks, `overflow-x: auto` for wide diagrams that exceed the content width), `.mermaid-error` (red/orange error banner text, `font-size: 0.85em`), and `.mermaid-block .copy-btn` (positioned like the existing `pre .copy-btn`) in `WebRenderer/styles/light.css` and `WebRenderer/styles/dark.css`. Add print-specific Mermaid styles in `WebRenderer/styles/print.css`: ensure `.mermaid-block` gets `page-break-inside: avoid` (diagrams taller than a full page will still break — this is acceptable and out of scope to fix), hide copy buttons in print, hide error banners in print, and define the `print-light-theme` CSS variables there so printing from a dark screen theme still uses the light block/background palette
 
 **Phase 3: Print, PDF, and app hooks**
 
@@ -155,13 +155,14 @@ Tests are implementation tasks — the implementer writes and passes each one. O
 ### Integration Tests (`Tests/PrintTests.swift`)
 
 - [x] `testPreparePrintKeepsMermaidDiagramVisible` - After `preparePrint()`, verify `.mermaid-block` elements are still in the DOM with `<svg>` children and the SVG colors match the print theme
+- [x] `testPreparePrintAppliesLightMermaidBlockChromeFromDarkScreenTheme` - After rendering a Mermaid diagram in dark mode and calling `preparePrint()`, verify `.mermaid-block` switches to the light print background/border palette instead of retaining dark screen chrome
 - [x] `testRestoreFromPrintRestoresMermaidScreenTheme` - After `restoreFromPrint()`, verify `.mermaid-block` SVG colors match the original screen theme (not the print theme)
 
 ### Manual Verification (Marco)
 
-- [ ] Open a Markdown file with at least two Mermaid fences and confirm both diagrams render in light and dark themes
-- [ ] Toggle the theme (Appearance menu) and confirm both Mermaid diagrams update their colors without a page reload
-- [ ] Add an intentionally broken Mermaid fence (e.g., `graph INVALID`) and confirm an error message appears above the original source text
-- [ ] Click the copy button on a rendered Mermaid diagram and paste into a text editor — confirm it contains the original Mermaid source, not SVG markup
+- [x] Open a Markdown file with at least two Mermaid fences and confirm both diagrams render in light and dark themes
+- [x] Toggle the theme (Appearance menu) and confirm both Mermaid diagrams update their colors without a page reload
+- [x] Add an intentionally broken Mermaid fence (e.g., `graph INVALID`) and confirm an error message appears above the original source text
+- [x] Click the copy button on a rendered Mermaid diagram and paste into a text editor — confirm it contains the original Mermaid source, not SVG markup
 - [ ] Open Print Preview for a document with a Mermaid diagram and confirm the diagram is readable and not clipped across page boundaries
-- [ ] Export a PDF from a document with a Mermaid diagram and confirm the saved PDF includes the diagram with the expected theme
+- [x] Export a PDF from a document with a Mermaid diagram and confirm the saved PDF includes the diagram with the expected theme

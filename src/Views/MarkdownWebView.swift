@@ -280,7 +280,10 @@ public struct MarkdownWebView: NSViewRepresentable {
             classes.append("print-hide-line-numbers")
         }
         let classString = classes.joined(separator: " ")
-        let script = "document.body.classList.add(...'\(classString)'.split(' '))"
+        let script = """
+            document.documentElement.classList.add(...'\(classString)'.split(' '))
+            document.body.classList.add(...'\(classString)'.split(' '))
+        """
         webView.evaluateJavaScript(script) { _, error in
             if let error = error {
                 logger.error("Failed to add print classes: \(error.localizedDescription, privacy: .public)")
@@ -306,6 +309,11 @@ public struct MarkdownWebView: NSViewRepresentable {
 
     public static func restoreFromPrint(webView: WKWebView, screenTheme: String? = nil) {
         let script = """
+            document.documentElement.classList.remove(
+                'print-light-theme',
+                'print-hide-gutter',
+                'print-hide-line-numbers'
+            )
             document.body.classList.remove('print-light-theme', 'print-hide-gutter', 'print-hide-line-numbers')
         """
         webView.evaluateJavaScript(script) { _, error in

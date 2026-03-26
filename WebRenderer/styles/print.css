@@ -10,7 +10,31 @@
     display: none !important;
 }
 
-/* .print-light-theme class forces light theme variables (defined in light.css) */
+/* Force the light palette even when dark.css is the active theme stylesheet. */
+.print-light-theme {
+    --bg-color: #faf8f2;
+    --text-color: #262627;
+    --text-muted: #6b6966;
+    --heading-color: #1a1a1b;
+    --link-color: #2563eb;
+    --link-hover: #1d4ed8;
+    --code-bg: #f0ede6;
+    --code-text: #b45309;
+    --pre-bg: #f5f3ed;
+    --pre-border: #e8e5dc;
+    --blockquote-border: #c75259;
+    --blockquote-bg: #fdf6f6;
+    --table-border: #d4d1c8;
+    --table-header-bg: #f0ede6;
+    --table-stripe: #f8f6f1;
+    --hr-color: #d4d1c8;
+    --checkbox-border: #9ca3af;
+    --checkbox-checked: #c75259;
+    --margin-line: rgba(199, 82, 89, 0.45);
+    --gutter-added: #4aba5a;
+    --gutter-modified: #d4a24a;
+    --gutter-deleted: #cf6a6a;
+}
 
 /* Print-specific media rules */
 @media print {
@@ -20,7 +44,8 @@
     }
 
     /* Reset body for print - only when not preserving dark theme */
-    body:not(.print-dark-theme) html,
+    html.print-light-theme,
+    body.print-light-theme,
     body:not(.print-dark-theme) {
         background: white !important;
         color: #262627 !important;

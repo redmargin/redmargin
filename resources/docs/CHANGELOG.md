@@ -12,6 +12,10 @@
 
 - Mermaid SVG output is sanitized before insertion, and invalid or unavailable Mermaid renders now fall back to the original source with an error banner instead of blank output
 
+### Bug Fixes
+
+- Print preview now forces Mermaid blocks onto the light print palette even when printing from dark mode
+
 ---
 
 ## v1.3.0 (2026-03-19)
