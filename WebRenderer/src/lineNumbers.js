@@ -126,10 +126,11 @@
             const startLine = parseInt(match[1], 10);
             const endLine = parseInt(match[2], 10);
             const tagName = el.tagName.toLowerCase();
+            const isMermaidBlock = el.classList && el.classList.contains('mermaid-block');
 
             if (tagName === 'table') {
                 collectTableLines(el, startLine, gutterRect.top);
-            } else if (tagName === 'pre') {
+            } else if (tagName === 'pre' || isMermaidBlock) {
                 collectCodeBlockLines(el, startLine, endLine, gutterRect.top);
             } else if (tagName === 'ul' || tagName === 'ol') {
                 collectListLines(el, startLine, gutterRect.top);

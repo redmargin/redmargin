@@ -410,18 +410,12 @@ struct RemoteDocumentWindowContent: View {
         guard let webView = findController.webView,
               let window = NSApp.mainWindow ?? NSApp.keyWindow else { return }
 
-        var classes: [String] = ["print-light-theme"]
-        if !prefs.showGutter {
-            classes.append("print-hide-gutter")
-        }
-        if !showLineNumbers {
-            classes.append("print-hide-line-numbers")
-        }
+        let printConfig = PrintConfiguration(
+            includeGutter: showGutter,
+            includeLineNumbers: showLineNumbers
+        )
 
-        let jsCommands: [String] = classes.map { "document.body.classList.add('\($0)');" }
-        let prepareJS = jsCommands.joined()
-
-        webView.evaluateJavaScript(prepareJS) { [weak webView] _, _ in
+        MarkdownWebView.preparePrint(webView: webView, config: printConfig) { [weak webView] in
             guard let webView = webView else { return }
 
             webView.setValue(true, forKey: "drawsBackground")
@@ -439,7 +433,7 @@ struct RemoteDocumentWindowContent: View {
             printOperation.showsPrintPanel = true
             printOperation.showsProgressPanel = true
 
-            let handler = RemotePrintCompletionHandler(webView: webView, printClasses: classes)
+            let handler = RemotePrintCompletionHandler(webView: webView, screenTheme: self.effectiveTheme)
             objc_setAssociatedObject(printOperation, "handler", handler, .OBJC_ASSOCIATION_RETAIN)
 
             printOperation.runModal(

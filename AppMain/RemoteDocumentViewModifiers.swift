@@ -7,11 +7,11 @@ import RedmarginCore
 
 class RemotePrintCompletionHandler: NSObject {
     private let webView: WKWebView
-    private let printClasses: [String]
+    private let screenTheme: String
 
-    init(webView: WKWebView, printClasses: [String]) {
+    init(webView: WKWebView, screenTheme: String) {
         self.webView = webView
-        self.printClasses = printClasses
+        self.screenTheme = screenTheme
         super.init()
     }
 
@@ -21,8 +21,7 @@ class RemotePrintCompletionHandler: NSObject {
         contextInfo: UnsafeMutableRawPointer?
     ) {
         webView.setValue(false, forKey: "drawsBackground")
-        let cleanupJS = printClasses.map { "document.body.classList.remove('\($0)');" }.joined()
-        webView.evaluateJavaScript(cleanupJS, completionHandler: nil)
+        MarkdownWebView.restoreFromPrint(webView: webView, screenTheme: screenTheme)
     }
 }
 

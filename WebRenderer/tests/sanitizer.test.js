@@ -8,9 +8,10 @@ const { JSDOM } = require('jsdom');
 const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
 global.DOMParser = dom.window.DOMParser;
 global.Node = dom.window.Node;
+global.XMLSerializer = dom.window.XMLSerializer;
 
 // Load sanitizer
-const { sanitize, isSafeHref, isSafeSrc, getUrlScheme } = require('../src/sanitizer.js');
+const { sanitize, sanitizeMermaidSvg, isSafeHref, isSafeSrc, getUrlScheme } = require('../src/sanitizer.js');
 
 // Test utilities
 let passed = 0;
@@ -336,6 +337,50 @@ test('testHandlesNestedMaliciousContent', () => {
     assertNotContains(output, '<script', 'Nested script should be removed');
     assertContains(output, '<strong>', 'strong should be preserved');
     assertContains(output, 'nested', 'Content should be preserved');
+});
+
+// === Mermaid SVG sanitization ===
+test('testSanitizeMermaidSvgRemovesScriptAndEventAttributes', () => {
+    const input = '<svg xmlns="http://www.w3.org/2000/svg" onclick="evil()">' +
+        '<script>alert(1)</script><g onload="evil()"><rect fill="#fff"></rect></g></svg>';
+    const output = sanitizeMermaidSvg(input);
+
+    assertNotContains(output, '<script', 'Mermaid SVG sanitizer should remove script tags');
+    assertNotContains(output, 'onclick', 'Mermaid SVG sanitizer should remove onclick attributes');
+    assertNotContains(output, 'onload', 'Mermaid SVG sanitizer should remove onload attributes');
+    assertContains(output, '<rect', 'Safe Mermaid SVG shapes should remain');
+});
+
+test('testSanitizeMermaidSvgRemovesForeignObjectAndUnsafeHrefs', () => {
+    const input = '<svg xmlns="http://www.w3.org/2000/svg">' +
+        '<foreignObject><div>bad</div></foreignObject>' +
+        '<iframe></iframe>' +
+        '<use href="javascript:alert(1)" xlink:href="data:text/html,evil"></use>' +
+        '</svg>';
+    const output = sanitizeMermaidSvg(input);
+
+    assertNotContains(output.toLowerCase(), '<foreignobject', 'foreignObject should be removed');
+    assertNotContains(output.toLowerCase(), '<iframe', 'iframe should be removed');
+    assertNotContains(output, 'javascript:', 'Unsafe href values should be removed');
+    assertNotContains(output, 'data:text/html', 'Unsafe xlink:href values should be removed');
+});
+
+test('testSanitizeMermaidSvgKeepsSafeShapesAndText', () => {
+    const input = '<svg xmlns="http://www.w3.org/2000/svg">' +
+        '<g transform="translate(10,20)">' +
+        '<path d="M0 0 L10 10" stroke="#000"></path>' +
+        '<rect x="1" y="2" width="3" height="4" fill="#fff"></rect>' +
+        '<text x="5" y="6"><tspan>Hello</tspan></text>' +
+        '</g></svg>';
+    const output = sanitizeMermaidSvg(input);
+
+    assertContains(output, '<svg', 'SVG root should be preserved');
+    assertContains(output, '<g', 'Group should be preserved');
+    assertContains(output, '<path', 'Path should be preserved');
+    assertContains(output, '<rect', 'Rect should be preserved');
+    assertContains(output, '<text', 'Text should be preserved');
+    assertContains(output, '<tspan', 'Tspan should be preserved');
+    assertContains(output, 'transform="translate(10,20)"', 'Safe transform attribute should be preserved');
 });
 
 // === URL scheme extraction tests ===

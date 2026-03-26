@@ -127,7 +127,41 @@ pre {
     position: relative;
 }
 
-pre .copy-btn {
+.mermaid-block {
+    background: var(--pre-bg);
+    border: 1px solid var(--pre-border);
+    border-radius: 6px;
+    padding: 16px;
+    overflow-x: auto;
+    margin: 0 0 1em 0;
+    position: relative;
+}
+
+.mermaid-block > svg {
+    display: block;
+    max-width: none !important;
+    height: auto;
+}
+
+.mermaid-block pre {
+    margin: 12px 0 0 0;
+}
+
+.mermaid-block pre:last-child {
+    margin-bottom: 0;
+}
+
+.mermaid-error {
+    color: #c2410c;
+    background: rgba(194, 65, 12, 0.08);
+    border: 1px solid rgba(194, 65, 12, 0.18);
+    border-radius: 4px;
+    font-size: 0.85em;
+    padding: 8px 10px;
+}
+
+pre .copy-btn,
+.mermaid-block .copy-btn {
     position: absolute;
     top: 6px;
     right: 6px;
@@ -145,15 +179,18 @@ pre .copy-btn {
     transition: opacity 0.15s;
 }
 
-pre:hover .copy-btn {
+pre:hover .copy-btn,
+.mermaid-block:hover .copy-btn {
     opacity: 1;
 }
 
-pre .copy-btn:hover {
+pre .copy-btn:hover,
+.mermaid-block .copy-btn:hover {
     background: var(--pre-border);
 }
 
-pre .copy-btn svg {
+pre .copy-btn svg,
+.mermaid-block .copy-btn svg {
     width: 16px;
     height: 16px;
     fill: none;

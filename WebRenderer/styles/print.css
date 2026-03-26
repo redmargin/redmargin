@@ -168,6 +168,11 @@
         break-inside: avoid;
     }
 
+    .mermaid-block {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
     /* Adjust content container for print */
     #content-container {
         max-width: none;
@@ -179,9 +184,13 @@
         display: none !important;
     }
 
+    .mermaid-error {
+        display: none !important;
+    }
+
     /* Remove all width constraints in print */
     p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, hr, .task-list-item,
-    table, pre, img {
+    table, pre, img, .mermaid-block {
         max-width: none !important;
     }
 
