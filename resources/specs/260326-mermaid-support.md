@@ -164,5 +164,5 @@ Tests are implementation tasks — the implementer writes and passes each one. O
 - [x] Toggle the theme (Appearance menu) and confirm both Mermaid diagrams update their colors without a page reload
 - [x] Add an intentionally broken Mermaid fence (e.g., `graph INVALID`) and confirm an error message appears above the original source text
 - [x] Click the copy button on a rendered Mermaid diagram and paste into a text editor — confirm it contains the original Mermaid source, not SVG markup
-- [ ] Open Print Preview for a document with a Mermaid diagram and confirm the diagram is readable and not clipped across page boundaries
+- [x] Open Print Preview for a document with a Mermaid diagram and confirm the diagram is readable and not clipped across page boundaries
 - [x] Export a PDF from a document with a Mermaid diagram and confirm the saved PDF includes the diagram with the expected theme
