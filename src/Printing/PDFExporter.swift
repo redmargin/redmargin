@@ -7,7 +7,14 @@ import os.log
 /// Exports WebView content to PDF without showing a print dialog
 public final class PDFExporter {
 
-    private static let logger = Logger(subsystem: "com.redmargin", category: "PDFExporter")
+    fileprivate static let logger = Logger(subsystem: "com.redmargin", category: "PDFExporter")
+
+    private struct ExportRunContext {
+        let outputURL: URL
+        let cssClasses: [String]
+        let theme: String
+        let completion: (ExportResult) -> Void
+    }
 
     /// Result of a PDF export operation
     public enum ExportResult {
@@ -67,15 +74,19 @@ public final class PDFExporter {
 
         // Generate unique filename
         let outputURL = uniqueFileURL(in: downloadsURL, baseName: filename, extension: "pdf")
-
-        // Build CSS classes
-        let cssClasses = buildCSSClasses(theme: theme)
+        let exportContext = ExportRunContext(
+            outputURL: outputURL,
+            cssClasses: buildCSSClasses(theme: theme),
+            theme: theme,
+            completion: completion
+        )
 
         // For dark theme, we use post-processing to fill the background.
         // We set the document background just for the content area.
         let bgColor = theme == "dark" ? "#1a1a1a" : "white"
+        let mermaidTheme = theme == "dark" ? "dark" : "default"
 
-        let classStatements = cssClasses.map {
+        let classStatements = exportContext.cssClasses.map {
             "document.documentElement.classList.add('\($0)'); document.body.classList.add('\($0)');"
         }.joined()
 
@@ -90,57 +101,74 @@ public final class PDFExporter {
         })();
         """
 
-        webView.evaluateJavaScript(prepareJS) { _, _ in
-            // Enable background drawing
-            webView.setValue(true, forKey: "drawsBackground")
+        webView.evaluateJavaScript(prepareJS) { _, error in
+            if let error = error {
+                logger.error("Failed to prepare PDF export styles: \(error.localizedDescription, privacy: .public)")
+            }
 
-            // Create print info for PDF output
-            let printInfo = NSPrintInfo()
-            printInfo.paperSize = NSSize(width: 595.28, height: 841.89)  // A4
+            webView.callAsyncJavaScript(
+                "window.MermaidRenderer ? window.MermaidRenderer.prepareMermaidForPrint(theme) : Promise.resolve()",
+                arguments: ["theme": mermaidTheme],
+                in: nil,
+                in: .page
+            ) { result in
+                if case .failure(let error) = result {
+                    logger.error(
+                        "Failed to prepare Mermaid for PDF export: \(error.localizedDescription, privacy: .public)"
+                    )
+                }
 
-            // Set margins to ensure correct pagination.
-            // Content will be inset by these margins.
-            // Post-processing will color the margins for dark mode.
-            printInfo.topMargin = 56
-            printInfo.bottomMargin = 56
-            printInfo.leftMargin = 28
-            printInfo.rightMargin = 28
-
-            printInfo.horizontalPagination = .fit
-            printInfo.verticalPagination = .automatic
-            printInfo.isHorizontallyCentered = false
-            printInfo.isVerticallyCentered = false
-
-            // Configure for PDF file output
-            printInfo.jobDisposition = .save
-            printInfo.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = outputURL
-            printInfo.dictionary()[NSPrintInfo.AttributeKey.headerAndFooter] = false
-
-            // Create print operation
-            let printOperation = webView.printOperation(with: printInfo)
-            printOperation.showsPrintPanel = false
-            printOperation.showsProgressPanel = false
-
-            // Create completion handler
-            let handler = PDFExportCompletionHandler(
-                webView: webView,
-                cssClasses: cssClasses,
-                outputURL: outputURL,
-                theme: theme,
-                completion: completion
-            )
-
-            // Store handler to prevent deallocation
-            objc_setAssociatedObject(printOperation, "pdfHandler", handler, .OBJC_ASSOCIATION_RETAIN)
-
-            // Run with delegate for proper async handling
-            printOperation.runModal(
-                for: window,
-                delegate: handler,
-                didRun: #selector(PDFExportCompletionHandler.printOperationDidRun(_:success:contextInfo:)),
-                contextInfo: nil
-            )
+                runExportPrintOperation(
+                    webView: webView,
+                    window: window,
+                    context: exportContext,
+                    printMargin: printMargin,
+                )
+            }
         }
+    }
+
+    private static func runExportPrintOperation(
+        webView: WKWebView,
+        window: NSWindow,
+        context: ExportRunContext,
+        printMargin: CGFloat
+    ) {
+        webView.setValue(true, forKey: "drawsBackground")
+
+        let printInfo = NSPrintInfo()
+        printInfo.paperSize = NSSize(width: 595.28, height: 841.89)  // A4
+        printInfo.topMargin = 56
+        printInfo.bottomMargin = 56
+        printInfo.leftMargin = printMargin
+        printInfo.rightMargin = printMargin
+        printInfo.horizontalPagination = .fit
+        printInfo.verticalPagination = .automatic
+        printInfo.isHorizontallyCentered = false
+        printInfo.isVerticallyCentered = false
+        printInfo.jobDisposition = .save
+        printInfo.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = context.outputURL
+        printInfo.dictionary()[NSPrintInfo.AttributeKey.headerAndFooter] = false
+
+        let printOperation = webView.printOperation(with: printInfo)
+        printOperation.showsPrintPanel = false
+        printOperation.showsProgressPanel = false
+
+        let handler = PDFExportCompletionHandler(
+            webView: webView,
+            cssClasses: context.cssClasses,
+            outputURL: context.outputURL,
+            theme: context.theme,
+            completion: context.completion
+        )
+
+        objc_setAssociatedObject(printOperation, "pdfHandler", handler, .OBJC_ASSOCIATION_RETAIN)
+        printOperation.runModal(
+            for: window,
+            delegate: handler,
+            didRun: #selector(PDFExportCompletionHandler.printOperationDidRun(_:success:contextInfo:)),
+            contextInfo: nil
+        )
     }
 
     /// Generates a unique file URL by appending -1, -2, etc. if file exists
@@ -222,7 +250,28 @@ private class PDFExportCompletionHandler: NSObject {
             document.body.style.background = '';
         })();
         """
-        webView.evaluateJavaScript(cleanupJS, completionHandler: nil)
+        webView.evaluateJavaScript(cleanupJS) { _, error in
+            if let error = error {
+                PDFExporter.logger.error(
+                    "Failed to clean up PDF export styles: \(error.localizedDescription, privacy: .public)"
+                )
+                return
+            }
+
+            let mermaidTheme = self.theme == "dark" ? "dark" : "default"
+            self.webView.callAsyncJavaScript(
+                "window.MermaidRenderer ? window.MermaidRenderer.restoreMermaidFromPrint(theme) : Promise.resolve()",
+                arguments: ["theme": mermaidTheme],
+                in: nil,
+                in: .page
+            ) { result in
+                if case .failure(let error) = result {
+                    PDFExporter.logger.error(
+                        "Failed to restore Mermaid after PDF export: \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
+        }
 
         // Check result
         if success && FileManager.default.fileExists(atPath: outputURL.path) {

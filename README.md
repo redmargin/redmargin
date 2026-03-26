@@ -1,6 +1,6 @@
 # Redmargin
 
-Markdown viewer for macOS with Git change indicators, remote file access over SSH, syntax highlighting, and PDF export.
+Markdown viewer for macOS with Git change indicators, remote file access over SSH, Mermaid diagrams, syntax highlighting, and PDF export.
 
 ## Features
 
@@ -8,6 +8,7 @@ Markdown viewer for macOS with Git change indicators, remote file access over SS
 - **Remote file access** — Open Markdown on remote servers via SSH (Cmd+Shift+O). Git gutter, checkboxes, and sidebar all work remotely.
 - **File sidebar** — Browse Markdown files in the repository or directory (Cmd+1). Collapsible folders, current file highlighted.
 - **Syntax highlighting** — Code blocks render with language-aware coloring. Supports Python, JavaScript, Swift, Rust, Go, and more.
+- **Mermaid diagrams** — Fenced `mermaid` blocks render as diagrams, follow the active theme, and print/export with the preview.
 - **Interactive checkboxes** — Click to toggle, saves immediately (local and remote).
 - **Find in page** — Search with match count and navigation (Cmd+F).
 - **PDF export** — Export with theme, gutter, and line numbers preserved (Cmd+E). Saves to Downloads.
@@ -25,6 +26,7 @@ Markdown files can contain inline HTML which creates XSS risks. Redmargin applie
 - **Navigation policy** — External links open in system browser; file:// navigation blocked.
 - **Remote loading blocked** — External resources blocked by default via WKContentRuleList (images configurable in Preferences).
 - **Safe data URIs only** — Only raster image formats (PNG, JPEG, GIF, WebP) allowed; SVG blocked (can contain scripts).
+- **Mermaid SVG sanitization** — Rendered Mermaid output is sanitized before insertion, and invalid diagrams fall back to source text with an error banner.
 - **Local images** — Loadable from any path readable by the user, not restricted to document directory.
 
 ## Requirements
@@ -47,6 +49,7 @@ open /Applications/Redmargin.app
 ```
 
 The build script will:
+
 1. Compile with Swift Package Manager
 2. Create the app bundle with WebRenderer assets
 3. Install to /Applications
@@ -54,7 +57,7 @@ The build script will:
 ## Keyboard Shortcuts
 
 | Action | Shortcut |
-|--------|----------|
+| ------ | -------- |
 | Open File | Cmd-O |
 | Open Remote | Cmd-Shift-O |
 | Export PDF | Cmd-E |
@@ -84,7 +87,7 @@ redmargin/
 │   └── Preferences/      # Settings management
 ├── Server/               # Remote daemon (deployed to SSH hosts)
 ├── WebRenderer/          # JavaScript markdown rendering
-│   ├── src/              # markdown-it, sourcepos, sanitizer
+│   ├── src/              # markdown-it, sourcepos, sanitizer, Mermaid
 │   ├── styles/           # Light/dark CSS themes
 │   └── tests/            # JavaScript tests
 ├── Tests/                # Swift XCTest suite

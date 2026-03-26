@@ -1,4 +1,22 @@
 # Changelog
+<!-- markdownlint-disable MD022 MD032 -->
+
+## Unreleased
+
+### New Features
+
+- Mermaid fenced code blocks now render as diagrams in the preview, with copy-source buttons and source-mapped gutter/line-number support
+- Mermaid diagrams rerender for light/dark theme changes and are preserved in print preview and PDF export
+
+### Security
+
+- Mermaid SVG output is sanitized before insertion, and invalid or unavailable Mermaid renders now fall back to the original source with an error banner instead of blank output
+
+### Bug Fixes
+
+- Print preview now forces Mermaid blocks onto the light print palette even when printing from dark mode
+
+---
 
 ## v1.3.0 (2026-03-19)
 

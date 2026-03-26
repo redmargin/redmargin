@@ -29,108 +29,6 @@
     let latestChanges = null;  // Always use latest changes for gutter
     let lastFrontMatterOffset = 0;  // Line offset from stripped front matter
 
-    // --- Front Matter ---
-
-    /**
-     * Extracts YAML front matter from markdown string.
-     * Returns { body, fields, lineCount } where lineCount includes both --- delimiters.
-     */
-    function extractFrontMatter(markdown) {
-        if (!markdown || !markdown.startsWith('---')) {
-            return { body: markdown, fields: null, lineCount: 0 };
-        }
-
-        // Match opening --- followed by content, then closing ---
-        var match = markdown.match(/^---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/);
-        if (!match) {
-            return { body: markdown, fields: null, lineCount: 0 };
-        }
-
-        var yamlBlock = match[1];
-        var fullMatch = match[0];
-        var body = markdown.slice(fullMatch.length);
-        var lineCount = fullMatch.split('\n').length - (fullMatch.endsWith('\n') ? 1 : 0);
-
-        var fields = parseYamlSubset(yamlBlock);
-        if (!fields || fields.length === 0) {
-            return { body: markdown, fields: null, lineCount: 0 };
-        }
-
-        return { body: body, fields: fields, lineCount: lineCount };
-    }
-
-    /**
-     * Micro YAML parser for front matter subset:
-     * scalar values, simple arrays (both flow [a, b] and block - item).
-     */
-    function parseYamlSubset(yaml) {
-        var lines = yaml.split('\n');
-        var fields = [];
-        var currentKey = null;
-        var currentArrayItems = null;
-
-        for (var i = 0; i < lines.length; i++) {
-            var line = lines[i];
-
-            // Skip empty lines and comments
-            if (/^\s*$/.test(line) || /^\s*#/.test(line)) continue;
-
-            // Check for block array item (continuation of previous key)
-            var arrayItemMatch = line.match(/^\s+-\s+(.*)/);
-            if (arrayItemMatch && currentKey) {
-                if (!currentArrayItems) currentArrayItems = [];
-                currentArrayItems.push(arrayItemMatch[1].trim());
-                continue;
-            }
-
-            // Flush previous key if it had array items
-            if (currentKey && currentArrayItems) {
-                fields.push({ key: currentKey, value: currentArrayItems });
-                currentKey = null;
-                currentArrayItems = null;
-            }
-
-            // Key: value pair
-            var kvMatch = line.match(/^([A-Za-z_][\w.-]*)\s*:\s*(.*)/);
-            if (!kvMatch) continue;
-
-            currentKey = kvMatch[1];
-            var rawValue = kvMatch[2].trim();
-
-            // Empty value — might have block array items following
-            if (!rawValue) continue;
-
-            // Flow array: [item1, item2]
-            var flowMatch = rawValue.match(/^\[(.*)\]$/);
-            if (flowMatch) {
-                var items = flowMatch[1].split(',').map(function(s) {
-                    return s.trim().replace(/^["']|["']$/g, '');
-                }).filter(Boolean);
-                fields.push({ key: currentKey, value: items });
-                currentKey = null;
-                continue;
-            }
-
-            // Strip quotes from scalar
-            var scalar = rawValue.replace(/^["']|["']$/g, '');
-            fields.push({ key: currentKey, value: scalar });
-            currentKey = null;
-        }
-
-        // Flush last key
-        if (currentKey && currentArrayItems) {
-            fields.push({ key: currentKey, value: currentArrayItems });
-        } else if (currentKey) {
-            // Key with empty value
-            fields.push({ key: currentKey, value: '' });
-        }
-
-        return fields;
-    }
-
-    var tagFields = ['tags', 'categories', 'keywords', 'labels'];
-    var dateFields = ['date', 'updated', 'published', 'created', 'modified'];
-
     function escapeHtml(str) {
         return String(str)
             .replace(/&/g, '&amp;')
@@ -139,51 +37,34 @@
             .replace(/"/g, '&quot;');
     }
 
-    function formatDate(str) {
-        // Try to parse as date
-        var d = new Date(str);
-        if (isNaN(d.getTime())) return escapeHtml(str);
-        try {
-            return new Intl.DateTimeFormat(undefined, {
-                year: 'numeric', month: 'long', day: 'numeric'
-            }).format(d);
-        } catch (e) {
-            return escapeHtml(str);
-        }
-    }
-
-    function renderFrontMatterCard(fields) {
-        var rows = '';
-        for (var i = 0; i < fields.length; i++) {
-            var field = fields[i];
-            var key = field.key;
-            var value = field.value;
-            var valueHtml;
-
-            if (Array.isArray(value) && tagFields.indexOf(key.toLowerCase()) !== -1) {
-                // Render as pill list
-                var pills = value.map(function(t) {
-                    return '<li class="fm-tag">' + escapeHtml(t) + '</li>';
-                }).join('');
-                valueHtml = '<ul class="fm-tag-list">' + pills + '</ul>';
-            } else if (Array.isArray(value)) {
-                valueHtml = escapeHtml(value.join(', '));
-            } else if (key.toLowerCase() === 'draft' && (value === 'true' || value === true)) {
-                valueHtml = '<span class="fm-badge-draft">Draft</span>';
-            } else if (dateFields.indexOf(key.toLowerCase()) !== -1) {
-                valueHtml = formatDate(value);
-            } else {
-                valueHtml = escapeHtml(value);
-            }
-
-            rows += '<div class="fm-row"><dt class="fm-label">' +
-                escapeHtml(key) + '</dt><dd class="fm-value">' +
-                valueHtml + '</dd></div>';
+    function getMermaidSourcepos(token) {
+        if (!token || !token.map) {
+            return token && token.attrGet ? token.attrGet('data-sourcepos') : '';
         }
 
-        return '<section id="front-matter" role="region" aria-label="Document metadata">' +
-            '<dl class="fm-fields">' + rows + '</dl></section>';
+        var startLine = token.map[0] + 1;
+        var endLine = token.map[1];
+        var fenceLength = (token.markup || '```').length;
+        return startLine + ':1-' + endLine + ':' + fenceLength;
     }
+
+    var defaultFenceRenderer = md.renderer.rules.fence || function(tokens, idx, options, env, self) {
+        return self.renderToken(tokens, idx, options);
+    };
+
+    md.renderer.rules.fence = function(tokens, idx, options, env, self) {
+        var token = tokens[idx];
+        var info = (token.info || '').trim();
+
+        if (info !== 'mermaid') {
+            return defaultFenceRenderer(tokens, idx, options, env, self);
+        }
+
+        var sourcepos = getMermaidSourcepos(token);
+        return '<div class="mermaid-block"' +
+            (sourcepos ? ' data-sourcepos="' + escapeHtml(sourcepos) + '"' : '') +
+            ' data-source="' + escapeHtml(token.content || '') + '"></div>';
+    };
 
     /**
      * Adjusts data-sourcepos attributes by adding an offset.
@@ -206,8 +87,7 @@
         }
     }
 
-    function setTheme(theme) {
-        if (theme === currentTheme) return;
+    function applyThemeStyles(theme) {
         currentTheme = theme;
 
         const stylesheet = document.getElementById('theme-stylesheet');
@@ -220,6 +100,84 @@
         }
         document.body.classList.remove('theme-light', 'theme-dark');
         document.body.classList.add(`theme-${theme}`);
+
+        const colors = inlineCodeColors[currentInlineCodeColor];
+        if (colors) {
+            const color = theme === 'dark' ? colors.dark : colors.light;
+            document.documentElement.style.setProperty('--code-text', color);
+        }
+    }
+
+    function refreshRenderedOverlays(savedScrollY) {
+        if (window.LineNumbers && window.LineNumbers.generate) {
+            window.LineNumbers.generate();
+        }
+
+        if (window.Gutter && window.Gutter.update) {
+            window.Gutter.update(latestChanges);
+        }
+
+        if (typeof savedScrollY === 'number' && savedScrollY > 0) {
+            window.scrollTo(0, savedScrollY);
+        }
+    }
+
+    function renderMermaidAndRefresh(savedScrollY) {
+        var renderPromise = Promise.resolve();
+        if (window.MermaidRenderer && window.MermaidRenderer.renderBlocks) {
+            renderPromise = window.MermaidRenderer.renderBlocks();
+        }
+
+        return renderPromise.then(function() {
+            refreshRenderedOverlays(savedScrollY);
+        }).catch(function(error) {
+            console.error('[MermaidRenderer] Render failed', error);
+            refreshRenderedOverlays(savedScrollY);
+        });
+    }
+
+    function afterDomUpdate(callback) {
+        var didRun = false;
+
+        function runOnce() {
+            if (didRun) {
+                return;
+            }
+            didRun = true;
+            callback();
+        }
+
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(runOnce);
+            setTimeout(runOnce, 50);
+        } else {
+            setTimeout(runOnce, 0);
+        }
+    }
+
+    function rerenderMermaidForTheme(theme, savedScrollY) {
+        var renderPromise = Promise.resolve();
+        if (window.MermaidRenderer && window.MermaidRenderer.rerenderForTheme) {
+            renderPromise = window.MermaidRenderer.rerenderForTheme(theme);
+        }
+
+        return renderPromise.then(function() {
+            refreshRenderedOverlays(savedScrollY);
+        }).catch(function(error) {
+            console.error('[MermaidRenderer] Theme rerender failed', error);
+            refreshRenderedOverlays(savedScrollY);
+        });
+    }
+
+    function setTheme(theme) {
+        var themeChanged = theme !== currentTheme;
+        applyThemeStyles(theme);
+
+        if (!themeChanged) {
+            return Promise.resolve();
+        }
+
+        return rerenderMermaidForTheme(theme);
     }
 
     /**
@@ -328,6 +286,10 @@
 
     var copySvg = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
     var checkSvg = '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>';
+    window.RedmarginCopyIcons = {
+        copySvg: copySvg,
+        checkSvg: checkSvg
+    };
 
     function addCopyButtons(container) {
         var pres = container.querySelectorAll('pre');
@@ -347,7 +309,7 @@
         var pre = btn.closest('pre');
         var code = pre.querySelector('code');
         var text = (code || pre).textContent;
-        navigator.clipboard.writeText(text).then(function() {
+        window.navigator.clipboard.writeText(text).then(function() {
             btn.innerHTML = checkSvg;
             setTimeout(function() { btn.innerHTML = copySvg; }, 1500);
         });
@@ -399,7 +361,8 @@
         const { theme = 'light', basePath = '', inlineCodeColor = 'warm', showGutter = true, showGitIndicators = true, textWidth = 'medium', contentWidth = 'unrestricted', cacheBust = 0 } = options;
 
         currentBasePath = basePath;
-        setTheme(theme);
+        var themeChanged = theme !== currentTheme;
+        applyThemeStyles(theme);
         setInlineCodeColor(inlineCodeColor);
         setGutterVisible(showGutter);
         setGitIndicatorsVisible(showGitIndicators);
@@ -422,7 +385,9 @@
             lastRenderedMarkdown = markdown;
 
             // Extract and strip front matter before rendering
-            var fm = extractFrontMatter(markdown || '');
+            var fm = window.FrontMatter
+                ? window.FrontMatter.extract(markdown || '')
+                : { body: markdown || '', fields: null, lineCount: 0 };
             lastFrontMatterOffset = fm.lineCount;
 
             let html = md.render(fm.body || '');
@@ -434,7 +399,7 @@
 
             // Prepend front matter card if present
             if (fm.fields) {
-                html = renderFrontMatterCard(fm.fields) + html;
+                html = window.FrontMatter.renderCard(fm.fields) + html;
             }
 
             const container = document.getElementById('content-container');
@@ -451,28 +416,14 @@
                 });
             }
 
-            // Use requestAnimationFrame to ensure DOM is updated
-            requestAnimationFrame(function() {
-                // Generate line numbers
-                if (window.LineNumbers && window.LineNumbers.generate) {
-                    window.LineNumbers.generate();
-                }
-
-                // Update git gutter markers with LATEST changes (not stale captured value)
-                if (window.Gutter && window.Gutter.update) {
-                    window.Gutter.update(latestChanges);
-                }
-
-                // Restore scroll position (skip if 0 — avoids overriding
-                // ScrollPosition.restore which runs on a 50ms timeout)
-                if (savedScrollY > 0) {
-                    window.scrollTo(0, savedScrollY);
-                }
+            afterDomUpdate(function() {
+                renderMermaidAndRefresh(savedScrollY);
             });
         } else {
-            // Content unchanged - just update gutter markers
-            if (window.Gutter && window.Gutter.update) {
-                window.Gutter.update(changes);
+            if (themeChanged) {
+                rerenderMermaidForTheme(theme);
+            } else if (window.Gutter && window.Gutter.update) {
+                window.Gutter.update(latestChanges);
             }
         }
     }
@@ -514,18 +465,6 @@
         document.documentElement.style.setProperty('--prose-max-width', proseVal);
         document.documentElement.style.setProperty('--content-max-width', wideVal);
     }
-
-    // Re-apply inline code color when theme changes
-    const originalSetTheme = setTheme;
-    setTheme = function(theme) {
-        originalSetTheme(theme);
-        // Reapply inline code color for new theme
-        const colors = inlineCodeColors[currentInlineCodeColor];
-        if (colors) {
-            const color = theme === 'dark' ? colors.dark : colors.light;
-            document.documentElement.style.setProperty('--code-text', color);
-        }
-    };
 
     // Re-optimize table widths on window resize so tables reflow
     var resizeTimer;

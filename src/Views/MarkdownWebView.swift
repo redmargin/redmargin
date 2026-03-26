@@ -1,9 +1,11 @@
 import AppKit
+import os.log
 import SwiftUI
 import WebKit
 import RedmarginCore
 
 public struct MarkdownWebView: NSViewRepresentable {
+    private static let logger = Logger(subsystem: "com.redmargin", category: "MarkdownWebView")
     public let markdown: String
     public let fileURL: URL?
     public var onCheckboxToggle: ((Int, Bool) -> Void)?
@@ -278,17 +280,65 @@ public struct MarkdownWebView: NSViewRepresentable {
             classes.append("print-hide-line-numbers")
         }
         let classString = classes.joined(separator: " ")
-        let script = "document.body.classList.add(...'\(classString)'.split(' '))"
-        webView.evaluateJavaScript(script) { _, _ in
-            completion()
+        let script = """
+            document.documentElement.classList.add(...'\(classString)'.split(' '))
+            document.body.classList.add(...'\(classString)'.split(' '))
+        """
+        webView.evaluateJavaScript(script) { _, error in
+            if let error = error {
+                logger.error("Failed to add print classes: \(error.localizedDescription, privacy: .public)")
+                completion()
+                return
+            }
+
+            webView.callAsyncJavaScript(
+                "window.MermaidRenderer ? window.MermaidRenderer.prepareMermaidForPrint(theme) : Promise.resolve()",
+                arguments: ["theme": "default"],
+                in: nil,
+                in: .page
+            ) { result in
+                if case .failure(let error) = result {
+                    logger.error(
+                        "Failed to prepare Mermaid for print: \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+                completion()
+            }
         }
     }
 
-    public static func restoreFromPrint(webView: WKWebView) {
+    public static func restoreFromPrint(webView: WKWebView, screenTheme: String? = nil) {
         let script = """
+            document.documentElement.classList.remove(
+                'print-light-theme',
+                'print-hide-gutter',
+                'print-hide-line-numbers'
+            )
             document.body.classList.remove('print-light-theme', 'print-hide-gutter', 'print-hide-line-numbers')
         """
-        webView.evaluateJavaScript(script, completionHandler: nil)
+        webView.evaluateJavaScript(script) { _, error in
+            if let error = error {
+                logger.error("Failed to remove print classes: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+
+            guard let screenTheme = screenTheme else {
+                return
+            }
+
+            webView.callAsyncJavaScript(
+                "window.MermaidRenderer ? window.MermaidRenderer.restoreMermaidFromPrint(theme) : Promise.resolve()",
+                arguments: ["theme": screenTheme],
+                in: nil,
+                in: .page
+            ) { result in
+                if case .failure(let error) = result {
+                    logger.error(
+                        "Failed to restore Mermaid after print: \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
+        }
     }
 
     struct RenderParams {

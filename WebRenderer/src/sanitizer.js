@@ -43,7 +43,7 @@
     };
 
     // Global attributes allowed on all elements
-    const GLOBAL_ATTRS = ['data-sourcepos', 'id', 'class'];
+    const GLOBAL_ATTRS = ['data-sourcepos', 'data-source', 'id', 'class'];
 
     // Allowed URL schemes for href (explicit allowlist)
     const ALLOWED_HREF_SCHEMES = new Set(['http:', 'https:', 'mailto:']);
@@ -53,6 +53,39 @@
 
     // Event handler pattern
     const EVENT_HANDLER = /^on/i;
+
+    const ALLOWED_SVG_TAGS = new Set([
+        'svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line',
+        'polyline', 'polygon', 'text', 'tspan', 'defs', 'marker',
+        'use', 'clippath', 'mask', 'pattern', 'lineargradient',
+        'radialgradient', 'stop', 'title', 'desc', 'style'
+    ]);
+
+    const ALLOWED_SVG_ATTRS = new Set([
+        'id', 'class', 'role', 'tabindex', 'focusable',
+        'xmlns', 'xmlns:xlink', 'xml:space', 'version',
+        'viewbox', 'width', 'height', 'x', 'y', 'x1', 'y1', 'x2', 'y2',
+        'cx', 'cy', 'r', 'rx', 'ry', 'dx', 'dy',
+        'd', 'points', 'pathlength',
+        'fill', 'fill-opacity', 'fill-rule',
+        'stroke', 'stroke-opacity', 'stroke-width',
+        'stroke-dasharray', 'stroke-dashoffset',
+        'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit',
+        'opacity', 'transform', 'preserveaspectratio',
+        'marker-start', 'marker-mid', 'marker-end',
+        'markerwidth', 'markerheight', 'markerunits', 'orient',
+        'refx', 'refy', 'mask', 'maskunits', 'maskcontentunits',
+        'clip-path', 'clippathunits',
+        'patternunits', 'patterncontentunits', 'patterntransform',
+        'gradientunits', 'gradienttransform',
+        'offset', 'stop-color', 'stop-opacity',
+        'font-family', 'font-size', 'font-weight', 'font-style',
+        'text-anchor', 'dominant-baseline', 'alignment-baseline',
+        'baseline-shift', 'letter-spacing', 'word-spacing',
+        'textlength', 'lengthadjust', 'direction', 'white-space',
+        'shape-rendering', 'color-rendering', 'color-interpolation',
+        'vector-effect', 'href', 'xlink:href', 'style'
+    ]);
 
     /**
      * Extract scheme from URL, returns null for relative URLs
@@ -118,6 +151,19 @@
         return false;
     }
 
+    function isUnsafeSvgUrl(url) {
+        if (!url) return false;
+        const trimmed = url.trim();
+        return /^javascript:/i.test(trimmed) ||
+            /^data:/i.test(trimmed) ||
+            /url\(\s*['"]?\s*(javascript:|data:)/i.test(trimmed);
+    }
+
+    function isSafeMermaidStyle(styleValue) {
+        if (!styleValue) return true;
+        return !/(?:expression\s*\(|@import|javascript:|data:|url\(\s*['"]?\s*(?!#))/i.test(styleValue);
+    }
+
     /**
      * Sanitize HTML string
      */
@@ -130,6 +176,27 @@
         sanitizeNode(doc.body);
 
         return doc.body.innerHTML;
+    }
+
+    function sanitizeMermaidSvg(svgString) {
+        if (!svgString || typeof svgString !== 'string') return '';
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(svgString, 'image/svg+xml');
+        let root = doc.documentElement;
+
+        if (!root) return '';
+        if (root.tagName && root.tagName.toLowerCase() === 'parsererror') {
+            return '';
+        }
+        if (root.tagName.toLowerCase() !== 'svg') {
+            root = doc.querySelector('svg');
+            if (!root) return '';
+        }
+
+        sanitizeMermaidSvgAttributes(root);
+        sanitizeMermaidSvgNode(root);
+        return new XMLSerializer().serializeToString(root);
     }
 
     /**
@@ -258,10 +325,105 @@
         }
     }
 
+    function sanitizeMermaidSvgNode(node) {
+        if (!node) return;
+
+        const nodesToRemove = [];
+        for (let i = 0; i < node.childNodes.length; i++) {
+            const child = node.childNodes[i];
+            if (child.nodeType !== Node.ELEMENT_NODE) {
+                continue;
+            }
+
+            const tagName = child.tagName.toLowerCase();
+            if (tagName === 'script' || tagName === 'foreignobject' || tagName === 'iframe') {
+                nodesToRemove.push(child);
+                continue;
+            }
+
+            if (!ALLOWED_SVG_TAGS.has(tagName)) {
+                nodesToRemove.push(child);
+                continue;
+            }
+
+            if (tagName === 'style' && !isSafeMermaidStyle(child.textContent || '')) {
+                nodesToRemove.push(child);
+                continue;
+            }
+
+            sanitizeMermaidSvgAttributes(child);
+            sanitizeMermaidSvgNode(child);
+        }
+
+        for (const child of nodesToRemove) {
+            child.remove();
+        }
+    }
+
+    function sanitizeMermaidSvgAttributes(element) {
+        const attrsToRemove = [];
+
+        for (let i = 0; i < element.attributes.length; i++) {
+            const attr = element.attributes[i];
+            const attrName = attr.name.toLowerCase();
+            const value = attr.value || '';
+
+            if (EVENT_HANDLER.test(attrName)) {
+                attrsToRemove.push(attr.name);
+                continue;
+            }
+
+            const isAllowed = ALLOWED_SVG_ATTRS.has(attrName) ||
+                attrName.startsWith('aria-') ||
+                attrName.startsWith('data-');
+
+            if (!isAllowed) {
+                attrsToRemove.push(attr.name);
+                continue;
+            }
+
+            if ((attrName === 'href' || attrName === 'xlink:href') && isUnsafeSvgUrl(value)) {
+                attrsToRemove.push(attr.name);
+                continue;
+            }
+
+            if (attrName === 'style' && !isSafeMermaidStyle(value)) {
+                attrsToRemove.push(attr.name);
+                continue;
+            }
+
+            if (
+                (attrName === 'fill' ||
+                 attrName === 'stroke' ||
+                 attrName === 'mask' ||
+                 attrName === 'clip-path' ||
+                 attrName === 'marker-start' ||
+                 attrName === 'marker-mid' ||
+                 attrName === 'marker-end') &&
+                isUnsafeSvgUrl(value)
+            ) {
+                attrsToRemove.push(attr.name);
+            }
+        }
+
+        for (const attrName of attrsToRemove) {
+            element.removeAttribute(attrName);
+        }
+    }
+
     // Export for browser and Node.js
     if (typeof module !== 'undefined' && module.exports) {
-        module.exports = { sanitize, isSafeHref, isSafeSrc, getUrlScheme };
+        module.exports = {
+            sanitize,
+            sanitizeMermaidSvg,
+            isSafeHref,
+            isSafeSrc,
+            getUrlScheme
+        };
     } else {
-        window.Sanitizer = { sanitize };
+        window.Sanitizer = {
+            sanitize,
+            sanitizeMermaidSvg
+        };
     }
 })();

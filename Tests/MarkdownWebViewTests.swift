@@ -33,6 +33,143 @@ final class MarkdownWebViewTests: XCTestCase {
         super.tearDown()
     }
 
+    private func loadRenderer() {
+        let loadExpectation = XCTestExpectation(description: "WebView loads")
+
+        let rendererURL = webRendererURL
+            .appendingPathComponent("src")
+            .appendingPathComponent("renderer.html")
+
+        navigationDelegate.onFinish = {
+            loadExpectation.fulfill()
+        }
+
+        navigationDelegate.onError = { error in
+            XCTFail("Navigation failed with error: \(error)")
+            loadExpectation.fulfill()
+        }
+
+        let accessURL = URL(fileURLWithPath: "/")
+        webView.loadFileURL(rendererURL, allowingReadAccessTo: accessURL)
+        wait(for: [loadExpectation], timeout: 10.0)
+    }
+
+    private func installJSErrorCapture() {
+        let expectation = XCTestExpectation(description: "Install JS error capture")
+        let script = """
+        window.__testErrors = [];
+        window.addEventListener('error', function(event) {
+            window.__testErrors.push(String(event.error || event.message || 'unknown error'));
+        });
+        true;
+        """
+
+        webView.evaluateJavaScript(script) { _, error in
+            XCTAssertNil(error, "Failed to install JS error capture: \(String(describing: error))")
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 5.0)
+    }
+
+    private func renderMarkdown(_ markdown: String, theme: String = "light") {
+        let renderExpectation = XCTestExpectation(description: "Render completes")
+        let payload: [String: Any] = [
+            "markdown": markdown,
+            "options": [
+                "theme": theme,
+                "basePath": ""
+            ]
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            XCTFail("Failed to serialize render payload")
+            return
+        }
+
+        let escapedJSON = jsonString
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let script = "window.App.render(JSON.parse('\(escapedJSON)'))"
+
+        webView.evaluateJavaScript(script) { _, error in
+            XCTAssertNil(error, "Render should not throw error: \(String(describing: error))")
+            renderExpectation.fulfill()
+        }
+
+        wait(for: [renderExpectation], timeout: 5.0)
+    }
+
+    private func waitForJavaScriptCondition(
+        _ script: String,
+        timeout: TimeInterval = 5.0,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let expectation = XCTestExpectation(description: "Wait for JavaScript condition")
+        let deadline = Date().addingTimeInterval(timeout)
+
+        func poll() {
+            webView.evaluateJavaScript(script) { result, error in
+                if let error = error {
+                    XCTFail("JavaScript condition failed: \(error)", file: file, line: line)
+                    expectation.fulfill()
+                    return
+                }
+
+                if let value = result as? Bool, value {
+                    expectation.fulfill()
+                    return
+                }
+
+                if Date() >= deadline {
+                    XCTFail("Timed out waiting for JavaScript condition: \(script)", file: file, line: line)
+                    expectation.fulfill()
+                    return
+                }
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    poll()
+                }
+            }
+        }
+
+        poll()
+        wait(for: [expectation], timeout: timeout + 1.0)
+    }
+
+    private func evaluateJavaScriptValue(
+        _ script: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> Any? {
+        let expectation = XCTestExpectation(description: "Evaluate JavaScript value")
+        var output: Any?
+
+        webView.evaluateJavaScript(script) { result, error in
+            XCTAssertNil(error, "JavaScript evaluation failed: \(String(describing: error))", file: file, line: line)
+            output = result
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 5.0)
+        return output
+    }
+
+    private func mermaidColorSignature() -> String {
+        let script = """
+        (function() {
+            var svg = document.querySelector('.mermaid-block > svg');
+            if (!svg) return '';
+            var matches = svg.outerHTML.match(/#(?:[0-9a-fA-F]{3,8})|rgba?\\([^)]*\\)/g) || [];
+            return JSON.stringify(Array.from(new Set(matches)).sort());
+        })()
+        """
+
+        return evaluateJavaScriptValue(script) as? String ?? ""
+    }
+
     func testWebViewLoadsRendererHTML() throws {
         let expectation = XCTestExpectation(description: "WebView loads renderer.html")
 
@@ -229,6 +366,65 @@ final class MarkdownWebViewTests: XCTestCase {
             widthExpectation.fulfill()
         }
         wait(for: [widthExpectation], timeout: 5.0)
+    }
+
+    func testRenderCallRendersMermaidDiagram() throws {
+        loadRenderer()
+        installJSErrorCapture()
+
+        renderMarkdown("""
+        ```mermaid
+        graph TD
+          A-->B
+        ```
+        """)
+
+        waitForJavaScriptCondition("!!document.querySelector('.mermaid-block > svg')")
+
+        XCTAssertEqual(
+            evaluateJavaScriptValue("window.__testErrors.length") as? Int,
+            0,
+            "Mermaid render should not emit JavaScript errors"
+        )
+        XCTAssertEqual(
+            evaluateJavaScriptValue("document.querySelectorAll('.mermaid-block > svg').length") as? Int,
+            1,
+            "Expected one rendered Mermaid SVG"
+        )
+    }
+
+    func testThemeChangeRerendersMermaidDiagram() throws {
+        loadRenderer()
+
+        let markdown = """
+        ```mermaid
+        graph TD
+          A-->B
+        ```
+        """
+
+        renderMarkdown(markdown, theme: "light")
+        waitForJavaScriptCondition("!!document.querySelector('.mermaid-block > svg')")
+        let lightColors = mermaidColorSignature()
+
+        renderMarkdown(markdown, theme: "dark")
+        waitForJavaScriptCondition(
+            "document.body.classList.contains('theme-dark') && !!document.querySelector('.mermaid-block > svg')"
+        )
+        let darkColors = mermaidColorSignature()
+
+        XCTAssertNotEqual(
+            lightColors,
+            darkColors,
+            "Theme change should produce different Mermaid SVG colors"
+        )
+        XCTAssertEqual(
+            evaluateJavaScriptValue(
+                "!!document.scrollingElement && document.scrollingElement.scrollHeight > 0"
+            ) as? Bool,
+            true,
+            "Document should remain scrollable after Mermaid theme rerender"
+        )
     }
 }
 

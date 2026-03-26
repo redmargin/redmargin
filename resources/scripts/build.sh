@@ -11,10 +11,8 @@ fi
 APP_NAME="Redmargin"
 APP_BUNDLE_ID="com.redmargin.app"
 APP_DIR="build/Redmargin.app"
-WAS_RUNNING=false
 
 if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
-    WAS_RUNNING=true
     echo "Redmargin is running; quitting before rebuild..."
     osascript -e "tell application id \"$APP_BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
     for _ in {1..30}; do
@@ -52,6 +50,7 @@ rm -rf "$RESOURCES_DIR/WebRenderer"
 mkdir -p "$RESOURCES_DIR/WebRenderer/src/vendor" "$RESOURCES_DIR/WebRenderer/styles"
 cp WebRenderer/src/renderer.html "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/index.js "$RESOURCES_DIR/WebRenderer/src/"
+cp WebRenderer/src/frontMatter.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/sourcepos.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/sourcepos-map.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/gutter.js "$RESOURCES_DIR/WebRenderer/src/"
@@ -59,6 +58,7 @@ cp WebRenderer/src/checkboxHandler.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/lineNumbers.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/scrollPosition.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/sanitizer.js "$RESOURCES_DIR/WebRenderer/src/"
+cp WebRenderer/src/mermaid.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/headingAnchors.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/tableCheckboxPlugin.js "$RESOURCES_DIR/WebRenderer/src/"
 cp WebRenderer/src/highlight.js "$RESOURCES_DIR/WebRenderer/src/"

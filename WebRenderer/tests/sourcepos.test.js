@@ -5,6 +5,7 @@
 
 const markdownit = require('markdown-it');
 const taskLists = require('markdown-it-task-lists');
+const { createAppHarness } = require('./appHarness');
 
 // Load our sourcepos plugin
 const sourceposPlugin = require('../src/sourcepos.js');
@@ -139,6 +140,24 @@ more text`;
     const html = md.render(input);
     assertContains(html, '<hr', 'Should render horizontal rule');
     assertMatch(html, /<hr[^>]*data-sourcepos="3:0-3:0"/, 'HR should have sourcepos');
+});
+
+test('testMermaidFencePreservesSourceposRange', () => {
+    const harness = createAppHarness({ disableMermaid: true });
+    const html = harness.window.App.getMarkdownIt().render(`Title
+
+\`\`\`mermaid
+graph TD
+  A-->B
+  B-->C
+\`\`\``);
+
+    assertContains(html, 'class="mermaid-block"', 'Mermaid fence should render as mermaid block');
+    assertMatch(
+        html,
+        /data-sourcepos="3:1-7:3"/,
+        'Mermaid fence should preserve the full fence source range'
+    );
 });
 
 // Line number gap-filling tests

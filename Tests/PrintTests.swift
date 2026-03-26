@@ -31,7 +31,7 @@ final class PrintTests: XCTestCase {
         super.tearDown()
     }
 
-    private func loadRenderer() {
+    private func loadRenderer(markdown: String = "# Test", theme: String = "light") {
         let loadExpectation = XCTestExpectation(description: "WebView loads")
 
         let rendererURL = webRendererURL
@@ -57,13 +57,15 @@ final class PrintTests: XCTestCase {
 
         wait(for: [loadExpectation], timeout: 10.0)
 
-        // Render basic markdown
-        let renderExpectation = XCTestExpectation(description: "Render completes")
+        renderMarkdown(markdown, theme: theme)
+    }
 
+    private func renderMarkdown(_ markdown: String, theme: String = "light") {
+        let renderExpectation = XCTestExpectation(description: "Render completes")
         let payload: [String: Any] = [
-            "markdown": "# Test",
+            "markdown": markdown,
             "options": [
-                "theme": "light",
+                "theme": theme,
                 "basePath": ""
             ]
         ]
@@ -77,7 +79,6 @@ final class PrintTests: XCTestCase {
         let escapedJSON = jsonString
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "'", with: "\\'")
-
         let script = "window.App.render(JSON.parse('\(escapedJSON)'))"
 
         webView.evaluateJavaScript(script) { _, error in
@@ -88,6 +89,117 @@ final class PrintTests: XCTestCase {
         }
 
         wait(for: [renderExpectation], timeout: 5.0)
+    }
+
+    private func waitForJavaScriptCondition(
+        _ script: String,
+        timeout: TimeInterval = 5.0,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let expectation = XCTestExpectation(description: "Wait for JavaScript condition")
+        let deadline = Date().addingTimeInterval(timeout)
+
+        func poll() {
+            webView.evaluateJavaScript(script) { result, error in
+                if let error = error {
+                    XCTFail("JavaScript condition failed: \(error)", file: file, line: line)
+                    expectation.fulfill()
+                    return
+                }
+
+                if let value = result as? Bool, value {
+                    expectation.fulfill()
+                    return
+                }
+
+                if Date() >= deadline {
+                    XCTFail("Timed out waiting for JavaScript condition: \(script)", file: file, line: line)
+                    expectation.fulfill()
+                    return
+                }
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    poll()
+                }
+            }
+        }
+
+        poll()
+        wait(for: [expectation], timeout: timeout + 1.0)
+    }
+
+    private func evaluateJavaScriptValue(
+        _ script: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> Any? {
+        let expectation = XCTestExpectation(description: "Evaluate JavaScript")
+        var output: Any?
+
+        webView.evaluateJavaScript(script) { result, error in
+            XCTAssertNil(error, "JavaScript evaluation failed: \(String(describing: error))", file: file, line: line)
+            output = result
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 5.0)
+        return output
+    }
+
+    private func mermaidColorSignature() -> String {
+        let script = """
+        (function() {
+            var svg = document.querySelector('.mermaid-block > svg');
+            if (!svg) return '';
+            var matches = svg.outerHTML.match(/#(?:[0-9a-fA-F]{3,8})|rgba?\\([^)]*\\)/g) || [];
+            return JSON.stringify(Array.from(new Set(matches)).sort());
+        })()
+        """
+
+        return evaluateJavaScriptValue(script) as? String ?? ""
+    }
+
+    private func mermaidBlockBackgroundColor() -> String {
+        let script = """
+        (function() {
+            var block = document.querySelector('.mermaid-block');
+            return block ? getComputedStyle(block).backgroundColor : '';
+        })()
+        """
+
+        return evaluateJavaScriptValue(script) as? String ?? ""
+    }
+
+    private func waitForMermaidColorSignature(
+        _ expected: String,
+        timeout: TimeInterval = 5.0,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let expectation = XCTestExpectation(description: "Wait for Mermaid colors")
+        let deadline = Date().addingTimeInterval(timeout)
+
+        func poll() {
+            let current = mermaidColorSignature()
+            if current == expected {
+                expectation.fulfill()
+                return
+            }
+
+            if Date() >= deadline {
+                XCTFail("Timed out waiting for Mermaid colors to match expected signature", file: file, line: line)
+                expectation.fulfill()
+                return
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                poll()
+            }
+        }
+
+        poll()
+        wait(for: [expectation], timeout: timeout + 1.0)
     }
 
     // MARK: - PrintConfiguration Tests
@@ -211,6 +323,121 @@ final class PrintTests: XCTestCase {
         }
 
         wait(for: [checkExpectation], timeout: 5.0)
+    }
+
+    func testPreparePrintKeepsMermaidDiagramVisible() {
+        loadRenderer(
+            markdown: """
+            ```mermaid
+            graph TD
+              A-->B
+            ```
+            """,
+            theme: "dark"
+        )
+
+        waitForJavaScriptCondition("!!document.querySelector('.mermaid-block > svg')")
+        let screenColors = mermaidColorSignature()
+
+        let expectation = XCTestExpectation(description: "preparePrint completes")
+        let config = PrintConfiguration(includeGutter: true, includeLineNumbers: false)
+        MarkdownWebView.preparePrint(webView: webView, config: config) {
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 5.0)
+
+        waitForJavaScriptCondition(
+            "document.body.classList.contains('print-light-theme') && !!document.querySelector('.mermaid-block > svg')"
+        )
+        let printColors = mermaidColorSignature()
+
+        XCTAssertNotEqual(
+            screenColors,
+            printColors,
+            "Print preparation should rerender Mermaid to the print theme"
+        )
+        XCTAssertEqual(
+            evaluateJavaScriptValue("document.querySelectorAll('.mermaid-block > svg').length") as? Int,
+            1,
+            "Mermaid diagram should stay visible during print preparation"
+        )
+    }
+
+    func testPreparePrintAppliesLightMermaidBlockChromeFromDarkScreenTheme() {
+        loadRenderer(
+            markdown: """
+            ```mermaid
+            graph TD
+              A-->B
+            ```
+            """,
+            theme: "dark"
+        )
+
+        waitForJavaScriptCondition("!!document.querySelector('.mermaid-block > svg')")
+        let screenBackground = mermaidBlockBackgroundColor()
+
+        let expectation = XCTestExpectation(description: "preparePrint completes")
+        let config = PrintConfiguration(includeGutter: true, includeLineNumbers: false)
+        MarkdownWebView.preparePrint(webView: webView, config: config) {
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 5.0)
+
+        waitForJavaScriptCondition(
+            """
+            document.body.classList.contains('print-light-theme') &&
+            getComputedStyle(document.querySelector('.mermaid-block')).backgroundColor === 'rgb(245, 243, 237)'
+            """
+        )
+
+        let printBackground = mermaidBlockBackgroundColor()
+        XCTAssertEqual(
+            screenBackground,
+            "rgb(37, 37, 40)",
+            "Dark mode Mermaid blocks should start with the dark code-block chrome"
+        )
+        XCTAssertEqual(
+            printBackground,
+            "rgb(245, 243, 237)",
+            "Print preparation should switch Mermaid blocks to the light print chrome"
+        )
+        XCTAssertNotEqual(
+            printBackground,
+            screenBackground,
+            "Print preparation should not retain the dark screen block background"
+        )
+    }
+
+    func testRestoreFromPrintRestoresMermaidScreenTheme() {
+        loadRenderer(
+            markdown: """
+            ```mermaid
+            graph TD
+              A-->B
+            ```
+            """,
+            theme: "dark"
+        )
+
+        waitForJavaScriptCondition("!!document.querySelector('.mermaid-block > svg')")
+        let originalColors = mermaidColorSignature()
+
+        let prepareExpectation = XCTestExpectation(description: "preparePrint completes")
+        let config = PrintConfiguration(includeGutter: true, includeLineNumbers: false)
+        MarkdownWebView.preparePrint(webView: webView, config: config) {
+            prepareExpectation.fulfill()
+        }
+        wait(for: [prepareExpectation], timeout: 5.0)
+
+        let printColors = mermaidColorSignature()
+        MarkdownWebView.restoreFromPrint(webView: webView, screenTheme: "dark")
+        waitForJavaScriptCondition("!document.body.classList.contains('print-light-theme')")
+        waitForMermaidColorSignature(originalColors)
+
+        let restoredColors = mermaidColorSignature()
+        XCTAssertEqual(restoredColors, originalColors, "Restore should bring Mermaid colors back to the screen theme")
+        XCTAssertNotEqual(restoredColors, printColors, "Restore should not leave Mermaid in the print theme")
     }
 }
 
