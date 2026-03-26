@@ -2,7 +2,7 @@
 
 ## Meta
 
-- Status: Draft
+- Status: Reviewed
 - Branch: feature/mermaid-support
 
 ---
@@ -22,11 +22,11 @@ Render fenced Mermaid blocks as diagrams in the Markdown preview for local and r
 User-facing behaviors:
 
 - Fenced code blocks whose info string is exactly `mermaid` render as diagrams instead of plain code blocks.
-- Invalid Mermaid syntax shows an inline error state and preserves access to the original Mermaid source instead of rendering a blank block or breaking the rest of the document.
+- Invalid Mermaid syntax shows an error banner with Mermaid's error message above the original source displayed as a regular code block, instead of rendering a blank block or breaking the rest of the document.
 - Diagrams follow the current Redmargin light/dark theme and refresh when the theme changes.
 - Git gutter indicators and line numbers remain anchored to the correct source line range for the Mermaid fence.
 - Print preview and PDF export include Mermaid diagrams and use the active print/export theme rather than stale on-screen colors.
-- Users can still copy the Mermaid source from a rendered diagram block.
+- Each rendered Mermaid block shows a copy button (matching the existing code block copy button style) that copies the original Mermaid source text, not the generated SVG.
 
 ### Out of scope
 
@@ -34,6 +34,8 @@ User-facing behaviors:
 - User-controlled Mermaid `%%{init:}%%` directives, front matter config, custom theme CSS, or HTML labels
 - Interactive Mermaid callbacks or link behavior beyond Redmargin's existing document navigation rules
 - Remote assets or external diagram extensions/layout engines such as ELK
+- Handling Mermaid diagrams taller than a full printed page (they will break across pages; fixing this requires SVG-to-image rasterization which is a separate feature)
+- Cancellation UX for slow-rendering Mermaid blocks (render timeouts, per-block loading indicators, diagram count limits)
 
 ---
 
@@ -41,49 +43,76 @@ User-facing behaviors:
 
 ### Approach
 
-Bundle the official Mermaid browser build into the existing WebRenderer and keep Mermaid rendering fully app-controlled. Add `WebRenderer/src/vendor/mermaid.min.js` and a new `WebRenderer/src/mermaid.js` wrapper that initializes Mermaid with safe defaults, including `startOnLoad: false`, a strict security level, `htmlLabels: false`, and suppressed built-in error rendering so Redmargin can control the fallback UI. Do not use Mermaid's document-wide auto-run path because Redmargin already owns DOM insertion, scroll preservation, gutter generation, print preparation, and rerender timing.
+Bundle Mermaid >= 11.10.0 (the minimum version that includes fixes for CVE-2025-54881 and CVE-2025-54880) as `WebRenderer/src/vendor/mermaid.min.js` and keep Mermaid rendering fully app-controlled. Use the full `mermaid.min.js` bundle (~1.1 MB), not `@mermaid-js/tiny`, so all diagram types are supported. Add a new `WebRenderer/src/mermaid.js` wrapper that initializes Mermaid with safe defaults: `startOnLoad: false`, `securityLevel: 'strict'`, `htmlLabels: false`, `suppressErrorRendering: true`, and `theme` set to `'default'` for light or `'dark'` for dark mode. Do not use Mermaid's document-wide auto-run path because Redmargin already owns DOM insertion, scroll preservation, gutter generation, print preparation, and rerender timing.
 
-Modify `WebRenderer/src/index.js` so exact `mermaid` fences emit a `.mermaid-block` wrapper that preserves the fence's `data-sourcepos` and retains escaped source text for copy/error fallback. After Markdown HTML is sanitized and inserted into `#content-container`, render Mermaid blocks sequentially with unique render IDs, sanitize the generated SVG through a dedicated Mermaid/SVG pass in `WebRenderer/src/sanitizer.js`, then regenerate line numbers and gutter markers only after Mermaid layout has finished. Theme changes, print preparation, and PDF export must rerender Mermaid blocks so inline SVG colors match the active screen or print theme. Centralize that lifecycle in shared helpers exposed from `window.App` and called from `src/Views/MarkdownWebView.swift`, then use those helpers from the print/export entry points in `AppMain/DocumentView.swift`, `AppMain/FolderWindowContent.swift`, `AppMain/RemoteDocumentView.swift`, and `src/Printing/PDFExporter.swift`.
+Mermaid theme mapping:
+
+| Redmargin context | Mermaid `theme` value |
+| --- | --- |
+| Light mode | `default` |
+| Dark mode | `dark` |
+| Print (light) | `default` |
+| Print (dark) | `dark` |
+
+Theme changes require a full Mermaid re-render because Mermaid bakes colors into SVG at render time. On theme change: call `mermaid.initialize()` with the new theme value, then call `mermaid.render(uniqueId, storedSource)` for each `.mermaid-block`, and replace the inner SVG. Await all re-renders before calling `LineNumbers.generate()` and `Gutter.update()`.
+
+Modify `WebRenderer/src/index.js` so exact `mermaid` fences emit a `.mermaid-block` wrapper that preserves the fence's `data-sourcepos` and stores the original Mermaid text in a `data-source` attribute. After Markdown HTML is sanitized and inserted into `#content-container`, call `window.MermaidRenderer.renderBlocks()` (which returns a Promise), then regenerate line numbers and gutter markers in the `.then()` callback. In `setTheme()`, after swapping stylesheets, call `window.MermaidRenderer.rerenderForTheme(newTheme)` and chain `LineNumbers.generate()` and `Gutter.update()` on the returned Promise via `.then()`.
+
+Print preparation and PDF export call `window.MermaidRenderer.prepareMermaidForPrint(theme)` and `window.MermaidRenderer.restoreMermaidFromPrint(screenTheme)` directly from Swift via `callAsyncJavaScript`. These functions live on `window.MermaidRenderer` (exposed by `WebRenderer/src/mermaid.js`), not on `window.App`. Swift callers: `src/Views/MarkdownWebView.swift`, `AppMain/DocumentView.swift`, `AppMain/FolderWindowContent.swift`, `AppMain/RemoteDocumentView.swift`, and `src/Printing/PDFExporter.swift`.
 
 ### Approach Validation
 
 Official Mermaid docs confirm that site-wide `initialize()` configuration is the intended integration point, and that theme/security options such as `theme`, `securityLevel`, `startOnLoad`, `htmlLabels`, `secure`, and `suppressErrorRendering` are all application-level concerns rather than something Redmargin should leave to document content. The theming docs also confirm that Mermaid ships light, dark, and neutral/base theme paths, which maps cleanly to Redmargin's existing screen and print themes. Relevant references: [Theme Configuration](https://mermaid.js.org/config/theming.html), [MermaidConfig](https://mermaid.js.org/config/setup/mermaid/interfaces/MermaidConfig.html), [Diagram Syntax](https://mermaid.js.org/intro/syntax-reference.html).
 
-Upstream Mermaid issues also reinforce the need for app-controlled sequential rendering. Issue [#4064](https://github.com/mermaid-js/mermaid/issues/4064) and PR [#4142](https://github.com/mermaid-js/mermaid/pull/4142) document async render hazards and queueing problems when `startOnLoad` and manual rendering overlap. Issue [#1601](https://github.com/mermaid-js/mermaid/issues/1601) and PR [#6621](https://github.com/mermaid-js/mermaid/pull/6621) show that fast multi-block rendering can still produce unstable or duplicate SVG IDs. Redmargin should therefore avoid Mermaid auto-scan behavior, render each block sequentially with explicit IDs, and treat Mermaid output as a post-sanitize SVG generation step with its own safety rules. No high-signal end-user feedback specific to native Markdown viewers surfaced beyond upstream Mermaid issue reports, so the product requirements here are driven primarily by Redmargin's existing UX constraints around gutter alignment, line numbers, and print fidelity.
+Upstream Mermaid issues also reinforce the need for app-controlled sequential rendering. Issue [#4064](https://github.com/mermaid-js/mermaid/issues/4064) and PR [#4142](https://github.com/mermaid-js/mermaid/pull/4142) document async render hazards and queueing problems when `startOnLoad` and manual rendering overlap. Issue [#1601](https://github.com/mermaid-js/mermaid/issues/1601) and PR [#6621](https://github.com/mermaid-js/mermaid/pull/6621) show that fast multi-block rendering can still produce unstable or duplicate SVG IDs. Redmargin should therefore avoid Mermaid auto-scan behavior, render each block sequentially with explicit IDs, and treat Mermaid output as a post-sanitize SVG generation step with its own safety rules.
+
+Two Mermaid XSS CVEs were disclosed in August 2025: CVE-2025-54881 (sequence diagram labels passed unsanitized to `innerHTML` via KaTeX delimiters) and CVE-2025-54880 (architecture diagram `iconText` passed unsanitized to d3 `html()`). Both were fixed in Mermaid 11.10.0. These CVEs bypassed Mermaid's built-in DOMPurify integration, reinforcing the need for Redmargin's own SVG sanitization pass after Mermaid rendering.
+
+WebKit compatibility is a known concern: Mermaid 11.6.0 broke Safari < 16.5 due to unsupported JS syntax ([mermaid-js/mermaid#6666](https://github.com/mermaid-js/mermaid/issues/6666)). The bundled Mermaid version must be verified against the WebKit version shipped with macOS 14.0 (Safari 17.0) before release. WKWebView may also emit harmless `.map` file loading warnings that can be ignored.
+
+User feedback across Markdown apps (Reddit, GitHub issues, forum threads) confirms that theme switching is the #1 pain point: apps that fail to re-render Mermaid SVGs on theme change leave stale colors. The spec addresses this by requiring full re-render on theme change with `mermaid.initialize()` + `mermaid.render()` per block. Copy-source access is the #2 request — users want the original Mermaid source after rendering, which this spec preserves via `data-source` attributes on `.mermaid-block` wrappers and a copy button per block.
 
 ### Risks
 
 | Risk | Mitigation |
 | ---- | ---------- |
 | Mermaid SVG bypasses the current markdown HTML sanitizer and introduces a new XSS or tracking surface | Lock Mermaid to safe defaults, reject user-controlled Mermaid config in v1, add a dedicated SVG sanitization pass, and keep interactive/remote-asset features out of scope |
-| Theme or print rerenders leave stale line numbers or git gutter positions | Await Mermaid completion before calling `LineNumbers.generate()` and `Gutter.update()`, and centralize Mermaid print/export prep and restore in shared helpers |
+| Theme or print rerenders leave stale line numbers or git gutter positions | Chain `LineNumbers.generate()` and `Gutter.update()` on the Promise returned by `MermaidRenderer.renderBlocks()` and `MermaidRenderer.rerenderForTheme()`; print/export callers await `prepareMermaidForPrint()` before capturing |
 | Multi-line Mermaid fences lose per-line number alignment because current logic only treats `pre` as a multi-line block | Extend `WebRenderer/src/lineNumbers.js` to treat `.mermaid-block` as a code-like block and add dedicated regression tests |
 | Multiple Mermaid blocks collide on generated SVG IDs or race during rapid rerenders | Render blocks sequentially with explicit unique IDs and avoid Mermaid auto-run or parallel `run()` calls |
-| Large or invalid diagrams degrade preview responsiveness | Catch render failures per block, fall back to source display for failures, and leave broader performance caps as a separate follow-up if needed |
+| Large or invalid diagrams degrade preview responsiveness | Catch render failures per block and fall back to source display; broader performance caps (render timeouts, diagram count limits) are out of scope for this spec |
+| Bundled Mermaid version uses JS syntax unsupported by macOS 14.0's WebKit (Safari 17.0) | Verify the bundled Mermaid version loads and renders in a WKWebView on macOS 14.0 before release; add a WebRenderer test that imports mermaid.min.js without syntax errors |
+| Mermaid JS fails to load entirely (syntax error, corrupted file) | `WebRenderer/src/mermaid.js` must check for `typeof mermaid !== 'undefined'` before calling any Mermaid API; if Mermaid is unavailable, all Mermaid fences fall back to rendering as plain code blocks with no error banner |
 
 ### Implementation Plan
 
 **Phase 1: Renderer integration**
 
-- [ ] Add `WebRenderer/src/vendor/mermaid.min.js` and create `WebRenderer/src/mermaid.js` with safe Mermaid initialization, sequential rendering helpers, unique block IDs, and source-copy support
-- [ ] Update `WebRenderer/src/renderer.html`, `resources/scripts/build.sh`, and `WebRenderer/package.json` so Mermaid assets and renderer tests are bundled and runnable
-- [ ] Modify `WebRenderer/src/index.js` so exact `mermaid` fences emit Mermaid placeholders, render after DOM insertion, and rerender when the active theme changes
+- [ ] Download `mermaid.min.js` (>= 11.10.0) from `https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js` and save it as `WebRenderer/src/vendor/mermaid.min.js`. Verify the downloaded version is >= 11.10.0 by checking the header comment. Create `WebRenderer/src/mermaid.js` as an IIFE exposing `window.MermaidRenderer` with:
+  - `initialize(theme)` — calls `mermaid.initialize()` with `startOnLoad: false`, `securityLevel: 'strict'`, `htmlLabels: false`, `suppressErrorRendering: true`, and the given `theme` value
+  - `renderBlocks()` — returns a Promise. Queries all `.mermaid-block` elements; if none exist, resolves immediately. Otherwise renders each sequentially (awaiting each before starting the next) via `mermaid.render(uniqueId, source)` where `source` comes from the element's `data-source` attribute, sanitizes each SVG result through `window.Sanitizer.sanitizeMermaidSvg()`, and inserts it into the block. On per-block render failure (including empty source), sets that block to error state: an error banner (`<div class="mermaid-error">`) with Mermaid's error message, plus the original source in a `<pre><code>` block. The Promise resolves after all blocks are processed (including any that errored). Note: `sanitizeMermaidSvg` is implemented in Phase 2; during Phase 1 development, use a passthrough stub (`function(svg) { return svg; }`) and replace it in Phase 2
+  - `rerenderForTheme(theme)` — calls `initialize(theme)` then `renderBlocks()` to re-render all existing Mermaid blocks with new theme colors. If a re-render is already in progress (from a prior theme change), discard the in-flight result and start the new re-render — track this via a generation counter that increments on each call, and check the counter after each block render to bail out if stale
+  - `prepareMermaidForPrint(theme)` — calls `rerenderForTheme(theme)` and returns a Promise that resolves when all blocks are done
+  - `restoreMermaidFromPrint(screenTheme)` — calls `rerenderForTheme(screenTheme)` and returns a Promise
+  - Each `.mermaid-block` gets a copy button (reusing the existing `copy-btn` class and SVG icons from `index.js`) that reads from the element's `data-source` attribute
+- [ ] Update `WebRenderer/src/renderer.html` to load `vendor/mermaid.min.js` and `mermaid.js` in the script order — both after `sanitizer.js` and before `index.js`. Update `resources/scripts/build.sh` to add `cp WebRenderer/src/mermaid.js "$RESOURCES_DIR/WebRenderer/src/"` alongside the other explicit src copies (vendor files are already covered by the `cp WebRenderer/src/vendor/*.js` wildcard). Update `WebRenderer/package.json` test script to run all test files: `node tests/sourcepos.test.js && node tests/sanitizer.test.js && node tests/gutter.test.js && node tests/integration.test.js && node tests/mermaid.test.js`
+- [ ] Modify `WebRenderer/src/index.js`: override `md.renderer.rules.fence` to check if the info string is exactly `mermaid`. If so, emit `<div class="mermaid-block" data-sourcepos="..." data-source="..."></div>` (where `data-source` holds the HTML-escaped original Mermaid text and `data-sourcepos` is forwarded from the token) instead of the default `<pre><code>` output. For non-mermaid fences, delegate to the original fence renderer. After DOM insertion in `render()`, call `window.MermaidRenderer.renderBlocks()` and chain `LineNumbers.generate()` and `Gutter.update()` on the returned Promise via `.then()`. In `setTheme()`, after swapping stylesheets, call `window.MermaidRenderer.rerenderForTheme(newTheme)` and chain `LineNumbers.generate()` and `Gutter.update()` on the returned Promise
 
 **Phase 2: Security and layout integration**
 
-- [ ] Extend `WebRenderer/src/sanitizer.js` with a Mermaid/SVG-specific sanitization path instead of widening the existing HTML allowlist to arbitrary SVG
-- [ ] Preserve `data-sourcepos` on `.mermaid-block` wrappers and update `WebRenderer/src/lineNumbers.js` so multi-line Mermaid fences distribute height across their full source range
-- [ ] Add Mermaid block, error, copy-button, and print pagination styles in `WebRenderer/styles/light.css`, `WebRenderer/styles/dark.css`, and `WebRenderer/styles/print.css`
+- [ ] Add `window.Sanitizer.sanitizeMermaidSvg(svgString)` to `WebRenderer/src/sanitizer.js`. This function parses the SVG string via DOMParser, removes `<script>`, `<foreignObject>`, and `<iframe>` elements, strips all `on*` event handler attributes, removes `javascript:` and `data:` URLs from `href`/`xlink:href` attributes, and returns the sanitized SVG string. Keep this separate from the existing `sanitize()` HTML path — SVG has a different element/attribute allowlist (allow `<svg>`, `<g>`, `<path>`, `<rect>`, `<circle>`, `<ellipse>`, `<line>`, `<polyline>`, `<polygon>`, `<text>`, `<tspan>`, `<defs>`, `<marker>`, `<use>`, `<clipPath>`, `<mask>`, `<pattern>`, `<linearGradient>`, `<radialGradient>`, `<stop>`, `<title>`, `<desc>`)
+- [ ] Preserve `data-sourcepos` on `.mermaid-block` wrappers (already emitted by Phase 1 changes to `index.js`) and update `WebRenderer/src/lineNumbers.js` to treat `.mermaid-block` elements the same way it currently treats `pre` elements for multi-line blocks: distribute line number positions evenly across the element's rendered height for the full source range
+- [ ] Add styles for `.mermaid-block` (border, padding, background matching code blocks, `overflow-x: auto` for wide diagrams that exceed the content width), `.mermaid-error` (red/orange error banner text, `font-size: 0.85em`), and `.mermaid-block .copy-btn` (positioned like the existing `pre .copy-btn`) in `WebRenderer/styles/light.css` and `WebRenderer/styles/dark.css`. Add print-specific Mermaid styles in `WebRenderer/styles/print.css`: ensure `.mermaid-block` gets `page-break-inside: avoid` (diagrams taller than a full page will still break — this is acceptable and out of scope to fix), hide copy buttons in print, and hide error banners in print
 
 **Phase 3: Print, PDF, and app hooks**
 
-- [ ] Update `src/Views/MarkdownWebView.swift` to expose shared Mermaid print/export prepare and restore helpers
-- [ ] Update `AppMain/DocumentView.swift`, `AppMain/FolderWindowContent.swift`, `AppMain/RemoteDocumentView.swift`, and `src/Printing/PDFExporter.swift` to use the shared Mermaid print/export lifecycle
+- [ ] Update `MarkdownWebView.preparePrint(webView:config:completion:)` in `src/Views/MarkdownWebView.swift` to call `window.MermaidRenderer.prepareMermaidForPrint('default')` via `callAsyncJavaScript` after adding CSS classes (the print dialog path always uses light theme). Await the Promise resolution before calling `completion`. Update `MarkdownWebView.restoreFromPrint(webView:)` to accept an optional `screenTheme: String? = nil` parameter. When non-nil, call `window.MermaidRenderer.restoreMermaidFromPrint(screenTheme)` after removing CSS classes. When nil, skip Mermaid restore (backwards-compatible with existing callers and tests). Note: the current print callers (`DocumentView`, `FolderWindowContent`, `RemoteDocumentView`) add CSS classes directly via `evaluateJavaScript` instead of calling `MarkdownWebView.preparePrint()`, so each caller must also be updated (next task)
+- [ ] Update `executePrint()` in `AppMain/DocumentView.swift`, `AppMain/FolderWindowContent.swift`, and `AppMain/RemoteDocumentView.swift` to call `window.MermaidRenderer.prepareMermaidForPrint('default')` via `callAsyncJavaScript` after adding CSS classes and before running `printOperation` (the print dialog always uses light theme). Update each view's `PrintCompletionHandler` to call `window.MermaidRenderer.restoreMermaidFromPrint(screenTheme)` during cleanup, where `screenTheme` is the view's current `effectiveTheme`. Update `src/Printing/PDFExporter.swift` to call `prepareMermaidForPrint` with `'default'` for light theme or `'dark'` for dark theme (matching its existing `theme` parameter) after adding CSS classes and await it before running the export print operation, then call `restoreMermaidFromPrint` in `PDFExportCompletionHandler` with the same `theme` it was given. If Mermaid re-render fails during print preparation, log the error via `Logger` and proceed with the print (blocks will show their current state rather than blocking the entire print)
 - [ ] Update `README.md` and `resources/docs/CHANGELOG.md` for the new Mermaid feature once implementation is complete
 
 **Phase 4: Regression coverage**
 
-- [ ] Add renderer coverage in `WebRenderer/tests/mermaid.test.js` for successful render, block-level fallback, theme rerender, and copy-source behavior
+- [ ] Add renderer coverage in `WebRenderer/tests/mermaid.test.js` for successful render, block-level fallback, theme rerender, copy-source behavior, and graceful degradation when Mermaid is unavailable
 - [ ] Add Mermaid SVG security coverage in `WebRenderer/tests/sanitizer.test.js`
 - [ ] Add Mermaid source mapping coverage in `WebRenderer/tests/sourcepos.test.js` and `WebRenderer/tests/integration.test.js`
 - [ ] Add WKWebView coverage in `Tests/MarkdownWebViewTests.swift` and `Tests/PrintTests.swift` for rendered diagrams, theme switching, and print preparation/restore
@@ -96,38 +125,43 @@ Tests are implementation tasks — the implementer writes and passes each one. O
 
 ### Unit Tests (`WebRenderer/tests/mermaid.test.js`)
 
-- [ ] `testMermaidFenceRendersSvg` - A valid Mermaid fence renders a Mermaid block with sanitized SVG output
-- [ ] `testMermaidFenceFallsBackToSourceOnRenderError` - Invalid Mermaid syntax shows an error state and keeps the original source available
-- [ ] `testMermaidThemeRerenderUpdatesExistingBlocks` - Mermaid blocks rerender cleanly when the active theme changes
-- [ ] `testMermaidCopySourceUsesOriginalFenceText` - Copy action uses the original Mermaid source rather than generated SVG text
+- [ ] `testMermaidFenceRendersSvg` - A valid ```` ```mermaid ```` fence produces a `.mermaid-block` wrapper containing a sanitized `<svg>` element
+- [ ] `testMermaidFenceFallsBackToSourceOnRenderError` - Invalid Mermaid syntax produces a `.mermaid-block` with a `.mermaid-error` banner and the original source in a `<pre><code>` block
+- [ ] `testMermaidThemeRerenderUpdatesExistingBlocks` - Calling `MermaidRenderer.rerenderForTheme('dark')` on a previously light-rendered block produces SVG with different fill/stroke colors
+- [ ] `testMermaidCopySourceUsesOriginalFenceText` - The `.mermaid-block` element's `data-source` attribute contains the original Mermaid text, and the copy button reads from it
+- [ ] `testMermaidGracefulDegradationWhenMermaidUnavailable` - When `mermaid` global is undefined, `MermaidRenderer.renderBlocks()` renders fences as plain code blocks without throwing
 
 ### Unit Tests (`WebRenderer/tests/sanitizer.test.js`)
 
-- [ ] `testSanitizeMermaidSvgRemovesScriptAndEventAttributes` - Mermaid-generated SVG cannot keep executable script or inline event handlers
-- [ ] `testSanitizeMermaidSvgRemovesForeignObjectAndUnsafeHrefs` - Mermaid SVG cannot keep `foreignObject` nodes or unsafe URL-bearing attributes
-- [ ] `testSanitizeMermaidSvgKeepsSafeShapesAndText` - Safe Mermaid SVG elements remain intact after sanitization
+- [ ] `testSanitizeMermaidSvgRemovesScriptAndEventAttributes` - `Sanitizer.sanitizeMermaidSvg()` strips `<script>` elements and `onclick`/`onload`/`onerror` attributes from SVG input
+- [ ] `testSanitizeMermaidSvgRemovesForeignObjectAndUnsafeHrefs` - `Sanitizer.sanitizeMermaidSvg()` strips `<foreignObject>` and `<iframe>` elements, and removes `javascript:` URLs from `href`/`xlink:href`
+- [ ] `testSanitizeMermaidSvgKeepsSafeShapesAndText` - `Sanitizer.sanitizeMermaidSvg()` preserves `<svg>`, `<g>`, `<path>`, `<rect>`, `<text>`, `<tspan>`, and their safe attributes (`fill`, `stroke`, `d`, `transform`, etc.)
 
 ### Unit Tests (`WebRenderer/tests/sourcepos.test.js`)
 
-- [ ] `testMermaidFencePreservesSourceposRange` - Mermaid fence wrapper spans the full fenced block line range
+- [ ] `testMermaidFencePreservesSourceposRange` - A ```` ```mermaid ```` fence spanning lines 3-7 produces a `.mermaid-block` with `data-sourcepos="3:1-7:3"` (covering the opening fence through the closing fence)
 
 ### Integration Tests (`WebRenderer/tests/integration.test.js`)
 
-- [ ] `testMermaidFenceParticipatesInGutterRangeMatching` - Changed lines inside a Mermaid fence map to the Mermaid block for gutter highlighting
-- [ ] `testFrontMatterOffsetAppliesToMermaidSourcepos` - Mermaid block sourcepos remains correct when front matter is stripped before render
+- [ ] `testDocumentWithNoMermaidBlocksRendersNormally` - A document with only regular code blocks produces no `.mermaid-block` elements and `MermaidRenderer.renderBlocks()` resolves immediately without errors
+- [ ] `testMermaidFenceParticipatesInGutterRangeMatching` - A git change range covering lines inside a Mermaid fence maps to the `.mermaid-block` element for gutter highlighting
+- [ ] `testFrontMatterOffsetAppliesToMermaidSourcepos` - A document with YAML front matter followed by a Mermaid fence has its `.mermaid-block` `data-sourcepos` correctly offset by the front matter line count
 
 ### Integration Tests (`Tests/MarkdownWebViewTests.swift`)
 
-- [ ] `testRenderCallRendersMermaidDiagram` - WKWebView renders a minimal Mermaid diagram without JavaScript errors
-- [ ] `testThemeChangeRerendersMermaidDiagram` - Theme changes rerender Mermaid blocks while keeping the document usable
+- [ ] `testRenderCallRendersMermaidDiagram` - Render a document containing ```` ```mermaid\ngraph TD\n  A-->B\n``` ```` via `MarkdownWebView.render()` and verify the DOM contains a `.mermaid-block` with an `<svg>` child and no JS errors
+- [ ] `testThemeChangeRerendersMermaidDiagram` - After rendering a Mermaid diagram in light mode, call `setTheme("dark")` and verify the `.mermaid-block` SVG is updated (different fill colors) and the document remains scrollable
 
 ### Integration Tests (`Tests/PrintTests.swift`)
 
-- [ ] `testPreparePrintKeepsMermaidDiagramVisible` - Print preparation keeps Mermaid diagrams in the DOM and applies the print theme
-- [ ] `testRestoreFromPrintRestoresMermaidScreenTheme` - Print cleanup restores Mermaid rendering for the normal screen theme
+- [ ] `testPreparePrintKeepsMermaidDiagramVisible` - After `preparePrint()`, verify `.mermaid-block` elements are still in the DOM with `<svg>` children and the SVG colors match the print theme
+- [ ] `testRestoreFromPrintRestoresMermaidScreenTheme` - After `restoreFromPrint()`, verify `.mermaid-block` SVG colors match the original screen theme (not the print theme)
 
 ### Manual Verification (Marco)
 
 - [ ] Open a Markdown file with at least two Mermaid fences and confirm both diagrams render in light and dark themes
+- [ ] Toggle the theme (Appearance menu) and confirm both Mermaid diagrams update their colors without a page reload
+- [ ] Add an intentionally broken Mermaid fence (e.g., `graph INVALID`) and confirm an error message appears above the original source text
+- [ ] Click the copy button on a rendered Mermaid diagram and paste into a text editor — confirm it contains the original Mermaid source, not SVG markup
 - [ ] Open Print Preview for a document with a Mermaid diagram and confirm the diagram is readable and not clipped across page boundaries
 - [ ] Export a PDF from a document with a Mermaid diagram and confirm the saved PDF includes the diagram with the expected theme
