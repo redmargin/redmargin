@@ -92,10 +92,10 @@ class RemoteDocumentState {
     }
 
     private func startObservingConnectionState() async {
+        let stateStream = fileProvider.stateChanges
         stateObserverTask = Task { [weak self] in
-            guard let self = self else { return }
-            for await newState in self.fileProvider.stateChanges {
-                guard !Task.isCancelled else { break }
+            for await newState in stateStream {
+                guard !Task.isCancelled, let self = self else { break }
                 await MainActor.run {
                     self.handleConnectionStateChange(newState)
                 }
