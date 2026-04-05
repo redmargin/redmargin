@@ -2,7 +2,7 @@
 
 ## Meta
 
-- Status: Draft
+- Status: Reviewed
 - Branch: fix/idle-recovery
 
 ---
@@ -37,9 +37,9 @@ Make Redmargin self-healing: detect when system processes (WebView renderer, fil
 
 ### Approach
 
-Five independent fixes targeting the five root causes, ordered by impact:
+Five root-cause fixes plus one supporting fix, ordered by impact:
 
-**1. WebView process termination recovery.** macOS kills WKWebView content processes when the app is idle and memory is needed. The app currently has no handler for this — the view goes blank and never recovers. Add `webViewWebContentProcessDidTerminate` to the Coordinator, which resets state flags and reloads the renderer HTML (not `reload()`, since content was loaded via `loadHTMLString`). As a safety net, also check for a dead content process on `NSApplication.didBecomeActiveNotification` by testing `webView.title` — the delegate doesn't always fire reliably.
+**1. WebView process termination recovery.** macOS kills WKWebView content processes when the app is idle and memory is needed. The app currently has no handler for this — the view goes blank and never recovers. Add `webViewWebContentProcessDidTerminate` to the Coordinator, which resets state flags and calls `loadRenderer` to reload from the file URL (not `reload()`, to explicitly re-establish file access permissions via `loadFileURL(_:allowingReadAccessTo:)`). As a safety net, also check for a dead content process on `NSApplication.didBecomeActiveNotification` by testing `webView.title` — the delegate doesn't always fire reliably.
 
 **2. App Nap prevention.** macOS throttles background apps via App Nap, which freezes timers, dispatch sources, and network I/O. SSH keepalives stop, the server times out the connection, but the client doesn't know. Use `ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason:)` while any remote document is open. This prevents App Nap while still allowing display sleep. Track the activity token and end it when the last remote document closes.
 
@@ -53,7 +53,7 @@ Five independent fixes targeting the five root causes, ordered by impact:
 
 Research confirmed all five root causes and the proposed fixes:
 
-- **WKWebView termination:** Apple documents `webViewWebContentProcessDidTerminate` as the recovery point. Firefox iOS and Embrace.io both document that the delegate doesn't always fire — a polling/activation check is needed as fallback. Must use `loadHTMLString` not `reload()` since content was loaded from string. ([embrace.io](https://embrace.io/blog/webview-thread-terminations/), [nevermeant.dev](https://nevermeant.dev/handling-blank-wkwebviews/), [WebKit Bug 176855](https://bugs.webkit.org/show_bug.cgi?id=176855))
+- **WKWebView termination:** Apple documents `webViewWebContentProcessDidTerminate` as the recovery point. Firefox iOS and Embrace.io both document that the delegate doesn't always fire — a polling/activation check is needed as fallback. Recovery should call `loadRenderer` (which uses `loadFileURL`) rather than `reload()` to explicitly re-establish file access permissions. ([embrace.io](https://embrace.io/blog/webview-thread-terminations/), [nevermeant.dev](https://nevermeant.dev/handling-blank-wkwebviews/), [WebKit Bug 176855](https://bugs.webkit.org/show_bug.cgi?id=176855))
 - **App Nap:** `ProcessInfo.processInfo.beginActivity` (not `ProcessInfo()` — common mistake) with `.userInitiatedAllowingIdleSystemSleep` is the documented approach. Verified via alt-tab-macos source. ([Apple docs](https://developer.apple.com/documentation/foundation/processinfo/1415995-beginactivity), [Lapcat Software](https://lapcatsoftware.com/articles/prevent-app-nap.html))
 - **DispatchSource after sleep:** The cmux project documented the identical bug (git branch indicator stops updating after sleep). kqueue events silently die — the only fix is tear down and recreate. ([cmux #494](https://github.com/manaflow-ai/cmux/issues/494), [macFUSE #889](https://github.com/macfuse/macfuse/issues/889))
 - **AsyncStream finish:** Standard Swift concurrency guidance — consumers block forever without `finish()`. ([Donny Wals](https://www.donnywals.com/understanding-swift-concurrencys-asyncstream/), [Antoine van der Lee](https://www.avanderlee.com/swift/asyncthrowingstream-asyncstream/))
@@ -74,8 +74,9 @@ Research confirmed all five root causes and the proposed fixes:
 **Phase 1: WebView process termination recovery**
 
 - [ ] Add `webViewWebContentProcessDidTerminate` to Coordinator in `MarkdownWebView.swift` — reset `isLoaded`, `hasFiredFirstRenderComplete`, `hasRestoredInitialScroll` to false, then call `loadRenderer` to reload the HTML
-- [ ] Extract `loadRenderer` logic from `makeNSView` into a static or Coordinator-accessible method so it can be called from the termination handler
-- [ ] Add `NSApplication.didBecomeActiveNotification` observer in Coordinator that checks `webView.title` (nil/empty = dead process) and triggers the same recovery
+- [ ] Store a weak `webView` reference on Coordinator (set in `makeNSView`) so the termination handler and activation observer can access it
+- [ ] Store a `loadRenderer: ((WKWebView) -> Void)?` closure on Coordinator, set in `makeNSView` to call `self.loadRenderer(webView:)` — `loadRenderer` is already a separate method (line 190), the Coordinator just needs a way to invoke it
+- [ ] Add `NSApplication.didBecomeActiveNotification` observer in Coordinator that checks `webView.title` (nil/empty = dead process) and triggers the same recovery via the stored `loadRenderer` closure. Guard against double recovery — if `isLoaded` is already false (termination handler already fired), skip the activation check
 - [ ] Store current `RenderParams` in Coordinator so the pending render can be replayed after recovery (the `didFinish` delegate already handles `pendingRender`)
 - [ ] Remove the observer in Coordinator cleanup to avoid dangling references
 
@@ -88,11 +89,12 @@ Research confirmed all five root causes and the proposed fixes:
 
 **Phase 3: FileWatcher sleep/wake recovery**
 
-- [ ] Add `NSWorkspace.didWakeNotification` observer in `FileWatcher.init` that tears down the current dispatch source and file descriptor, then calls `startWatching()` to create a fresh watcher
+- [ ] Add `NSWorkspace.didWakeNotification` observer in `FileWatcher.init` that tears down the current dispatch source and file descriptor, then calls `startWatching()` to create a fresh watcher. Guard with a `isRecreating` flag to prevent races if wake fires during an in-progress `startWatching()` or `retryStartWatching()`
 - [ ] Remove the observer in `FileWatcher.deinit`
 - [ ] Add an `onWatcherDied: (() -> Void)?` callback property to `FileWatcher`
 - [ ] Call `onWatcherDied` when all 5 retries in `retryStartWatching` are exhausted (instead of just `print()`)
-- [ ] In `DocumentState.setupFileWatcher`, set `onWatcherDied` to re-call `setupFileWatcher()` after a delay, giving the file system time to settle
+- [ ] In `LocalFileProvider.watchFile`, set `onWatcherDied` to create a new `FileWatcher` with the same URL, callback, and token — transparently replacing the dead watcher without requiring changes to the `FileProvider` protocol or `DocumentState` (which doesn't interact with `FileWatcher` directly; it uses `fileProvider.watchFile()`)
+- [ ] Apply the same `didWakeNotification` teardown-and-recreate pattern in `GitRepoWatcher` (`LocalFileProvider.swift`) — its `indexWatcher`, `headWatcher`, and `refWatcher` all use `FileWatcher` and are equally vulnerable to kqueue death after sleep
 - [ ] Fire `onChange` after successful watcher recreation on wake, so any file changes during sleep are picked up immediately
 
 **Phase 4: AsyncStream continuation cleanup**
@@ -108,7 +110,7 @@ Research confirmed all five root causes and the proposed fixes:
 - [ ] In `makeNSView`, wrap the Coordinator in `WeakScriptMessageHandler` before passing to `addScriptMessageHandler`
 - [ ] Add `dismantleNSView` to the `NSViewRepresentable` that calls `removeAllScriptMessageHandlers()` on the configuration's `userContentController`
 
-**Phase 6: Remote asset cache memory management**
+**Phase 6: Remote asset cache memory management** *(supporting fix — reduces memory pressure that triggers root cause #1, WKWebView content process termination)*
 
 - [ ] Replace the `cache: [String: (Data, String)]` dictionary and `cacheLock: NSLock` in `RemoteAssetSchemeHandler.swift` with an `NSCache<NSString, CachedAsset>` (where `CachedAsset` is a small class wrapper holding `Data` and `String`, since `NSCache` requires class values)
 - [ ] Set `totalCostLimit` to ~20MB (`20 * 1024 * 1024`), using `data.count` as the cost when inserting
@@ -125,6 +127,7 @@ Tests are implementation tasks — the implementer writes and passes each one.
 
 - [ ] `testWatcherCallsOnDiedAfterRetryExhaustion` - Force file deletion, verify `onWatcherDied` callback fires after retries exhaust
 - [ ] `testWatcherRecreatesAfterSimulatedWake` - Post `didWakeNotification`, verify watcher still detects subsequent file writes
+- [ ] `testGitRepoWatcherRecreatesAfterSimulatedWake` - Create a `GitRepoWatcher` on a temp git repo, post `didWakeNotification`, modify `.git/index`, verify `onChange` fires
 
 ### Unit Tests (`Tests/SSHConnectionTests.swift`)
 
