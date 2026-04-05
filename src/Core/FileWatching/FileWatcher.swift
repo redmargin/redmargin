@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 
 #if os(macOS)
 public class FileWatcher {
@@ -7,6 +10,11 @@ public class FileWatcher {
     private let url: URL
     private let onChange: () -> Void
     private let eventMask: DispatchSource.FileSystemEvent
+    private var isRecreating = false
+    private var wakeObserver: Any?
+
+    /// Called when all retry attempts are exhausted and the watcher is dead.
+    public var onWatcherDied: (() -> Void)?
 
     public init?(url: URL, writeOnly: Bool = false, onChange: @escaping () -> Void) {
         self.url = url
@@ -18,6 +26,37 @@ public class FileWatcher {
             return nil
         }
         print("[FileWatcher] Started watching: \(url.path)")
+
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.recreateAfterWake()
+        }
+    }
+
+    private func recreateAfterWake() {
+        guard !isRecreating else { return }
+        isRecreating = true
+        print("[FileWatcher] System wake: recreating watcher for \(url.lastPathComponent)")
+
+        // Tear down old dispatch source and file descriptor
+        source?.cancel()
+        if fileDescriptor >= 0 {
+            close(fileDescriptor)
+            fileDescriptor = -1
+        }
+
+        if startWatching() {
+            print("[FileWatcher] Wake recreation succeeded for \(url.lastPathComponent)")
+            isRecreating = false
+            // Fire onChange to pick up any changes during sleep
+            onChange()
+        } else {
+            isRecreating = false
+            retryStartWatching(attempt: 1)
+        }
     }
 
     private func startWatching() -> Bool {
@@ -80,11 +119,15 @@ public class FileWatcher {
                 self.retryStartWatching(attempt: attempt + 1)
             } else {
                 print("[FileWatcher] Failed to restart after \(FileWatcher.maxRetries) attempts: \(self.url.path)")
+                self.onWatcherDied?()
             }
         }
     }
 
     deinit {
+        if let observer = wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
         source?.cancel()
         if fileDescriptor >= 0 {
             close(fileDescriptor)

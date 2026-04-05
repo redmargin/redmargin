@@ -2,7 +2,7 @@
 
 ## Meta
 
-- Status: Reviewed
+- Status: Implemented
 - Branch: fix/idle-recovery
 
 ---
@@ -73,49 +73,49 @@ Research confirmed all five root causes and the proposed fixes:
 
 **Phase 1: WebView process termination recovery**
 
-- [ ] Add `webViewWebContentProcessDidTerminate` to Coordinator in `MarkdownWebView.swift` — reset `isLoaded`, `hasFiredFirstRenderComplete`, `hasRestoredInitialScroll` to false, then call `loadRenderer` to reload the HTML
-- [ ] Store a weak `webView` reference on Coordinator (set in `makeNSView`) so the termination handler and activation observer can access it
-- [ ] Store a `loadRenderer: ((WKWebView) -> Void)?` closure on Coordinator, set in `makeNSView` to call `self.loadRenderer(webView:)` — `loadRenderer` is already a separate method (line 190), the Coordinator just needs a way to invoke it
-- [ ] Add `NSApplication.didBecomeActiveNotification` observer in Coordinator that checks `webView.title` (nil/empty = dead process) and triggers the same recovery via the stored `loadRenderer` closure. Guard against double recovery — if `isLoaded` is already false (termination handler already fired), skip the activation check
-- [ ] Store current `RenderParams` in Coordinator so the pending render can be replayed after recovery (the `didFinish` delegate already handles `pendingRender`)
-- [ ] Remove the observer in Coordinator cleanup to avoid dangling references
+- [x] Add `webViewWebContentProcessDidTerminate` to Coordinator in `MarkdownWebView.swift` — reset `isLoaded`, `hasFiredFirstRenderComplete`, `hasRestoredInitialScroll` to false, then call `loadRenderer` to reload the HTML
+- [x] Store a weak `webView` reference on Coordinator (set in `makeNSView`) so the termination handler and activation observer can access it
+- [x] Store a `loadRenderer: ((WKWebView) -> Void)?` closure on Coordinator, set in `makeNSView` to call `self.loadRenderer(webView:)` — `loadRenderer` is already a separate method (line 190), the Coordinator just needs a way to invoke it
+- [x] Add `NSApplication.didBecomeActiveNotification` observer in Coordinator that checks `webView.title` (nil/empty = dead process) and triggers the same recovery via the stored `loadRenderer` closure. Guard against double recovery — if `isLoaded` is already false (termination handler already fired), skip the activation check
+- [x] Store current `RenderParams` in Coordinator so the pending render can be replayed after recovery (the `didFinish` delegate already handles `pendingRender`)
+- [x] Remove the observer in Coordinator cleanup to avoid dangling references
 
 **Phase 2: App Nap prevention for remote documents**
 
-- [ ] Add an activity tracking mechanism (reference-counted) to `SSHConnectionManager` — `beginActivity` when first remote document opens, `endActivity` when last one closes
-- [ ] Use `ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Active SSH connections for remote documents")`
-- [ ] Store the returned `NSObjectProtocol` token and call `ProcessInfo.processInfo.endActivity()` when count reaches zero
-- [ ] Call the increment/decrement from `RemoteDocumentState.init` and `deinit` (or equivalent lifecycle points)
+- [x] Add an activity tracking mechanism (reference-counted) to `SSHConnectionManager` — `beginActivity` when first remote document opens, `endActivity` when last one closes
+- [x] Use `ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Active SSH connections for remote documents")`
+- [x] Store the returned `NSObjectProtocol` token and call `ProcessInfo.processInfo.endActivity()` when count reaches zero
+- [x] Call the increment/decrement from `RemoteDocumentState.init` and `deinit` (or equivalent lifecycle points)
 
 **Phase 3: FileWatcher sleep/wake recovery**
 
-- [ ] Add `NSWorkspace.didWakeNotification` observer in `FileWatcher.init` that tears down the current dispatch source and file descriptor, then calls `startWatching()` to create a fresh watcher. Guard with a `isRecreating` flag to prevent races if wake fires during an in-progress `startWatching()` or `retryStartWatching()`
-- [ ] Remove the observer in `FileWatcher.deinit`
-- [ ] Add an `onWatcherDied: (() -> Void)?` callback property to `FileWatcher`
-- [ ] Call `onWatcherDied` when all 5 retries in `retryStartWatching` are exhausted (instead of just `print()`)
-- [ ] In `LocalFileProvider.watchFile`, set `onWatcherDied` to create a new `FileWatcher` with the same URL, callback, and token — transparently replacing the dead watcher without requiring changes to the `FileProvider` protocol or `DocumentState` (which doesn't interact with `FileWatcher` directly; it uses `fileProvider.watchFile()`)
-- [ ] Apply the same `didWakeNotification` teardown-and-recreate pattern in `GitRepoWatcher` (`LocalFileProvider.swift`) — its `indexWatcher`, `headWatcher`, and `refWatcher` all use `FileWatcher` and are equally vulnerable to kqueue death after sleep
-- [ ] Fire `onChange` after successful watcher recreation on wake, so any file changes during sleep are picked up immediately
+- [x] Add `NSWorkspace.didWakeNotification` observer in `FileWatcher.init` that tears down the current dispatch source and file descriptor, then calls `startWatching()` to create a fresh watcher. Guard with a `isRecreating` flag to prevent races if wake fires during an in-progress `startWatching()` or `retryStartWatching()`
+- [x] Remove the observer in `FileWatcher.deinit`
+- [x] Add an `onWatcherDied: (() -> Void)?` callback property to `FileWatcher`
+- [x] Call `onWatcherDied` when all 5 retries in `retryStartWatching` are exhausted (instead of just `print()`)
+- [x] In `LocalFileProvider.watchFile`, set `onWatcherDied` to create a new `FileWatcher` with the same URL, callback, and token — transparently replacing the dead watcher without requiring changes to the `FileProvider` protocol or `DocumentState` (which doesn't interact with `FileWatcher` directly; it uses `fileProvider.watchFile()`)
+- [x] Apply the same `didWakeNotification` teardown-and-recreate pattern in `GitRepoWatcher` (`LocalFileProvider.swift`) — its `indexWatcher`, `headWatcher`, and `refWatcher` all use `FileWatcher` and are equally vulnerable to kqueue death after sleep
+- [x] Fire `onChange` after successful watcher recreation on wake, so any file changes during sleep are picked up immediately
 
 **Phase 4: AsyncStream continuation cleanup**
 
-- [ ] In `SSHConnection.disconnect()` (`SSHConnectionExtensions.swift`), call `eventContinuation?.finish()` and `stateContinuation?.finish()` before setting state to `.disconnected`, then nil both continuations
-- [ ] In `SSHConnection.handleDisconnect()`, call `.finish()` on both continuations before clearing state, then nil them
-- [ ] Add `deinit` to `SSHConnection` (if not present) that calls `.finish()` on both continuations as a safety net
-- [ ] Verify that `RemoteFileProvider` and `RemoteDocumentState` `for await` loops exit cleanly after `finish()` is called — they should, since the loop naturally terminates
+- [x] In `SSHConnection.disconnect()` (`SSHConnectionExtensions.swift`), call `eventContinuation?.finish()` and `stateContinuation?.finish()` before setting state to `.disconnected`, then nil both continuations
+- [x] In `SSHConnection.handleDisconnect()`, call `.finish()` on both continuations before clearing state, then nil them
+- [x] Add `deinit` to `SSHConnection` (if not present) that calls `.finish()` on both continuations as a safety net
+- [x] Verify that `RemoteFileProvider` and `RemoteDocumentState` `for await` loops exit cleanly after `finish()` is called — they should, since the loop naturally terminates
 
 **Phase 5: WKUserContentController message handler cleanup**
 
-- [ ] Create a `WeakScriptMessageHandler` class in `MarkdownWebView.swift` that implements `WKScriptMessageHandler`, holds a `weak var delegate: WKScriptMessageHandler?`, and forwards `userContentController(_:didReceive:)` to the delegate
-- [ ] In `makeNSView`, wrap the Coordinator in `WeakScriptMessageHandler` before passing to `addScriptMessageHandler`
-- [ ] Add `dismantleNSView` to the `NSViewRepresentable` that calls `removeAllScriptMessageHandlers()` on the configuration's `userContentController`
+- [x] Create a `WeakScriptMessageHandler` class in `MarkdownWebView.swift` that implements `WKScriptMessageHandler`, holds a `weak var delegate: WKScriptMessageHandler?`, and forwards `userContentController(_:didReceive:)` to the delegate
+- [x] In `makeNSView`, wrap the Coordinator in `WeakScriptMessageHandler` before passing to `addScriptMessageHandler`
+- [x] Add `dismantleNSView` to the `NSViewRepresentable` that calls `removeAllScriptMessageHandlers()` on the configuration's `userContentController`
 
 **Phase 6: Remote asset cache memory management** *(supporting fix — reduces memory pressure that triggers root cause #1, WKWebView content process termination)*
 
-- [ ] Replace the `cache: [String: (Data, String)]` dictionary and `cacheLock: NSLock` in `RemoteAssetSchemeHandler.swift` with an `NSCache<NSString, CachedAsset>` (where `CachedAsset` is a small class wrapper holding `Data` and `String`, since `NSCache` requires class values)
-- [ ] Set `totalCostLimit` to ~20MB (`20 * 1024 * 1024`), using `data.count` as the cost when inserting
-- [ ] Remove the manual `cacheLock` — `NSCache` is thread-safe
-- [ ] Remove the `getCached` and `setCache` helper methods, replacing with direct `NSCache` calls
+- [x] Replace the `cache: [String: (Data, String)]` dictionary and `cacheLock: NSLock` in `RemoteAssetSchemeHandler.swift` with an `NSCache<NSString, CachedAsset>` (where `CachedAsset` is a small class wrapper holding `Data` and `String`, since `NSCache` requires class values)
+- [x] Set `totalCostLimit` to ~20MB (`20 * 1024 * 1024`), using `data.count` as the cost when inserting
+- [x] Remove the manual `cacheLock` — `NSCache` is thread-safe
+- [x] Remove the `getCached` and `setCache` helper methods, replacing with direct `NSCache` calls
 
 ---
 
@@ -125,24 +125,24 @@ Tests are implementation tasks — the implementer writes and passes each one.
 
 ### Unit Tests (`Tests/FileWatcherTests.swift`)
 
-- [ ] `testWatcherCallsOnDiedAfterRetryExhaustion` - Force file deletion, verify `onWatcherDied` callback fires after retries exhaust
-- [ ] `testWatcherRecreatesAfterSimulatedWake` - Post `didWakeNotification`, verify watcher still detects subsequent file writes
-- [ ] `testGitRepoWatcherRecreatesAfterSimulatedWake` - Create a `GitRepoWatcher` on a temp git repo, post `didWakeNotification`, modify `.git/index`, verify `onChange` fires
+- [x] `testWatcherCallsOnDiedAfterRetryExhaustion` - Force file deletion, verify `onWatcherDied` callback fires after retries exhaust
+- [x] `testWatcherRecreatesAfterSimulatedWake` - Post `didWakeNotification`, verify watcher still detects subsequent file writes
+- [x] `testGitRepoWatcherRecreatesAfterSimulatedWake` - Create a `GitRepoWatcher` on a temp git repo, post `didWakeNotification`, modify `.git/index`, verify `onChange` fires
 
 ### Unit Tests (`Tests/SSHConnectionTests.swift`)
 
-- [ ] `testDisconnectFinishesContinuations` - Call `disconnect()`, verify `events` and `stateChanges` streams terminate (for-await loop exits)
-- [ ] `testHandleDisconnectFinishesContinuations` - Simulate unexpected disconnect, verify streams terminate
+- [x] `testDisconnectFinishesContinuations` - Call `disconnect()`, verify `events` and `stateChanges` streams terminate (for-await loop exits)
+- [x] `testHandleDisconnectFinishesContinuations` - Simulate unexpected disconnect, verify streams terminate
 
 ### Integration Tests
 
-- [ ] `testWebViewRecoveryAfterProcessTermination` - Create a MarkdownWebView, call `webViewWebContentProcessDidTerminate` on its coordinator, verify `isLoaded` resets to false and the renderer reloads (didFinish fires again)
-- [ ] `testAppNapActivityStartsWithRemoteDoc` - Open a remote document state, verify `ProcessInfo` activity is active; close it, verify activity ends
+- [x] `testWebViewRecoveryAfterProcessTermination` - Create a MarkdownWebView, call `webViewWebContentProcessDidTerminate` on its coordinator, verify `isLoaded` resets to false and the renderer reloads (didFinish fires again)
+- [x] `testAppNapActivityStartsWithRemoteDoc` - Open a remote document state, verify `ProcessInfo` activity is active; close it, verify activity ends
 
 ### Unit Tests (`Tests/RemoteAssetSchemeHandlerTests.swift`)
 
-- [ ] `testCacheServesSubsequentRequests` - Fetch an asset, fetch again, verify the `fetchAsset` closure is only called once (served from cache)
-- [ ] `testCacheEvictsUnderCostLimit` - Insert assets exceeding 20MB total cost, verify earlier entries are evicted (NSCache may evict lazily, so verify count decreases or a known early entry is gone)
+- [x] `testCacheServesSubsequentRequests` - Fetch an asset, fetch again, verify the `fetchAsset` closure is only called once (served from cache)
+- [x] `testCacheEvictsUnderCostLimit` - Insert assets exceeding 20MB total cost, verify earlier entries are evicted (NSCache may evict lazily, so verify count decreases or a known early entry is gone)
 
 ### Manual Verification (Marco)
 

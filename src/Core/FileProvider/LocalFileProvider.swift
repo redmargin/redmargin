@@ -24,6 +24,15 @@ public class LocalFileProvider: FileProvider {
 
         // FileWatcher is expected to be public and available
         if let watcher = FileWatcher(url: url, onChange: onChange) {
+            // If the watcher dies after exhausting retries, transparently replace it
+            watcher.onWatcherDied = { [weak self] in
+                guard let self = self else { return }
+                print("[LocalFileProvider] Watcher died, replacing: \(path)")
+                if let replacement = FileWatcher(url: url, onChange: onChange) {
+                    replacement.onWatcherDied = watcher.onWatcherDied
+                    self.watchers[token] = replacement
+                }
+            }
             watchers[token] = watcher
         } else {
             print("[LocalFileProvider] Failed to watch file: \(path)")
@@ -74,7 +83,7 @@ class GitRepoWatcher {
         let indexURL = gitDir.appendingPathComponent("index")
         let headURL = gitDir.appendingPathComponent("HEAD")
 
-        // Watch index
+        // Watch index — FileWatcher handles wake recreation internally
         indexWatcher = FileWatcher(url: indexURL, writeOnly: true, onChange: onChange)
 
         // Watch HEAD

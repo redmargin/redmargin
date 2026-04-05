@@ -1,6 +1,17 @@
 import Foundation
 import WebKit
 
+/// Wrapper for NSCache values (NSCache requires class types).
+private class CachedAsset {
+    let data: Data
+    let mimeType: String
+
+    init(data: Data, mimeType: String) {
+        self.data = data
+        self.mimeType = mimeType
+    }
+}
+
 public class RemoteAssetSchemeHandler: NSObject, WKURLSchemeHandler {
     public static let scheme = "redmargin-remote"
 
@@ -10,25 +21,16 @@ public class RemoteAssetSchemeHandler: NSObject, WKURLSchemeHandler {
     private var activeTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private let lock = NSLock()
 
-    // In-memory cache to avoid re-fetching on view updates
-    private var cache: [String: (Data, String)] = [:]
-    private let cacheLock = NSLock()
+    // Thread-safe auto-evicting cache (~20MB limit)
+    private let cache: NSCache<NSString, CachedAsset> = {
+        let cache = NSCache<NSString, CachedAsset>()
+        cache.totalCostLimit = 20 * 1024 * 1024
+        return cache
+    }()
 
     public init(fetchAsset: @escaping (String) async throws -> (Data, String)?) {
         self.fetchAsset = fetchAsset
         super.init()
-    }
-
-    private func getCached(_ path: String) -> (Data, String)? {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        return cache[path]
-    }
-
-    private func setCache(_ path: String, data: Data, mimeType: String) {
-        cacheLock.lock()
-        cache[path] = (data, mimeType)
-        cacheLock.unlock()
     }
 
     public func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
@@ -48,8 +50,8 @@ public class RemoteAssetSchemeHandler: NSObject, WKURLSchemeHandler {
                 let mimeType: String
 
                 // Check cache first
-                if let cached = self.getCached(path) {
-                    (data, mimeType) = cached
+                if let cached = self.cache.object(forKey: path as NSString) {
+                    (data, mimeType) = (cached.data, cached.mimeType)
                 } else {
                     // Fetch from remote
                     guard let result = try await self.fetchAsset(path) else {
@@ -60,8 +62,12 @@ public class RemoteAssetSchemeHandler: NSObject, WKURLSchemeHandler {
                         return
                     }
                     (data, mimeType) = result
-                    // Cache for future requests
-                    self.setCache(path, data: data, mimeType: mimeType)
+                    // Cache for future requests (cost = data size for eviction)
+                    self.cache.setObject(
+                        CachedAsset(data: data, mimeType: mimeType),
+                        forKey: path as NSString,
+                        cost: data.count
+                    )
                 }
 
                 guard !Task.isCancelled else {

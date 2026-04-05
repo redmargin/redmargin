@@ -536,5 +536,17 @@ public actor SSHConnection {
         }
     }
 
+    /// Finish both async stream continuations so consumers' for-await loops exit cleanly.
+    func finishContinuations() {
+        eventContinuation?.finish()
+        eventContinuation = nil
+        stateContinuation?.finish()
+        stateContinuation = nil
+    }
+
+    deinit {
+        eventContinuation?.finish()
+        stateContinuation?.finish()
+    }
 }
 // Extensions are in SSHConnectionExtensions.swift

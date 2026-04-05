@@ -89,8 +89,9 @@ public struct MarkdownWebView: NSViewRepresentable {
         coordinator.remoteAssetFetcher = remoteAssetFetcher
 
         let contentController = configuration.userContentController
-        contentController.add(context.coordinator, name: "checkboxToggle")
-        contentController.add(context.coordinator, name: "scrollPosition")
+        let weakHandler = WeakScriptMessageHandler(delegate: context.coordinator)
+        contentController.add(weakHandler, name: "checkboxToggle")
+        contentController.add(weakHandler, name: "scrollPosition")
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
@@ -105,6 +106,12 @@ public struct MarkdownWebView: NSViewRepresentable {
 
         // Wire up find controller
         findController?.webView = webView
+
+        // Store weak ref and recovery closure on coordinator
+        context.coordinator.webView = webView
+        context.coordinator.loadRenderer = { [self] webViewToReload in
+            self.loadRenderer(webView: webViewToReload)
+        }
 
         // Load content rules for remote resource blocking
         loadContentRules(webView: webView, allowRemoteImages: allowRemoteImages)
@@ -159,6 +166,9 @@ public struct MarkdownWebView: NSViewRepresentable {
             contentWidth: contentWidth,
             cacheBust: cacheBust
         )
+
+        // Always store latest params for recovery replay
+        context.coordinator.lastRenderParams = params
 
         if context.coordinator.isLoaded {
             // Only restore scroll on first render after load
@@ -341,6 +351,10 @@ public struct MarkdownWebView: NSViewRepresentable {
         }
     }
 
+    public static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.configuration.userContentController.removeAllScriptMessageHandlers()
+    }
+
     struct RenderParams {
         let markdown: String
         let theme: String
@@ -360,6 +374,8 @@ public struct MarkdownWebView: NSViewRepresentable {
 
 extension MarkdownWebView {
     public class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        private static let logger = Logger(subsystem: "com.redmargin", category: "Coordinator")
+
         var isLoaded = false
         var hasRestoredInitialScroll = false
         var hasFiredFirstRenderComplete = false
@@ -374,6 +390,57 @@ extension MarkdownWebView {
         var lastFileURL: URL?
         // Remote asset fetcher - can be updated after WKWebView is created
         var remoteAssetFetcher: ((String) async throws -> (Data, String)?)?
+
+        // Weak reference to the web view for recovery and activation checks
+        weak var webView: WKWebView?
+        // Closure to reload the renderer (set in makeNSView)
+        var loadRenderer: ((WKWebView) -> Void)?
+        // Store last render params for replay after recovery
+        var lastRenderParams: RenderParams?
+
+        private var activationObserver: Any?
+
+        override init() {
+            super.init()
+            activationObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.checkForDeadWebContent()
+            }
+        }
+
+        deinit {
+            if let observer = activationObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+
+        private func checkForDeadWebContent() {
+            guard let webView = webView else { return }
+            // If isLoaded is already false, the termination handler already fired — skip
+            guard isLoaded else { return }
+            // A nil or empty title indicates the content process was killed
+            if webView.title == nil || webView.title?.isEmpty == true {
+                Self.logger.warning("Activation check: detected dead WebView content process, recovering")
+                recoverFromTermination(webView)
+            }
+        }
+
+        private func recoverFromTermination(_ webView: WKWebView) {
+            isLoaded = false
+            hasFiredFirstRenderComplete = false
+            hasRestoredInitialScroll = false
+            // pendingRender is set from lastRenderParams so didFinish replays it
+            pendingRender = lastRenderParams
+            loadRenderer?(webView)
+        }
+
+        public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            Self.logger.warning("WebView content process terminated, recovering")
+            recoverFromTermination(webView)
+        }
 
         public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             isLoaded = true
@@ -484,5 +551,26 @@ extension MarkdownWebView {
                 onScrollPositionChange?(scrollY)
             }
         }
+    }
+}
+
+// MARK: - Weak Script Message Handler
+
+/// Breaks the retain cycle between WKUserContentController and the Coordinator.
+/// WKUserContentController holds a strong reference to its message handlers;
+/// this proxy holds only a weak reference to the real handler.
+class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var delegate: WKScriptMessageHandler?
+
+    init(delegate: WKScriptMessageHandler) {
+        self.delegate = delegate
+        super.init()
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        delegate?.userContentController(userContentController, didReceive: message)
     }
 }

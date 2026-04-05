@@ -40,6 +40,9 @@ extension SSHConnection {
         stdoutPipe = nil
         stderrPipe = nil
 
+        // Finish async streams so consumers exit their for-await loops
+        finishContinuations()
+
         if !isIntentionallyDisconnected {
             state = .reconnecting
             reconnectTask?.cancel()
@@ -123,6 +126,9 @@ extension SSHConnection {
         // Clear file handle callbacks first to prevent race conditions
         stderrPipe?.fileHandleForReading.readabilityHandler = nil
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil
+
+        // Finish async streams so consumers exit their for-await loops
+        finishContinuations()
 
         process?.terminate()
         process = nil

@@ -393,6 +393,39 @@ final class MarkdownWebViewTests: XCTestCase {
         )
     }
 
+    func testWebViewRecoveryAfterProcessTermination() throws {
+        loadRenderer()
+
+        // Render some content so isLoaded is true
+        renderMarkdown("# Test Recovery")
+
+        // Get the coordinator — create a MarkdownWebView to get access to a Coordinator
+        let coordinator = MarkdownWebView.Coordinator()
+        coordinator.isLoaded = true
+        coordinator.hasFiredFirstRenderComplete = true
+        coordinator.hasRestoredInitialScroll = true
+        coordinator.lastRenderParams = MarkdownWebView.RenderParams(
+            markdown: "# Test Recovery",
+            theme: "light",
+            basePath: ""
+        )
+
+        var loadRendererCalled = false
+        coordinator.loadRenderer = { _ in
+            loadRendererCalled = true
+        }
+
+        // Simulate content process termination
+        coordinator.webViewWebContentProcessDidTerminate(webView)
+
+        // Verify state was reset
+        XCTAssertFalse(coordinator.isLoaded, "isLoaded should be reset to false")
+        XCTAssertFalse(coordinator.hasFiredFirstRenderComplete, "hasFiredFirstRenderComplete should be reset")
+        XCTAssertFalse(coordinator.hasRestoredInitialScroll, "hasRestoredInitialScroll should be reset")
+        XCTAssertNotNil(coordinator.pendingRender, "pendingRender should be set from lastRenderParams")
+        XCTAssertTrue(loadRendererCalled, "loadRenderer should have been called")
+    }
+
     func testThemeChangeRerendersMermaidDiagram() throws {
         loadRenderer()
 
@@ -482,6 +515,125 @@ final class RemoteAssetSchemeHandlerTests: XCTestCase {
         webView.loadHTMLString(html, baseURL: nil)
 
         wait(for: [expectation], timeout: 10.0)
+    }
+
+    func testCacheServesSubsequentRequests() async throws {
+        var fetchCount = 0
+        let fetcher: (String) async throws -> (Data, String)? = { _ in
+            fetchCount += 1
+            return (Data("test-data".utf8), "text/plain")
+        }
+
+        let handler = RemoteAssetSchemeHandler(fetchAsset: fetcher)
+
+        // Create a WKWebView with the handler
+        let configuration = WKWebViewConfiguration()
+        configuration.setURLSchemeHandler(handler, forURLScheme: RemoteAssetSchemeHandler.scheme)
+
+        let cacheWebView = WKWebView(frame: CGRect(x: 0, y: 0, width: 100, height: 100), configuration: configuration)
+
+        // Load HTML that fetches the same asset twice with a delay
+        let html = """
+        <html><body>
+        <img id="img1" src="redmargin-remote:///test/asset.bin" />
+        <script>
+        document.getElementById('img1').onload = function() {
+            // Second fetch of same asset
+            var img2 = new Image();
+            img2.src = 'redmargin-remote:///test/asset.bin';
+            img2.onload = function() {
+                window.webkit.messageHandlers.done.postMessage('ok');
+            };
+            img2.onerror = function() {
+                window.webkit.messageHandlers.done.postMessage('ok');
+            };
+        };
+        document.getElementById('img1').onerror = function() {
+            window.webkit.messageHandlers.done.postMessage('ok');
+        };
+        </script>
+        </body></html>
+        """
+
+        let done = XCTestExpectation(description: "Both fetches complete")
+        let msgHandler = TestMessageHandler { _ in done.fulfill() }
+        configuration.userContentController.add(msgHandler, name: "done")
+
+        cacheWebView.loadHTMLString(html, baseURL: nil)
+        await fulfillment(of: [done], timeout: 10.0)
+
+        XCTAssertEqual(fetchCount, 1, "Fetcher should only be called once — second request should be served from cache")
+    }
+
+    func testCacheEvictsUnderCostLimit() throws {
+        var fetchCount = 0
+        let fetcher: (String) async throws -> (Data, String)? = { _ in
+            fetchCount += 1
+            // Return 5MB of data per asset
+            let data = Data(repeating: 0xFF, count: 5 * 1024 * 1024)
+            return (data, "application/octet-stream")
+        }
+
+        let handler = RemoteAssetSchemeHandler(fetchAsset: fetcher)
+
+        // Create a WKWebView with the handler
+        let configuration = WKWebViewConfiguration()
+        configuration.setURLSchemeHandler(handler, forURLScheme: RemoteAssetSchemeHandler.scheme)
+
+        let evictWebView = WKWebView(frame: CGRect(x: 0, y: 0, width: 100, height: 100), configuration: configuration)
+
+        // Load 5 assets sequentially (5 x 5MB = 25MB > 20MB limit)
+        let html = """
+        <html><body>
+        <script>
+        var loaded = 0;
+        for (var i = 0; i < 5; i++) {
+            var img = new Image();
+            img.src = 'redmargin-remote:///asset/' + i + '.bin';
+            img.onload = img.onerror = function() {
+                loaded++;
+                if (loaded === 5) window.webkit.messageHandlers.done.postMessage('ok');
+            };
+        }
+        </script>
+        </body></html>
+        """
+
+        let done = XCTestExpectation(description: "All assets loaded")
+        let msgHandler = TestMessageHandler { _ in done.fulfill() }
+        configuration.userContentController.add(msgHandler, name: "done")
+
+        evictWebView.loadHTMLString(html, baseURL: nil)
+        wait(for: [done], timeout: 15.0)
+
+        // All 5 unique assets should have been fetched
+        XCTAssertEqual(fetchCount, 5, "All 5 unique assets should be fetched")
+
+        // NSCache should have evicted some entries since 25MB > 20MB limit
+        // We can't directly inspect NSCache count, but if we re-fetch the first asset,
+        // it should call the fetcher again (cache miss due to eviction)
+        let refetchHTML = """
+        <html><body>
+        <img id="img" src="redmargin-remote:///asset/0.bin" />
+        <script>
+        document.getElementById('img').onload = document.getElementById('img').onerror = function() {
+            window.webkit.messageHandlers.done2.postMessage('ok');
+        };
+        </script>
+        </body></html>
+        """
+
+        let done2 = XCTestExpectation(description: "Re-fetch completes")
+        let msgHandler2 = TestMessageHandler { _ in done2.fulfill() }
+        configuration.userContentController.add(msgHandler2, name: "done2")
+
+        evictWebView.loadHTMLString(refetchHTML, baseURL: nil)
+        wait(for: [done2], timeout: 10.0)
+
+        XCTAssertGreaterThan(
+            fetchCount, 5,
+            "Re-fetching an early asset should trigger a new fetch (evicted from cache due to 20MB limit)"
+        )
     }
 }
 

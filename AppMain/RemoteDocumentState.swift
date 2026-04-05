@@ -68,6 +68,7 @@ class RemoteDocumentState {
         }
 
         Task {
+            await SSHConnectionManager.shared.beginRemoteDocumentActivity()
             async let watcher: Void = setupFileWatcher()
             async let git: Void = detectGitChanges()
             _ = await (watcher, git)
@@ -86,6 +87,7 @@ class RemoteDocumentState {
         Task {
             if let token = fToken { await provider.unwatch(token) }
             if let token = gToken { await provider.unwatch(token) }
+            await SSHConnectionManager.shared.endRemoteDocumentActivity()
         }
     }
 
