@@ -40,9 +40,6 @@ extension SSHConnection {
         stdoutPipe = nil
         stderrPipe = nil
 
-        // Finish async streams so consumers exit their for-await loops
-        finishContinuations()
-
         if !isIntentionallyDisconnected {
             state = .reconnecting
             reconnectTask?.cancel()
@@ -52,7 +49,10 @@ extension SSHConnection {
             #if canImport(os)
             sshLog.info("handleDisconnect() intentional, not reconnecting")
             #endif
+            // Set state before finishing streams so the final .disconnected
+            // state change is yielded to consumers before they exit
             state = .disconnected
+            finishContinuations()
         }
     }
 
@@ -127,15 +127,16 @@ extension SSHConnection {
         stderrPipe?.fileHandleForReading.readabilityHandler = nil
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil
 
-        // Finish async streams so consumers exit their for-await loops
-        finishContinuations()
-
         process?.terminate()
         process = nil
         stdinPipe = nil
         stdoutPipe = nil
         stderrPipe = nil
+
+        // Set state before finishing streams so the final .disconnected
+        // state change is yielded to consumers before they exit
         state = .disconnected
+        finishContinuations()
 
         // Clear pending - polling loops will detect state change
         pendingRequestIds.removeAll()
