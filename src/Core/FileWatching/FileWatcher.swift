@@ -60,6 +60,13 @@ public class FileWatcher {
     }
 
     private func startWatching() -> Bool {
+        // Clean up any existing source/fd to prevent duplicates
+        // (can happen if wake fires while a retry is pending)
+        source?.cancel()
+        if fileDescriptor >= 0 {
+            close(fileDescriptor)
+        }
+
         fileDescriptor = open(url.path, O_EVTONLY)
         guard fileDescriptor >= 0 else {
             print("[FileWatcher] Failed to open: \(url.path)")

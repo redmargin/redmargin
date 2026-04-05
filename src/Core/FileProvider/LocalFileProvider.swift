@@ -24,15 +24,20 @@ public class LocalFileProvider: FileProvider {
 
         // FileWatcher is expected to be public and available
         if let watcher = FileWatcher(url: url, onChange: onChange) {
-            // If the watcher dies after exhausting retries, transparently replace it
-            watcher.onWatcherDied = { [weak self] in
+            // If the watcher dies after exhausting retries, transparently replace it.
+            // The closure references itself via a box to avoid a retain cycle
+            // (watcher → onWatcherDied → watcher).
+            class CallbackBox { var callback: (() -> Void)? }
+            let box = CallbackBox()
+            box.callback = { [weak self] in
                 guard let self = self else { return }
                 print("[LocalFileProvider] Watcher died, replacing: \(path)")
                 if let replacement = FileWatcher(url: url, onChange: onChange) {
-                    replacement.onWatcherDied = watcher.onWatcherDied
+                    replacement.onWatcherDied = box.callback
                     self.watchers[token] = replacement
                 }
             }
+            watcher.onWatcherDied = box.callback
             watchers[token] = watcher
         } else {
             print("[LocalFileProvider] Failed to watch file: \(path)")
