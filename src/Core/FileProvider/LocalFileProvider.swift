@@ -24,26 +24,29 @@ public class LocalFileProvider: FileProvider {
 
         // FileWatcher is expected to be public and available
         if let watcher = FileWatcher(url: url, onChange: onChange) {
-            // If the watcher dies after exhausting retries, transparently replace it.
-            // The closure references itself via a box to avoid a retain cycle
-            // (watcher → onWatcherDied → watcher).
-            class CallbackBox { var callback: (() -> Void)? }
-            let box = CallbackBox()
-            box.callback = { [weak self] in
-                guard let self = self else { return }
-                print("[LocalFileProvider] Watcher died, replacing: \(path)")
-                if let replacement = FileWatcher(url: url, onChange: onChange) {
-                    replacement.onWatcherDied = box.callback
-                    self.watchers[token] = replacement
-                }
-            }
-            watcher.onWatcherDied = box.callback
+            setWatcherDiedHandler(watcher, url: url, token: token, onChange: onChange)
             watchers[token] = watcher
         } else {
             print("[LocalFileProvider] Failed to watch file: \(path)")
         }
 
         return token
+    }
+
+    /// Sets up an onWatcherDied handler that transparently replaces a dead watcher.
+    /// Extracted to a method so the closure captures `self` weakly without creating
+    /// a retain cycle through the watcher's onWatcherDied property.
+    private func setWatcherDiedHandler(
+        _ watcher: FileWatcher, url: URL, token: WatchToken, onChange: @escaping () -> Void
+    ) {
+        watcher.onWatcherDied = { [weak self] in
+            guard let self = self else { return }
+            print("[LocalFileProvider] Watcher died, replacing: \(url.path)")
+            if let replacement = FileWatcher(url: url, onChange: onChange) {
+                self.setWatcherDiedHandler(replacement, url: url, token: token, onChange: onChange)
+                self.watchers[token] = replacement
+            }
+        }
     }
 
     public func unwatch(_ token: WatchToken) async {
