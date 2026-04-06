@@ -146,6 +146,6 @@ Tests are implementation tasks — the implementer writes and passes each one.
 
 ### Manual Verification (Marco)
 
-- [ ] Open a local markdown file, put laptop to sleep for 5+ minutes, wake, edit the file externally — verify it auto-refreshes
-- [ ] Open a remote markdown file, leave the app idle behind other windows for 30+ minutes, bring it forward — verify content is visible (not blank) and editable
-- [ ] Open a remote markdown file, put laptop to sleep for 5+ minutes, wake, edit the file on the server — verify it auto-refreshes within a few seconds
+- [x] Open a local markdown file, put laptop to sleep for 5+ minutes, wake, edit the file externally — verify it auto-refreshes
+- [x] Open a remote markdown file, leave the app idle behind other windows for 30+ minutes, bring it forward — verify content is visible (not blank) and editable
+- [x] Open a remote markdown file, put laptop to sleep for 5+ minutes, wake, edit the file on the server — verify it auto-refreshes within a few seconds
