@@ -24,12 +24,29 @@ public class LocalFileProvider: FileProvider {
 
         // FileWatcher is expected to be public and available
         if let watcher = FileWatcher(url: url, onChange: onChange) {
+            setWatcherDiedHandler(watcher, url: url, token: token, onChange: onChange)
             watchers[token] = watcher
         } else {
             print("[LocalFileProvider] Failed to watch file: \(path)")
         }
 
         return token
+    }
+
+    /// Sets up an onWatcherDied handler that transparently replaces a dead watcher.
+    /// Extracted to a method so the closure captures `self` weakly without creating
+    /// a retain cycle through the watcher's onWatcherDied property.
+    private func setWatcherDiedHandler(
+        _ watcher: FileWatcher, url: URL, token: WatchToken, onChange: @escaping () -> Void
+    ) {
+        watcher.onWatcherDied = { [weak self] in
+            guard let self = self else { return }
+            print("[LocalFileProvider] Watcher died, replacing: \(url.path)")
+            if let replacement = FileWatcher(url: url, onChange: onChange) {
+                self.setWatcherDiedHandler(replacement, url: url, token: token, onChange: onChange)
+                self.watchers[token] = replacement
+            }
+        }
     }
 
     public func unwatch(_ token: WatchToken) async {
@@ -74,7 +91,7 @@ class GitRepoWatcher {
         let indexURL = gitDir.appendingPathComponent("index")
         let headURL = gitDir.appendingPathComponent("HEAD")
 
-        // Watch index
+        // Watch index — FileWatcher handles wake recreation internally
         indexWatcher = FileWatcher(url: indexURL, writeOnly: true, onChange: onChange)
 
         // Watch HEAD

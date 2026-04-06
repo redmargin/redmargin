@@ -49,7 +49,10 @@ extension SSHConnection {
             #if canImport(os)
             sshLog.info("handleDisconnect() intentional, not reconnecting")
             #endif
+            // Set state before finishing streams so the final .disconnected
+            // state change is yielded to consumers before they exit
             state = .disconnected
+            finishContinuations()
         }
     }
 
@@ -129,7 +132,11 @@ extension SSHConnection {
         stdinPipe = nil
         stdoutPipe = nil
         stderrPipe = nil
+
+        // Set state before finishing streams so the final .disconnected
+        // state change is yielded to consumers before they exit
         state = .disconnected
+        finishContinuations()
 
         // Clear pending - polling loops will detect state change
         pendingRequestIds.removeAll()

@@ -1,11 +1,47 @@
 import Foundation
+#if canImport(os)
+import os.log
+#endif
 
 public actor SSHConnectionManager {
     public static let shared = SSHConnectionManager()
 
     private var connections: [String: SSHConnection] = [:]
 
+    // App Nap prevention — reference-counted activity token
+    private var remoteDocumentCount = 0
+    private var appNapActivity: NSObjectProtocol?
+    #if canImport(os)
+    private let logger = Logger(subsystem: "com.redmargin", category: "SSHConnectionManager")
+    #endif
+
     private init() {}
+
+    /// Call when a remote document opens. Prevents App Nap while any remote document is open.
+    public func beginRemoteDocumentActivity() {
+        remoteDocumentCount += 1
+        if remoteDocumentCount == 1 {
+            appNapActivity = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiatedAllowingIdleSystemSleep],
+                reason: "Active SSH connections for remote documents"
+            )
+            #if canImport(os)
+            logger.info("App Nap prevention started (remote document opened)")
+            #endif
+        }
+    }
+
+    /// Call when a remote document closes. Ends App Nap prevention when the last one closes.
+    public func endRemoteDocumentActivity() {
+        remoteDocumentCount = max(remoteDocumentCount - 1, 0)
+        if remoteDocumentCount == 0, let activity = appNapActivity {
+            ProcessInfo.processInfo.endActivity(activity)
+            appNapActivity = nil
+            #if canImport(os)
+            logger.info("App Nap prevention ended (last remote document closed)")
+            #endif
+        }
+    }
 
     public func connection(for host: String) async throws -> SSHConnection {
         if let existing = connections[host] {

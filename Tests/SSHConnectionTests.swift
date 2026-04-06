@@ -3,8 +3,90 @@ import XCTest
 
 final class SSHConnectionTests: XCTestCase {
 
-    // Note: These tests require a local SSH server running and accessible via 'ssh localhost'
+    // Note: Most tests require a local SSH server running and accessible via 'ssh localhost'
     // without interactive password prompt (e.g. public key auth).
+
+    // MARK: - AsyncStream Continuation Tests (no SSH required)
+
+    func testDisconnectFinishesContinuations() async throws {
+        let connection = SSHConnection(host: "nonexistent-host-for-test")
+
+        // Start consuming the events stream in a task
+        let eventsFinished = XCTestExpectation(description: "events stream terminates")
+        let stateFinished = XCTestExpectation(description: "stateChanges stream terminates")
+
+        Task {
+            for await _ in connection.events {}
+            eventsFinished.fulfill()
+        }
+
+        Task {
+            for await _ in connection.stateChanges {}
+            stateFinished.fulfill()
+        }
+
+        // Give the for-await loops a moment to start
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        // disconnect() should finish both continuations
+        await connection.disconnect()
+
+        await fulfillment(of: [eventsFinished, stateFinished], timeout: 3.0)
+    }
+
+    func testHandleDisconnectFinishesContinuations() async throws {
+        let connection = SSHConnection(host: "localhost")
+
+        do {
+            try await connection.connect()
+        } catch {
+            throw XCTSkip("SSH to localhost failed: \(error)")
+        }
+
+        let eventsFinished = XCTestExpectation(description: "events stream terminates")
+        let stateFinished = XCTestExpectation(description: "stateChanges stream terminates")
+
+        Task {
+            for await _ in connection.events {}
+            eventsFinished.fulfill()
+        }
+
+        Task {
+            for await _ in connection.stateChanges {}
+            stateFinished.fulfill()
+        }
+
+        // Give the for-await loops a moment to start
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        // Force an intentional disconnect to trigger handleDisconnect path
+        await connection.disconnect()
+
+        await fulfillment(of: [eventsFinished, stateFinished], timeout: 3.0)
+    }
+
+    // MARK: - App Nap Activity Tests (no SSH required)
+
+    func testAppNapActivityStartsWithRemoteDoc() async throws {
+        let manager = SSHConnectionManager.shared
+
+        // Begin activity for first "remote document"
+        await manager.beginRemoteDocumentActivity()
+
+        // Begin a second one
+        await manager.beginRemoteDocumentActivity()
+
+        // End first — activity should still be active (count > 0)
+        await manager.endRemoteDocumentActivity()
+
+        // End second — activity should now be ended (count == 0)
+        await manager.endRemoteDocumentActivity()
+
+        // Extra end call should be safe (no crash, count stays at 0)
+        await manager.endRemoteDocumentActivity()
+    }
+
+    // MARK: - Connection Tests (require SSH)
 
     func testConnectLocalhost() async throws {
         let connection = SSHConnection(host: "localhost")

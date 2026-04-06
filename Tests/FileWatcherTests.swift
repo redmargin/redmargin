@@ -1,6 +1,8 @@
 import XCTest
 import Foundation
+import AppKit
 @testable import RedmarginLib
+@testable import RedmarginCore
 
 /// Tests for file watching behavior
 final class FileWatcherTests: XCTestCase {
@@ -155,5 +157,108 @@ final class FileWatcherTests: XCTestCase {
         )
 
         source.cancel()
+    }
+
+    // MARK: - Idle Recovery Tests
+
+    func testWatcherCallsOnDiedAfterRetryExhaustion() async throws {
+        // Create a watcher on a file, then delete it so retries exhaust
+        let diedExpectation = XCTestExpectation(description: "onWatcherDied fires")
+
+        let watcher = FileWatcher(url: testFile, onChange: {})
+        XCTAssertNotNil(watcher)
+
+        watcher!.onWatcherDied = {
+            diedExpectation.fulfill()
+        }
+
+        // Delete the file so the watcher can't restart
+        try FileManager.default.removeItem(at: testFile)
+
+        // Force a restart by simulating an atomic write scenario —
+        // the file is already gone, so trigger restartWatching via a rename event.
+        // We can do this by writing to the parent dir's temp file and renaming,
+        // but since the file is deleted, the watcher's dispatch source should fire
+        // a delete event which triggers restartWatching internally.
+        // The watcher's dispatch source detects the delete and calls restartWatching,
+        // which retries 5 times with exponential backoff (0.1, 0.2, 0.5, 1.0, 2.0 = ~3.8s total)
+
+        await fulfillment(of: [diedExpectation], timeout: 10.0)
+    }
+
+    func testWatcherRecreatesAfterSimulatedWake() async throws {
+        let changeExpectation = XCTestExpectation(description: "File change detected after wake")
+
+        var changeCount = 0
+        let watcher = FileWatcher(url: testFile, onChange: {
+            changeCount += 1
+            if changeCount >= 2 {
+                // First change is from the wake recreation itself (fire onChange)
+                // Second change would be from the actual file write
+                changeExpectation.fulfill()
+            }
+        })
+        XCTAssertNotNil(watcher)
+
+        // Post didWakeNotification to simulate system wake
+        NSWorkspace.shared.notificationCenter.post(
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+
+        // Give the wake handler a moment to recreate
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        // Write to the file — watcher should still detect it after recreation
+        try "post-wake content".write(to: testFile, atomically: true, encoding: .utf8)
+
+        await fulfillment(of: [changeExpectation], timeout: 5.0)
+    }
+
+    func testGitRepoWatcherRecreatesAfterSimulatedWake() async throws {
+        // Create a temp git repo
+        let repoDir = tempDir.appendingPathComponent("git-repo")
+        try FileManager.default.createDirectory(at: repoDir, withIntermediateDirectories: true)
+
+        let gitDir = repoDir.appendingPathComponent(".git")
+        try FileManager.default.createDirectory(at: gitDir, withIntermediateDirectories: true)
+
+        let refsDir = gitDir.appendingPathComponent("refs/heads")
+        try FileManager.default.createDirectory(at: refsDir, withIntermediateDirectories: true)
+
+        // Create HEAD pointing to main
+        let headURL = gitDir.appendingPathComponent("HEAD")
+        try "ref: refs/heads/main\n".write(to: headURL, atomically: true, encoding: .utf8)
+
+        // Create index file
+        let indexURL = gitDir.appendingPathComponent("index")
+        try "fake-index".write(to: indexURL, atomically: true, encoding: .utf8)
+
+        // Create the branch ref
+        let refURL = refsDir.appendingPathComponent("main")
+        try "abc123\n".write(to: refURL, atomically: true, encoding: .utf8)
+
+        let changeExpectation = XCTestExpectation(description: "Git change detected after wake")
+
+        var changeDetected = false
+        let watcher = GitRepoWatcher(repoRoot: repoDir.path) {
+            if !changeDetected {
+                changeDetected = true
+                changeExpectation.fulfill()
+            }
+        }
+        _ = watcher  // Keep alive
+
+        // Post wake notification
+        NSWorkspace.shared.notificationCenter.post(
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+
+        // Give wake handlers a moment to recreate, then modify index
+        try await Task.sleep(nanoseconds: 300_000_000)
+        try "modified-index".write(to: indexURL, atomically: true, encoding: .utf8)
+
+        await fulfillment(of: [changeExpectation], timeout: 5.0)
     }
 }
