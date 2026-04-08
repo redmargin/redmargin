@@ -91,6 +91,23 @@ extension SSHConnection {
             }
 
             reconnectAttempts += 1
+
+            // After 3 failed attempts the remote daemon is likely hung.
+            // Kill it so the next SSH session starts a fresh daemon,
+            // and reset attempts so backoff restarts from scratch.
+            if reconnectAttempts >= 3 {
+                #if canImport(os)
+                sshLog.info("Reconnect attempt \(self.reconnectAttempts) — killing remote daemon")
+                #endif
+                _ = try? await ProcessRunner.run(
+                    executable: "ssh",
+                    arguments: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host,
+                                "pkill -f redmargin-server 2>/dev/null || true"],
+                    timeout: 15
+                )
+                reconnectAttempts = 0
+            }
+
             state = .connecting
             do {
                 try await establishConnection()
