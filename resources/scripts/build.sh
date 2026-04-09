@@ -33,6 +33,15 @@ if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
     fi
 fi
 
+LINUX_BINARY="resources/servers/redmargin-server-x86_64-linux"
+if [ ! -f "$LINUX_BINARY" ]; then
+    echo "Linux server binary missing; building on devtest..."
+    resources/scripts/build-linux.sh
+elif [ -n "$(find Server src/Core -type f -name '*.swift' -newer "$LINUX_BINARY" 2>/dev/null | head -1)" ]; then
+    echo "Server or Core sources newer than Linux binary; rebuilding on devtest..."
+    resources/scripts/build-linux.sh
+fi
+
 echo "Building Redmargin..."
 swift build -c release
 
