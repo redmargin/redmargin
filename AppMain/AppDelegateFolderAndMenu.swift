@@ -110,24 +110,34 @@ extension AppDelegate {
 
                 for location in locations {
                     do {
-                        // Check if path is a directory
-                        let isDirArgs = [
+                        // Check if path exists and whether it is a directory
+                        let remoteCheck = "test -e '\(location.path)' && "
+                            + "{ test -d '\(location.path)' && echo dir || echo file; } "
+                            + "|| echo missing"
+                        let existsArgs = [
                             "-o", "BatchMode=yes",
                             "-o", "ConnectTimeout=5",
                             location.host,
-                            "test -d '\(location.path)'"
+                            remoteCheck
                         ]
-                        let isDirResult = try await ProcessRunner.run(
+                        let existsResult = try await ProcessRunner.run(
                             executable: "/usr/bin/ssh",
-                            arguments: isDirArgs,
+                            arguments: existsArgs,
                             timeout: 10
                         )
-                        if isDirResult.exitCode == 0 {
+                        let kind = existsResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if kind == "missing" {
+                            print("[AppDelegate] Dropping stale restore entry (path gone): \(location.path)")
+                            continue
+                        }
+                        if kind == "dir" {
                             try await openRemoteFolder(connection: conn, path: location.path)
                         } else {
                             try await openRemoteDocument(connection: conn, path: location.path)
                         }
                         print("[AppDelegate] Restored: \(location.path)")
+                    } catch let error as RemoteFileError where error.isFileNotFound {
+                        print("[AppDelegate] Dropping stale restore entry (not found): \(location.path)")
                     } catch {
                         print("[AppDelegate] Failed to restore \(location): \(error)")
                         failedLocations.append(location)
