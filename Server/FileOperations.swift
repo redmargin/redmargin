@@ -245,9 +245,9 @@ actor FileOperations {
             onChange: { [weak self] in
                 Task { [weak self] in
                     guard let self = self else { return }
-                    let result = await self.findMarkdownFiles(path: expandedPath)
-                    let files = result.files ?? []
-                    let payload = DirectoryChangedPayload(path: path, files: files)
+                    // Notify client that this directory changed. Client re-lists
+                    // via listDirectory; the server doesn't walk the tree.
+                    let payload = DirectoryChangedPayload(path: path, files: [])
                     let msgType = RPCMessageType.directoryChanged.rawValue
                     if let data = try? RPCStreamHandler.encode(id: nil, type: msgType, payload: payload) {
                         await self.eventHandler?(data)

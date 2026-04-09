@@ -291,18 +291,15 @@ class RemoteDocumentState {
         Task {
             var succeeded = false
 
-            // If connection has been idle, verify it's still alive before
-            // triggering the full refresh (which also refreshes the sidebar).
-            // This avoids a 30s hang on stale connections.
-            let idle = await fileProvider.connectionIdleTime()
-            if idle > 30 {
-                refreshLog.info("refresh() idle \(idle)s, pinging first")
-                let alive = await pingConnection()
-                if !alive {
-                    refreshLog.info("refresh() ping failed, forcing reconnect")
-                    await fileProvider.forceReconnect()
-                    succeeded = await waitForReconnectAndRetryRead()
-                }
+            // Always ping first with a short timeout. A connection can be hung
+            // even when it wasn't "idle" — e.g., the daemon died mid-session.
+            // This bounds worst-case refresh at ~3s ping + reconnect instead
+            // of ~30s for a readFile timeout.
+            let alive = await pingConnection()
+            if !alive {
+                refreshLog.info("refresh() ping failed, forcing reconnect")
+                await fileProvider.forceReconnect()
+                succeeded = await waitForReconnectAndRetryRead()
             }
 
             // Normal read (skipped if we already reconnected above)

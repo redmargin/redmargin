@@ -149,6 +149,14 @@ enum Proxy {
 
     private static func startDaemon(pidFile: String, socketPath: String) {
         let binaryPath = CommandLine.arguments[0]
+        let serverDir = (pidFile as NSString).deletingLastPathComponent
+        let stderrLogPath = "\(serverDir)/daemon.stderr.log"
+
+        // Truncate stderr log if it's grown beyond 10 MB so it can't fill the disk
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: stderrLogPath),
+           let size = attrs[.size] as? UInt64, size > 10 * 1024 * 1024 {
+            try? "".write(toFile: stderrLogPath, atomically: true, encoding: .utf8)
+        }
 
         // Use setsid to start daemon in new session (detached from terminal)
         // This ensures daemon survives when proxy/SSH exits
@@ -161,12 +169,18 @@ enum Proxy {
             "--pid-file", pidFile,
             "--stdin-socket", socketPath,
             "--stdout-socket", socketPath,
-            "--stderr-socket", "/dev/null"
+            "--stderr-socket", stderrLogPath
         ]
 
-        // Redirect stdout/stderr to /dev/null to avoid corrupting RPC protocol
+        // stdout goes to /dev/null (would corrupt RPC protocol).
+        // stderr goes to a log file so daemon panics/errors leave a trace.
         process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        let stderrFD = open(stderrLogPath, O_WRONLY | O_CREAT | O_APPEND, 0o644)
+        if stderrFD >= 0 {
+            process.standardError = FileHandle(fileDescriptor: stderrFD, closeOnDealloc: true)
+        } else {
+            process.standardError = FileHandle.nullDevice
+        }
 
         do {
             try process.run()

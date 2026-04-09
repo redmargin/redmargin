@@ -23,7 +23,10 @@ public class RemoteFileTreeProvider: ObservableObject {
     private let pathIsDirectory: Bool
     private var expandedFolders: Set<String> = []
     private var expandedFoldersRootPath: String?
-    private var directoryWatchToken: WatchToken?
+    /// One watch per visible directory (root + expanded folders).
+    /// Nested watches are required because each server-side watch is
+    /// single-level and only reports changes to its own direntries.
+    private var directoryWatchTokens: [String: WatchToken] = [:]
     private var stateObserverTask: Task<Void, Never>?
     private var restoreExpandedFoldersTask: Task<Void, Never>?
     private var loadGeneration = 0
@@ -178,15 +181,31 @@ public class RemoteFileTreeProvider: ObservableObject {
         node.onExpandedChange = callback
     }
 
-    private func setupDirectoryWatching(for path: String) async {
-        if let token = directoryWatchToken {
-            await fileProvider.unwatchDirectory(token)
-        }
+    private func setupDirectoryWatching(for rootPath: String) async {
+        await unwatchAllDirectories()
+        await watchDirectoryIfNeeded(rootPath)
+    }
 
-        directoryWatchToken = await fileProvider.watchDirectory(at: path) { [weak self] _ in
+    private func watchDirectoryIfNeeded(_ path: String) async {
+        guard directoryWatchTokens[path] == nil else { return }
+        let token = await fileProvider.watchDirectory(at: path) { [weak self] _ in
             Task { @MainActor in
                 self?.refresh()
             }
+        }
+        directoryWatchTokens[path] = token
+    }
+
+    private func unwatchDirectory(_ path: String) async {
+        guard let token = directoryWatchTokens.removeValue(forKey: path) else { return }
+        await fileProvider.unwatchDirectory(token)
+    }
+
+    private func unwatchAllDirectories() async {
+        let tokens = directoryWatchTokens.values
+        directoryWatchTokens.removeAll()
+        for token in tokens {
+            await fileProvider.unwatchDirectory(token)
         }
     }
 
@@ -241,6 +260,9 @@ public class RemoteFileTreeProvider: ObservableObject {
                 }
             }
             node.children = children
+            // Expanded folder is now visible — watch it so sidebar reflects
+            // any changes inside it without polling the entire tree.
+            await watchDirectoryIfNeeded(path)
             // Recursively load children for expanded subdirectories
             for child in children where child.isDirectory && child.isExpanded {
                 await loadChildrenIfNeeded(for: child)
@@ -370,10 +392,24 @@ public class RemoteFileTreeProvider: ObservableObject {
             expandedFolders.insert(path)
         } else {
             expandedFolders.remove(path)
+            // Collapsing hides the folder and everything under it — drop the
+            // watches so the server isn't tracking directories the user
+            // can't see.
+            Task { [weak self] in
+                await self?.unwatchDirectoryAndDescendants(path)
+            }
         }
 
         if let rootPath = rootDirectory {
             onExpandedFoldersChange?(rootPath, expandedFolders)
+        }
+    }
+
+    private func unwatchDirectoryAndDescendants(_ path: String) async {
+        let prefix = path.hasSuffix("/") ? path : path + "/"
+        let victims = directoryWatchTokens.keys.filter { $0 == path || $0.hasPrefix(prefix) }
+        for victim in victims {
+            await unwatchDirectory(victim)
         }
     }
 

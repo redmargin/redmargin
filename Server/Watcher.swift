@@ -141,25 +141,27 @@ class DarwinDirectoryWatcher: ServerDirectoryWatcher {
 #elseif os(Linux)
 typealias PlatformDirectoryWatcher = LinuxDirectoryWatcher
 
+/// Watches a single directory non-recursively. Fires onChange when any entry
+/// at that level is created, deleted, moved, or modified. The client is
+/// responsible for watching nested directories separately (one watch per
+/// visible folder in the sidebar).
 class LinuxDirectoryWatcher: ServerDirectoryWatcher {
     private var inotify: LinuxInotify?
     private var source: DispatchSourceRead?
     private let rootPath: String
     private let onChange: () -> Void
-    private let ignoredDirs: Set<String>
-    private var watchDescriptors: [Int32: String] = [:]
     private var debounceWorkItem: DispatchWorkItem?
 
-    required init?(rootPath: String, ignoredDirs: Set<String>, onChange: @escaping () -> Void) {
+    required init?(rootPath: String, ignoredDirs _: Set<String>, onChange: @escaping () -> Void) {
         self.rootPath = rootPath
         self.onChange = onChange
-        self.ignoredDirs = ignoredDirs
 
         do {
             let inotify = try LinuxInotify()
             self.inotify = inotify
 
-            addWatchesRecursively(at: rootPath)
+            let mask = IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO | IN_MODIFY
+            _ = try inotify.addWatch(path: rootPath, mask: mask)
 
             let source = DispatchSource.makeReadSource(
                 fileDescriptor: inotify.fileDescriptor, queue: .global()
@@ -170,36 +172,10 @@ class LinuxDirectoryWatcher: ServerDirectoryWatcher {
             source.resume()
             self.source = source
 
-            print("[LinuxDirectoryWatcher] Watching \(watchDescriptors.count) directories under: \(rootPath)")
+            print("[LinuxDirectoryWatcher] Watching: \(rootPath)")
         } catch {
             print("[LinuxDirectoryWatcher] Failed to start: \(error)")
             return nil
-        }
-    }
-
-    private func addWatchesRecursively(at path: String) {
-        let dirMask = IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO
-        if let watchDesc = try? inotify?.addWatch(path: path, mask: dirMask) {
-            watchDescriptors[watchDesc] = path
-        }
-
-        guard let enumerator = FileManager.default.enumerator(
-            at: URL(fileURLWithPath: path),
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else { return }
-
-        while let itemURL = enumerator.nextObject() as? URL {
-            let isDir = (try? itemURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            if isDir {
-                if ignoredDirs.contains(itemURL.lastPathComponent) {
-                    enumerator.skipDescendants()
-                } else {
-                    if let watchDesc = try? inotify?.addWatch(path: itemURL.path, mask: dirMask) {
-                        watchDescriptors[watchDesc] = itemURL.path
-                    }
-                }
-            }
         }
     }
 
@@ -213,21 +189,10 @@ class LinuxDirectoryWatcher: ServerDirectoryWatcher {
     private func debouncedOnChange() {
         debounceWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
-            self.refreshWatches()
-            self.onChange()
+            self?.onChange()
         }
         debounceWorkItem = workItem
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5, execute: workItem)
-    }
-
-    private func refreshWatches() {
-        // Remove all existing watches and re-scan
-        for watchDesc in watchDescriptors.keys {
-            inotify?.removeWatch(watchDesc: watchDesc)
-        }
-        watchDescriptors.removeAll()
-        addWatchesRecursively(at: rootPath)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3, execute: workItem)
     }
 
     func stop() {
@@ -235,7 +200,6 @@ class LinuxDirectoryWatcher: ServerDirectoryWatcher {
         source?.cancel()
         source = nil
         inotify = nil
-        watchDescriptors.removeAll()
     }
 }
 #endif

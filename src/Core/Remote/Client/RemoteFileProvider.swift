@@ -116,17 +116,35 @@ public actor RemoteFileProvider: FileProvider {
     public func watchFile(at path: String, onChange: @escaping () -> Void) async -> WatchToken {
         let token = WatchToken()
         watchers[token] = WatchCallback(path: path, callback: onChange)
-
-        let payload = WatchFilePayload(path: path)
-        do {
-            let data = try await connection.send(type: RPCMessageType.watchFile.rawValue, payload: payload)
-            let response = try JSONDecoder().decode(RPCMessage<WatchFileResponsePayload>.self, from: data)
-            remoteTokens[token] = response.payload.token
-        } catch {
-            print("[RemoteFileProvider] Failed to start remote watch for \(path): \(error)")
-        }
-
+        await registerRemoteFileWatch(token: token, path: path)
         return token
+    }
+
+    /// Register the file watch with the server. Retries on failure because
+    /// the open document watcher is the primary mechanism for auto-refresh —
+    /// a silent failure here means the user stops getting updates.
+    private func registerRemoteFileWatch(token: WatchToken, path: String) async {
+        let payload = WatchFilePayload(path: path)
+        let attempts = 3
+        for attempt in 1...attempts {
+            do {
+                let data = try await connection.send(
+                    type: RPCMessageType.watchFile.rawValue,
+                    payload: payload,
+                    timeout: 20
+                )
+                let response = try JSONDecoder().decode(RPCMessage<WatchFileResponsePayload>.self, from: data)
+                remoteTokens[token] = response.payload.token
+                print("[RemoteFileProvider] Watching \(path) (attempt \(attempt))")
+                return
+            } catch {
+                print("[RemoteFileProvider] watchFile \(path) failed (attempt \(attempt)/\(attempts)): \(error)")
+                if attempt < attempts {
+                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_000_000_000)
+                }
+            }
+        }
+        print("[RemoteFileProvider] watchFile \(path) gave up after \(attempts) attempts")
     }
 
     public func unwatch(_ token: WatchToken) async {
