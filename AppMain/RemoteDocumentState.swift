@@ -377,18 +377,18 @@ class RemoteDocumentState {
 
     /// Loads a different file in the same window
     func loadFile(at path: String) async throws {
-        // If connection has been idle, verify it's alive before reading
-        let idle = await fileProvider.connectionIdleTime()
-        if idle > 30 {
-            let alive = await pingConnection()
-            if !alive {
-                await fileProvider.forceReconnect()
-                let deadline = Date().addingTimeInterval(15)
-                while Date() < deadline {
-                    let state = await fileProvider.getConnectionState()
-                    if state == .connected { break }
-                    try await Task.sleep(nanoseconds: 500_000_000)
-                }
+        // Always ping first (3s). A hung connection can look "not idle" if
+        // other code was recently sending, but will still hang the read.
+        // This bounds worst-case load at ~3s + reconnect instead of ~30s.
+        let alive = await pingConnection()
+        if !alive {
+            refreshLog.info("loadFile() ping failed, forcing reconnect")
+            await fileProvider.forceReconnect()
+            let deadline = Date().addingTimeInterval(15)
+            while Date() < deadline {
+                let state = await fileProvider.getConnectionState()
+                if state == .connected { break }
+                try await Task.sleep(nanoseconds: 500_000_000)
             }
         }
 
