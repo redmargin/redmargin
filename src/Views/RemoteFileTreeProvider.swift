@@ -27,9 +27,15 @@ public class RemoteFileTreeProvider: ObservableObject {
     /// Nested watches are required because each server-side watch is
     /// single-level and only reports changes to its own direntries.
     private var directoryWatchTokens: [String: WatchToken] = [:]
-    private var stateObserverTask: Task<Void, Never>?
+    private var reconnectHost: String?
+    private var reconnectObserver: NSObjectProtocol?
     private var restoreExpandedFoldersTask: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
+    private var refreshGeneration = 0
     private var loadGeneration = 0
+
+    /// Timeout for sidebar refresh operations. Tests inject a shorter value.
+    var refreshTimeout: TimeInterval = 15
 
     /// Callback when expanded folders change (path of root, set of expanded folder paths)
     public var onExpandedFoldersChange: ((String, Set<String>) -> Void)?
@@ -55,7 +61,7 @@ public class RemoteFileTreeProvider: ObservableObject {
     public init(
         currentFilePath: String,
         fileProvider: RemoteFileProvider,
-        stateChanges: AsyncStream<SSHConnectionState>? = nil,
+        reconnectHost: String? = nil,
         expandedFolders: Set<String> = [],
         isDirectory: Bool = false,
         expandedFoldersLoader: ((String) -> Set<String>)? = nil
@@ -65,18 +71,19 @@ public class RemoteFileTreeProvider: ObservableObject {
         self.pathIsDirectory = isDirectory
         self.expandedFolders = expandedFolders
         self.expandedFoldersLoader = expandedFoldersLoader
+        self.reconnectHost = reconnectHost
         Task {
             await loadFiles()
         }
-        if let stateChanges = stateChanges {
-            observeConnectionState(stateChanges)
+        if reconnectHost != nil {
+            observeReconnectNotification()
         }
     }
 
     init(
         currentFilePath: String,
         fileProvider: any RemoteFileTreeProviding,
-        stateChanges: AsyncStream<SSHConnectionState>? = nil,
+        reconnectHost: String? = nil,
         expandedFolders: Set<String> = [],
         isDirectory: Bool = false,
         expandedFoldersLoader: ((String) -> Set<String>)? = nil
@@ -86,29 +93,43 @@ public class RemoteFileTreeProvider: ObservableObject {
         self.pathIsDirectory = isDirectory
         self.expandedFolders = expandedFolders
         self.expandedFoldersLoader = expandedFoldersLoader
+        self.reconnectHost = reconnectHost
         Task {
             await loadFiles()
         }
-        if let stateChanges = stateChanges {
-            observeConnectionState(stateChanges)
+        if reconnectHost != nil {
+            observeReconnectNotification()
         }
     }
 
-    private func observeConnectionState(_ stateChanges: AsyncStream<SSHConnectionState>) {
-        stateObserverTask = Task { [weak self] in
-            var previousState: SSHConnectionState?
-            for await state in stateChanges {
-                guard !Task.isCancelled else { break }
-                if previousState == .reconnecting && state == .connected {
-                    await self?.loadFiles()
-                }
-                previousState = state
+    private func observeReconnectNotification() {
+        let expectedHost = reconnectHost
+        reconnectObserver = NotificationCenter.default.addObserver(
+            forName: .sshConnectionReconnected,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let host = notification.object as? String,
+                  host == expectedHost else { return }
+            Task { @MainActor in
+                await self.loadFiles()
             }
         }
     }
 
+    deinit {
+        if let observer = reconnectObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        refreshTask?.cancel()
+        restoreExpandedFoldersTask?.cancel()
+    }
+
     /// Loads the root directory
     public func loadFiles() async {
+        refreshTask?.cancel()
+        refreshTask = nil
         loadGeneration += 1
         let generation = loadGeneration
         restoreExpandedFoldersTask?.cancel()
@@ -209,17 +230,66 @@ public class RemoteFileTreeProvider: ObservableObject {
         }
     }
 
-    /// Refreshes visible levels — root + any expanded directories
+    /// Refreshes visible levels — root + any expanded directories.
+    /// Cancels any previous refresh, tracks by generation, and times out
+    /// preserving the existing tree.
     public func refresh() {
         guard let root = rootDirectory else { return }
         print("[RemoteFileTreeProvider] refresh() for \(root)")
 
-        Task {
-            let entries = try? await fileProvider.listDirectory(at: root)
-            guard let entries else { return }
-            let newNodes = buildNodes(from: entries, parentPath: root, depth: 0)
-            rootNodes = mergeLevel(existing: rootNodes, incoming: newNodes, parentPath: root, depth: 0)
+        refreshTask?.cancel()
+        refreshGeneration += 1
+        let generation = refreshGeneration
+        let capturedRoot = root
+        let timeout = refreshTimeout
+        isLoading = true
+
+        refreshTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            let result: [FileTreeNode]? = await withTaskGroup(of: [FileTreeNode]?.self) { group in
+                group.addTask { @MainActor in
+                    await self.performRefresh(root: capturedRoot, generation: generation)
+                }
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                    return nil
+                }
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                return first
+            }
+
+            guard !Task.isCancelled,
+                  self.refreshGeneration == generation,
+                  self.rootDirectory == capturedRoot else {
+                return
+            }
+
+            if let nodes = result {
+                self.rootNodes = nodes
+            } else {
+                print("[RemoteFileTreeProvider] refresh timed out, preserving existing tree")
+            }
+            self.isLoading = false
         }
+    }
+
+    /// Performs the actual refresh work: re-lists root and visible expanded folders.
+    /// Returns the merged node array, or nil on failure.
+    private func performRefresh(root: String, generation: Int) async -> [FileTreeNode]? {
+        guard let entries = try? await fileProvider.listDirectory(at: root) else { return nil }
+        guard !Task.isCancelled, refreshGeneration == generation else { return nil }
+
+        let newNodes = buildNodes(from: entries, parentPath: root, depth: 0)
+        let merged = await mergeLevel(
+            existing: rootNodes,
+            incoming: newNodes,
+            parentPath: root,
+            depth: 0,
+            refreshGeneration: generation
+        )
+        return merged
     }
 
     // MARK: - Lazy Loading
@@ -343,48 +413,58 @@ public class RemoteFileTreeProvider: ObservableObject {
 
     // MARK: - Merge
 
-    /// Merge a single level, preserving existing node identity and loaded children
+    /// Merge a single level, preserving existing node identity and loaded children.
+    /// Awaits child directory re-enumeration within the current task so refresh
+    /// work is tracked and cancellable.
     private func mergeLevel(
         existing: [FileTreeNode],
         incoming: [FileTreeNode],
         parentPath: String,
-        depth: Int
-    ) -> [FileTreeNode] {
+        depth: Int,
+        refreshGeneration: Int
+    ) async -> [FileTreeNode] {
         var existingByURL: [URL: FileTreeNode] = [:]
         for node in existing {
             existingByURL[node.url] = node
         }
 
-        return incoming.map { newNode in
+        var result: [FileTreeNode] = []
+        for newNode in incoming {
+            guard !Task.isCancelled, self.refreshGeneration == refreshGeneration else {
+                return existing
+            }
+
             if let existingNode = existingByURL[newNode.url] {
                 if existingNode.isDirectory && existingNode.childrenLoaded {
-                    // Re-enumerate this loaded directory
-                    Task {
-                        let path = existingNode.url.path
-                        let childDepth = depth + 1
-                        guard let entries = try? await self.fileProvider.listDirectory(at: path) else { return }
-                        let newChildren = self.buildNodes(from: entries, parentPath: path, depth: childDepth)
-                        existingNode.children = self.mergeLevel(
+                    let path = existingNode.url.path
+                    let childDepth = depth + 1
+                    if let entries = try? await fileProvider.listDirectory(at: path) {
+                        guard !Task.isCancelled, self.refreshGeneration == refreshGeneration else {
+                            return existing
+                        }
+                        let newChildren = buildNodes(from: entries, parentPath: path, depth: childDepth)
+                        let mergedChildren = await mergeLevel(
                             existing: existingNode.children,
                             incoming: newChildren,
                             parentPath: path,
-                            depth: childDepth
+                            depth: childDepth,
+                            refreshGeneration: refreshGeneration
                         )
+                        existingNode.children = mergedChildren
                     }
                 }
-                return existingNode
+                result.append(existingNode)
             } else {
                 wireUpNode(newNode)
                 let shouldExpand = expandedFolders.contains(newNode.url.path)
                 if shouldExpand && newNode.isDirectory {
                     setExpandedState(true, for: newNode)
-                    Task {
-                        await self.loadChildrenIfNeeded(for: newNode)
-                    }
+                    await loadChildrenIfNeeded(for: newNode)
                 }
-                return newNode
+                result.append(newNode)
             }
         }
+        return result
     }
 
     private func handleFolderExpansionChange(path: String, expanded: Bool) {

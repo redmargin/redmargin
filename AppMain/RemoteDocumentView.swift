@@ -67,7 +67,7 @@ struct RemoteDocumentWindowContent: View {
         _fileTreeProvider = StateObject(wrappedValue: RemoteFileTreeProvider(
             currentFilePath: location.path,
             fileProvider: fileProvider,
-            stateChanges: fileProvider.stateChanges,
+            reconnectHost: location.host,
             expandedFoldersLoader: { rootPath in
                 DocumentSettingsStorage.shared.loadExpandedFolders(forRemoteHost: hostForLoader, rootPath: rootPath)
             }
@@ -102,7 +102,7 @@ struct RemoteDocumentWindowContent: View {
         _fileTreeProvider = StateObject(wrappedValue: RemoteFileTreeProvider(
             currentFilePath: folderPath,
             fileProvider: fileProvider,
-            stateChanges: fileProvider.stateChanges,
+            reconnectHost: host,
             isDirectory: true,
             expandedFoldersLoader: { rootPath in
                 DocumentSettingsStorage.shared.loadExpandedFolders(forRemoteHost: host, rootPath: rootPath)
@@ -130,8 +130,17 @@ struct RemoteDocumentWindowContent: View {
                 findBarFocusTrigger: $findBarFocusTrigger,
                 sidebarWidth: sidebarWidth,
                 onRefresh: {
-                    state.refresh()
-                    if showSidebar { fileTreeProvider.refresh() }
+                    let route = remoteRefreshRoute(
+                        isFolderMode: isFolderMode,
+                        sidebarVisible: showSidebar,
+                        source: .commandRefresh
+                    )
+                    if route == .documentOnly || route == .documentAndSidebar {
+                        state.refresh()
+                    }
+                    if route == .sidebarOnly || route == .documentAndSidebar {
+                        fileTreeProvider.refresh()
+                    }
                 },
                 onFindNext: { findController.findNext() },
                 onFindPrevious: { findController.findPrevious() },
@@ -198,8 +207,17 @@ struct RemoteDocumentWindowContent: View {
                 handleFileSelection(url)
             },
             onRefresh: {
-                state.refresh()
-                fileTreeProvider.refresh()
+                let route = remoteRefreshRoute(
+                    isFolderMode: isFolderMode,
+                    sidebarVisible: true,
+                    source: .sidebarButton
+                )
+                if route == .documentOnly || route == .documentAndSidebar {
+                    state.refresh()
+                }
+                if route == .sidebarOnly || route == .documentAndSidebar {
+                    fileTreeProvider.refresh()
+                }
             }
         )
     }

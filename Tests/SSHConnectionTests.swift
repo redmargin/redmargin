@@ -191,17 +191,76 @@ final class SSHConnectionTests: XCTestCase {
         await connection.disconnect()
     }
 
-    func testForceReconnectOnDisconnectedConnectionIsNoop() async throws {
+    func testForceReconnectOnDisconnectedConnectionStartsReconnectPath() async throws {
         let connection = SSHConnection(host: "localhost")
 
-        // Never connected — forceReconnect should be a no-op
         let stateBefore = await connection.getState()
         XCTAssertEqual(stateBefore, .disconnected)
 
         await connection.forceReconnect()
 
         let stateAfter = await connection.getState()
-        XCTAssertEqual(stateAfter, .disconnected, "forceReconnect on disconnected connection should be a no-op")
+        XCTAssertEqual(stateAfter, .reconnecting,
+                       "forceReconnect on disconnected connection should start reconnect path")
+
+        // Clean up the spawned reconnect task
+        await connection.disconnect()
+    }
+
+    func testConnectionManagerReturnsExistingReconnectingConnection() async throws {
+        let manager = SSHConnectionManager.shared
+
+        do {
+            _ = try await manager.connection(for: "localhost")
+        } catch {
+            throw XCTSkip("SSH to localhost failed: \(error)")
+        }
+
+        // Force reconnect to put connection in reconnecting state
+        await manager.forceReconnectAll()
+
+        // Request connection again — should return the same reconnecting instance
+        do {
+            let conn = try await manager.connection(for: "localhost")
+            let reusable = await conn.isReusable
+            XCTAssertTrue(reusable, "Reconnecting connection should be reusable")
+        } catch {
+            XCTFail("Manager should return existing reconnecting connection: \(error)")
+        }
+
+        await manager.disconnect(host: "localhost")
+    }
+
+    func testConnectionManagerDisconnectsNonReusableConnectionBeforeReplacement() async throws {
+        let manager = SSHConnectionManager.shared
+
+        do {
+            _ = try await manager.connection(for: "localhost")
+        } catch {
+            throw XCTSkip("SSH to localhost failed: \(error)")
+        }
+
+        // Intentionally disconnect — marks it as not reusable
+        await manager.disconnect(host: "localhost")
+
+        // Register a non-reusable connection to test replacement
+        let stale = SSHConnection(host: "localhost")
+        await stale.disconnect()  // Makes isReusable == false
+        await manager.registerConnection(stale, for: "localhost")
+
+        let reusableBefore = await stale.isReusable
+        XCTAssertFalse(reusableBefore, "Intentionally disconnected connection should not be reusable")
+
+        // Requesting a connection should replace the non-reusable one
+        do {
+            let fresh = try await manager.connection(for: "localhost")
+            let alive = await fresh.isAlive()
+            XCTAssertTrue(alive, "Replacement connection should be alive")
+        } catch {
+            throw XCTSkip("SSH to localhost failed on replacement: \(error)")
+        }
+
+        await manager.disconnect(host: "localhost")
     }
 
     func testForceReconnectAllViaManager() async throws {

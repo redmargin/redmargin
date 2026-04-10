@@ -80,6 +80,13 @@ public actor SSHConnection {
         return state == .connected && process?.isRunning == true
     }
 
+    /// A reusable connection can be force-reconnected rather than replaced.
+    /// Only connections intentionally closed via `disconnect()` or `disconnectAll()`
+    /// are not reusable — the manager should replace them instead.
+    public var isReusable: Bool {
+        !isIntentionallyDisconnected
+    }
+
     /// Seconds since the last successful RPC response
     public func idleTime() -> TimeInterval {
         Date().timeIntervalSince(lastResponseTime)
