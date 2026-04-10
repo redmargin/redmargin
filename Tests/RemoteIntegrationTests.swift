@@ -1,4 +1,6 @@
 import XCTest
+@testable import Redmargin
+@testable import RedmarginLib
 @testable import RedmarginCore
 
 final class RemoteIntegrationTests: XCTestCase {
@@ -76,6 +78,133 @@ final class RemoteIntegrationTests: XCTestCase {
         await conn1.disconnect()
         await conn2.disconnect()
         print("[Test] Connections closed.")
+    }
+
+    func testRemoteDirectoryWatchRecoversAfterReconnect() async throws {
+        let connection = SSHConnection(host: "devtest")
+        try await connection.connect()
+
+        let provider = RemoteFileProvider(connection: connection)
+        let testDir = "/tmp/redmargin-watch-recovery-test"
+
+        // Setup: create test directory with a file
+        _ = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: ["devtest", "rm -rf \(testDir) && mkdir -p \(testDir) && echo '# Test' > \(testDir)/before.md"]
+        )
+
+        // Create tree provider watching the directory
+        let treeProvider = await RemoteFileTreeProvider(
+            currentFilePath: testDir,
+            fileProvider: provider,
+            reconnectHost: "devtest",
+            isDirectory: true,
+            expandedFoldersLoader: { _ in Set<String>() }
+        )
+
+        // Wait for initial load
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            let isLoading = await treeProvider.isLoading
+            let rootNodes = await treeProvider.rootNodes
+            if !isLoading && !rootNodes.isEmpty { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+
+        let rootNodes = await treeProvider.rootNodes
+        XCTAssertFalse(rootNodes.isEmpty, "Should have loaded initial directory listing")
+
+        // Force reconnect
+        await connection.forceReconnect()
+
+        // Wait for reconnection (up to 15s)
+        let reconnectDeadline = Date().addingTimeInterval(15)
+        while Date() < reconnectDeadline {
+            let state = await connection.getState()
+            if state == .connected { break }
+            try await Task.sleep(nanoseconds: 500_000_000)
+        }
+
+        // Add a file after reconnect
+        _ = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: ["devtest", "echo '# After' > \(testDir)/after.md"]
+        )
+
+        // Wait for the watch to detect the new file
+        let watchDeadline = Date().addingTimeInterval(10)
+        var foundAfter = false
+        while Date() < watchDeadline {
+            let nodes = await treeProvider.rootNodes
+            if nodes.contains(where: { $0.name == "after.md" }) {
+                foundAfter = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 500_000_000)
+        }
+
+        XCTAssertTrue(foundAfter, "Watch should recover after reconnect and detect new files")
+
+        // Cleanup
+        _ = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: ["devtest", "rm -rf \(testDir)"]
+        )
+        await connection.disconnect()
+    }
+
+    func testRemoteFolderSidebarRefreshDoesNotForceDocumentReconnect() async throws {
+        let connection = SSHConnection(host: "devtest")
+        try await connection.connect()
+
+        let provider = RemoteFileProvider(connection: connection)
+        let testDir = "/tmp/redmargin-folder-refresh-test"
+
+        // Setup: create test directory
+        _ = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: ["devtest", "rm -rf \(testDir) && mkdir -p \(testDir) && echo '# Test' > \(testDir)/file.md"]
+        )
+
+        // Create tree provider in folder mode (no file selected)
+        let treeProvider = await RemoteFileTreeProvider(
+            currentFilePath: testDir,
+            fileProvider: provider,
+            reconnectHost: "devtest",
+            isDirectory: true,
+            expandedFoldersLoader: { _ in Set<String>() }
+        )
+
+        // Wait for initial load
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            let isLoading = await treeProvider.isLoading
+            let rootNodes = await treeProvider.rootNodes
+            if !isLoading && !rootNodes.isEmpty { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+
+        // Trigger sidebar-only refresh (folder mode)
+        await treeProvider.refresh()
+
+        // Wait for refresh to complete
+        let refreshDeadline = Date().addingTimeInterval(5)
+        while Date() < refreshDeadline {
+            let isLoading = await treeProvider.isLoading
+            if !isLoading { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+
+        // Connection should still be alive — sidebar refresh didn't force a document read
+        let alive = await connection.isAlive()
+        XCTAssertTrue(alive, "Connection should remain alive after folder-only sidebar refresh")
+
+        // Cleanup
+        _ = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: ["devtest", "rm -rf \(testDir)"]
+        )
+        await connection.disconnect()
     }
 
     func testReadAsset() async throws {

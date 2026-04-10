@@ -116,6 +116,266 @@ final class RemoteSidebarTests: XCTestCase {
         }
     }
 
+    // MARK: - Reconnect Tests
+
+    func testRemoteSidebarReloadsOnMatchingReconnectNotification() async throws {
+        let remoteProvider = TestRemoteTreeFileProvider(
+            repoRoot: "/repo",
+            directoryEntries: [
+                "/repo": [
+                    DirectoryEntry(name: "README.md", isDirectory: false)
+                ]
+            ]
+        )
+
+        let provider = await RemoteFileTreeProvider(
+            currentFilePath: "/repo/README.md",
+            fileProvider: remoteProvider,
+            reconnectHost: "myhost",
+            expandedFoldersLoader: { _ in Set<String>() }
+        )
+        try await waitForRemoteProvider(provider)
+
+        let listCountBefore = await remoteProvider.recordedListPaths().count
+        let watchCountBefore = await remoteProvider.recordedWatchPaths().count
+
+        NotificationCenter.default.post(
+            name: .sshConnectionReconnected,
+            object: "myhost"
+        )
+
+        try await waitUntil("reconnect reload", timeout: 3) {
+            let listCount = await remoteProvider.recordedListPaths().count
+            return listCount > listCountBefore
+        }
+
+        let watchCountAfter = await remoteProvider.recordedWatchPaths().count
+        XCTAssertGreaterThan(watchCountAfter, watchCountBefore, "Watches should be re-registered after reconnect")
+    }
+
+    func testRemoteSidebarIgnoresReconnectForOtherHost() async throws {
+        let remoteProvider = TestRemoteTreeFileProvider(
+            repoRoot: "/repo",
+            directoryEntries: [
+                "/repo": [
+                    DirectoryEntry(name: "README.md", isDirectory: false)
+                ]
+            ]
+        )
+
+        let provider = await RemoteFileTreeProvider(
+            currentFilePath: "/repo/README.md",
+            fileProvider: remoteProvider,
+            reconnectHost: "myhost",
+            expandedFoldersLoader: { _ in Set<String>() }
+        )
+        try await waitForRemoteProvider(provider)
+
+        let listCountBefore = await remoteProvider.recordedListPaths().count
+
+        NotificationCenter.default.post(
+            name: .sshConnectionReconnected,
+            object: "otherhost"
+        )
+
+        // Wait briefly to ensure no reload triggers
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        let listCountAfter = await remoteProvider.recordedListPaths().count
+        XCTAssertEqual(listCountAfter, listCountBefore, "Should not reload for a different host")
+    }
+
+    // MARK: - Refresh Tests
+
+    func testRemoteSidebarRefreshCancelsPreviousRefresh() async throws {
+        let remoteProvider = TestRemoteTreeFileProvider(
+            repoRoot: "/repo",
+            directoryEntries: [
+                "/repo": [
+                    DirectoryEntry(name: "first.md", isDirectory: false)
+                ]
+            ],
+            listDelays: ["/repo": 500_000_000]  // 500ms delay
+        )
+
+        let provider = await RemoteFileTreeProvider(
+            currentFilePath: "/repo/first.md",
+            fileProvider: remoteProvider,
+            expandedFoldersLoader: { _ in Set<String>() }
+        )
+        try await waitForRemoteProvider(provider)
+
+        // Update entries for second refresh
+        await remoteProvider.updateEntries([
+            "/repo": [
+                DirectoryEntry(name: "second.md", isDirectory: false)
+            ]
+        ])
+
+        // Start first refresh (will be slow due to delay)
+        await provider.refresh()
+
+        // Immediately update entries again and trigger second refresh
+        await remoteProvider.updateEntries([
+            "/repo": [
+                DirectoryEntry(name: "final.md", isDirectory: false)
+            ]
+        ])
+        await provider.refresh()
+
+        try await waitUntil("second refresh completes", timeout: 3) {
+            let isLoading = await provider.isLoading
+            return !isLoading
+        }
+
+        let rootNodes = await provider.rootNodes
+        let names = rootNodes.map { $0.name }
+        XCTAssertTrue(names.contains("final.md"), "Only the latest refresh should update rootNodes, got: \(names)")
+    }
+
+    func testRemoteSidebarRefreshTimeoutPreservesExistingTree() async throws {
+        let remoteProvider = TestRemoteTreeFileProvider(
+            repoRoot: "/repo",
+            directoryEntries: [
+                "/repo": [
+                    DirectoryEntry(name: "README.md", isDirectory: false)
+                ]
+            ]
+        )
+
+        let provider = await RemoteFileTreeProvider(
+            currentFilePath: "/repo/README.md",
+            fileProvider: remoteProvider,
+            expandedFoldersLoader: { _ in Set<String>() }
+        )
+        try await waitForRemoteProvider(provider)
+
+        let nodesBefore = await provider.rootNodes
+        XCTAssertFalse(nodesBefore.isEmpty)
+
+        // Make list directory very slow and set short timeout
+        await remoteProvider.updateEntries(["/repo": []])
+        // listDelays can't be changed after init, so use a provider with built-in delay
+        let slowProvider = TestRemoteTreeFileProvider(
+            repoRoot: "/repo",
+            directoryEntries: [
+                "/repo": [
+                    DirectoryEntry(name: "new.md", isDirectory: false)
+                ]
+            ],
+            listDelays: ["/repo": 2_000_000_000]  // 2s delay
+        )
+
+        let providerWithTimeout = await RemoteFileTreeProvider(
+            currentFilePath: "/repo/README.md",
+            fileProvider: slowProvider,
+            expandedFoldersLoader: { _ in Set<String>() }
+        )
+        try await waitForRemoteProvider(providerWithTimeout)
+
+        // Set short timeout
+        await MainActor.run { providerWithTimeout.refreshTimeout = 0.5 }
+
+        // Trigger refresh — should timeout
+        await providerWithTimeout.refresh()
+
+        try await waitUntil("refresh timeout clears loading", timeout: 3) {
+            let isLoading = await providerWithTimeout.isLoading
+            return !isLoading
+        }
+
+        // Existing tree should be preserved (initial load nodes, not new.md which timed out)
+        let nodesAfter = await providerWithTimeout.rootNodes
+        XCTAssertFalse(nodesAfter.isEmpty, "Existing tree should be preserved on timeout")
+    }
+
+    func testRemoteSidebarRefreshReloadsExpandedVisibleFolders() async throws {
+        let remoteProvider = TestRemoteTreeFileProvider(
+            repoRoot: "/repo",
+            directoryEntries: [
+                "/repo": [
+                    DirectoryEntry(name: "docs", isDirectory: true),
+                    DirectoryEntry(name: "README.md", isDirectory: false)
+                ],
+                "/repo/docs": [
+                    DirectoryEntry(name: "old.md", isDirectory: false)
+                ]
+            ]
+        )
+
+        let provider = await RemoteFileTreeProvider(
+            currentFilePath: "/repo/README.md",
+            fileProvider: remoteProvider,
+            expandedFoldersLoader: { _ in Set(["/repo/docs"]) }
+        )
+        try await waitForRemoteProvider(provider)
+
+        try await waitUntil("docs folder expanded", timeout: 2) {
+            let rootNodes = await provider.rootNodes
+            guard let docsNode = rootNodes.first(where: { $0.name == "docs" }) else { return false }
+            return docsNode.isExpanded && docsNode.childrenLoaded
+        }
+
+        // Update the docs folder entries
+        await remoteProvider.updateEntries([
+            "/repo": [
+                DirectoryEntry(name: "docs", isDirectory: true),
+                DirectoryEntry(name: "README.md", isDirectory: false)
+            ],
+            "/repo/docs": [
+                DirectoryEntry(name: "new.md", isDirectory: false)
+            ]
+        ])
+
+        await provider.refresh()
+
+        try await waitUntil("refresh completes with updated children", timeout: 3) {
+            let isLoading = await provider.isLoading
+            if isLoading { return false }
+            let rootNodes = await provider.rootNodes
+            guard let docsNode = rootNodes.first(where: { $0.name == "docs" }) else { return false }
+            return docsNode.children.contains(where: { $0.name == "new.md" })
+        }
+
+        let rootNodes = await provider.rootNodes
+        let docsNode = try XCTUnwrap(rootNodes.first { $0.name == "docs" })
+        let childNames = docsNode.children.map { $0.name }
+        XCTAssertTrue(childNames.contains("new.md"), "Expanded folder children should update on refresh")
+    }
+
+    func testRemoteSidebarRefreshSetsLoadingWhileActive() async throws {
+        let remoteProvider = TestRemoteTreeFileProvider(
+            repoRoot: "/repo",
+            directoryEntries: [
+                "/repo": [
+                    DirectoryEntry(name: "README.md", isDirectory: false)
+                ]
+            ],
+            listDelays: ["/repo": 300_000_000]  // 300ms delay
+        )
+
+        let provider = await RemoteFileTreeProvider(
+            currentFilePath: "/repo/README.md",
+            fileProvider: remoteProvider,
+            expandedFoldersLoader: { _ in Set<String>() }
+        )
+        try await waitForRemoteProvider(provider)
+
+        await provider.refresh()
+
+        // isLoading should be true immediately after refresh()
+        let loadingDuringRefresh = await provider.isLoading
+        XCTAssertTrue(loadingDuringRefresh, "isLoading should be true during refresh")
+
+        try await waitUntil("refresh completes", timeout: 3) {
+            let isLoading = await provider.isLoading
+            return !isLoading
+        }
+
+        let loadingAfterRefresh = await provider.isLoading
+        XCTAssertFalse(loadingAfterRefresh, "isLoading should be false after refresh completes")
+    }
+
     private func waitForRemoteProvider(_ provider: RemoteFileTreeProvider, timeout: TimeInterval = 5) async throws {
         try await waitUntil("remote provider initial load", timeout: timeout) {
             let isLoading = await provider.isLoading
@@ -142,9 +402,10 @@ final class RemoteSidebarTests: XCTestCase {
 
 actor TestRemoteTreeFileProvider: RemoteFileTreeProviding {
     private let repoRoot: String?
-    private let directoryEntries: [String: [DirectoryEntry]]
+    private(set) var directoryEntries: [String: [DirectoryEntry]]
     private let listDelays: [String: UInt64]
     private var listedPaths: [String] = []
+    private var watchedPaths: [String] = []
 
     init(
         repoRoot: String?,
@@ -169,12 +430,21 @@ actor TestRemoteTreeFileProvider: RemoteFileTreeProviding {
     }
 
     func watchDirectory(at path: String, onChange: @escaping ([String]) -> Void) async -> WatchToken {
-        UUID()
+        watchedPaths.append(path)
+        return UUID()
     }
 
     func unwatchDirectory(_ token: WatchToken) async {}
 
     func recordedListPaths() -> [String] {
         listedPaths
+    }
+
+    func recordedWatchPaths() -> [String] {
+        watchedPaths
+    }
+
+    func updateEntries(_ entries: [String: [DirectoryEntry]]) {
+        directoryEntries = entries
     }
 }

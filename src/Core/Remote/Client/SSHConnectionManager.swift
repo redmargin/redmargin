@@ -51,12 +51,17 @@ public actor SSHConnectionManager {
 
     public func connection(for host: String) async throws -> SSHConnection {
         if let existing = connections[host] {
-            // Check both state AND process health
-            if await existing.isAlive() {
+            if await existing.isReusable {
+                if await existing.isAlive() {
+                    return existing
+                }
+                // Reusable but not alive — force reconnect on the same object
+                await existing.forceReconnect()
                 return existing
             }
-            // Connection is stale/disconnected, remove it
+            // Not reusable (intentionally disconnected) — stop it and replace
             connections.removeValue(forKey: host)
+            await existing.disconnect()
         }
 
         let connection = SSHConnection(host: host)
