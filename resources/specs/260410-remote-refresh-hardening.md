@@ -56,7 +56,7 @@ Tighten `SSHConnectionManager` connection ownership. The manager should keep one
 
 This spec is based on the prior refresh history in this repo: `1800357` fixed infinite remote sidebar spinners with timeout and generation checks, `210d1e2` fixed remote watcher re-registration after reconnect, `88f45b0` made remote refresh ping before read, `2c018fa` made sidebar file navigation fast-fail on hung connections, and `c0c6686` stopped stale remote restore entries from retrying forever. The current code keeps the document refresh improvements but lost some sidebar safeguards during lazy tree loading.
 
-The local SSH debugging doc (`resources/docs/260120-ssh-remote-connection-debugging.md`) already records that NotificationCenter became the reliable reconnection signal after AsyncStream state observation proved unreliable for recovery. Apple documents NotificationCenter as the standard mechanism for named in-process notifications and observer registration, which matches the existing document-state pattern. Apple also documents using `beginActivity` and `endActivity` for long user-initiated work that should not be deferred by App Nap, validating the current App Nap guard while reinforcing that abandoned connection tasks should be stopped. The Linux inotify manual documents automatic watch removal through `IN_IGNORED` and non-recursive directory event semantics, supporting the existing one-watch-per-visible-directory sidebar design and the need to re-register watches after reconnect.
+The local SSH debugging doc (`resources/docs/260120-ssh-remote-connection-debugging.md`) already records that NotificationCenter became the reliable reconnection signal after AsyncStream state observation proved unreliable for recovery. Apple documents NotificationCenter as a named in-process notification and observer-registration API, which matches the existing document-state pattern. Apple also documents using `beginActivity` and `endActivity` for long user-initiated work that should not be deferred by App Nap, validating the current App Nap guard while reinforcing that abandoned connection tasks should be stopped. The Linux inotify manual documents automatic watch removal through `IN_IGNORED` and non-recursive directory event semantics, supporting the existing one-watch-per-visible-directory sidebar design and the need to re-register watches after reconnect.
 
 Relevant references:
 
@@ -72,7 +72,8 @@ Spec review confirmed the approach is sound. All four changes (NotificationCente
 | ------ | ------------ |
 | Sidebar reloads twice after reconnect because both state stream and notification fire | Make NotificationCenter the only reload trigger for reconnect recovery in `RemoteFileTreeProvider`; leave state stream usage out of data reloads. |
 | Timeout clears a useful sidebar tree and shows an empty state | On timeout, preserve existing `rootNodes` and only log the timeout; loading state clears for the active generation. |
-| Refresh cancellation leaves expanded folders half-updated | Perform visible-level refresh in one tracked task and apply merged root state only after all awaited visible levels for that generation complete. |
+| Refresh cancellation leaves expanded folders half-updated | Perform visible-level refresh in one tracked task, stage root and child changes off to the side, and commit them only after all awaited visible levels for that generation complete. |
+| A reconnect reload races with a manual sidebar refresh and stale refresh results replace the reloaded tree | Cancel active refresh work when `loadFiles()` starts and require refresh commits to match both the captured root path and the current `loadGeneration`. |
 | Folder-mode refresh no longer refreshes an already-selected empty Markdown file | Use `isFolderMode` as the deciding state, not `content.isEmpty`. `loadFile(at:)` already sets `isFolderMode = false` after a file selection. |
 | Stopping replaced SSH connections breaks active remote windows | Keep reusable connections in the manager cache and recover them in place; stop only intentionally closed connections the manager is replacing. |
 | Tests keep asserting obsolete disconnected force-reconnect behavior | Update the test to match the current intended behavior: a disconnected connection can start a fresh reconnect path, and cleanup must stop it. |
@@ -85,7 +86,7 @@ Spec review confirmed the approach is sound. All four changes (NotificationCente
 - [ ] Update both `RemoteFileTreeProvider` initializers in `src/Views/RemoteFileTreeProvider.swift` to take `reconnectHost`, defaulting to `nil` for tests and local-only callers.
 - [ ] In `src/Views/RemoteFileTreeProvider.swift`, add a stored NotificationCenter observer token for `.sshConnectionReconnected`.
 - [ ] In `src/Views/RemoteFileTreeProvider.swift`, when `reconnectHost` is present and the notification object matches it, call `loadFiles()` on the main actor.
-- [ ] In `src/Views/RemoteFileTreeProvider.swift`, remove the reconnect observer in `deinit`.
+- [ ] In `src/Views/RemoteFileTreeProvider.swift`, remove the reconnect observer in `deinit` and cancel any active refresh or expanded-folder restore task.
 - [ ] In the remote document initializer in `AppMain/RemoteDocumentView.swift`, pass `location.host` into `RemoteFileTreeProvider`.
 - [ ] In the remote folder initializer in `AppMain/RemoteDocumentView.swift`, pass `host` into `RemoteFileTreeProvider`.
 - [ ] Remove the `observeConnectionState` method and `stateObserverTask` from `RemoteFileTreeProvider` so data reload is not dependent on the `.reconnecting -> .connected` adjacency.
@@ -95,20 +96,22 @@ Spec review confirmed the approach is sound. All four changes (NotificationCente
 
 **Phase 2: Remote Folder Refresh Routing**
 
-- [ ] Add `AppMain/RemoteRefreshRouting.swift` with a testable refresh-routing helper that returns whether to refresh the document, the sidebar, or both, based on `isFolderMode`.
-- [ ] Update the `onRefresh` closure passed to `RemoteNotificationModifiers` in `AppMain/RemoteDocumentView.swift` (line 132-135) to use the routing helper: call `state.refresh()` only when `isFolderMode == false`, always call `fileTreeProvider.refresh()` when the sidebar is visible.
-- [ ] Update the `SidebarView` `onRefresh` closure in `AppMain/RemoteDocumentView.swift` (line 200-203) to use the routing helper instead of always calling `state.refresh()`.
+- [ ] Add `AppMain/RemoteRefreshRouting.swift` with a testable refresh-routing helper that returns whether to refresh the document, the sidebar, or both. Inputs are `isFolderMode`, whether the sidebar is visible, and the refresh source (`commandRefresh` from `RemoteNotificationModifiers` or `sidebarButton` from `SidebarView`).
+- [ ] Update the `onRefresh` closure passed to `RemoteNotificationModifiers` in `AppMain/RemoteDocumentView.swift` (line 132-135) to use the routing helper: call `state.refresh()` only when the route includes document refresh, and call `fileTreeProvider.refresh()` when the route includes sidebar refresh. For `commandRefresh`, sidebar refresh is included when `isFolderMode == true` or the sidebar is visible.
+- [ ] Update the `SidebarView` `onRefresh` closure in `AppMain/RemoteDocumentView.swift` (line 200-203) to use the routing helper instead of always calling `state.refresh()`. For `sidebarButton`, sidebar refresh is always included.
 - [ ] Keep remote document windows unchanged from the user's perspective: selected files still refresh content and sidebar together.
 
 **Phase 3: Bounded Remote Sidebar Refresh**
 
 - [ ] Add a tracked `refreshTask` and `refreshGeneration` to `src/Views/RemoteFileTreeProvider.swift`.
 - [ ] Update `refresh()` in `src/Views/RemoteFileTreeProvider.swift` to cancel the previous refresh task, increment the generation, set `isLoading = true`, and start one tracked refresh task.
+- [ ] Update `loadFiles()` in `src/Views/RemoteFileTreeProvider.swift` to cancel the active `refreshTask` before incrementing `loadGeneration`, so reconnect reloads cannot be overwritten by an older manual refresh.
 - [ ] Add a configurable `refreshTimeout: TimeInterval` property to `RemoteFileTreeProvider`, defaulting to 15 seconds in production. Tests inject a shorter value (0.5 seconds) to avoid slow test suites.
 - [ ] Apply the `refreshTimeout` in `RemoteFileTreeProvider.refresh()` to preserve existing `rootNodes` on timeout.
-- [ ] Ensure only the active refresh generation can mutate `rootNodes` or clear `isLoading`.
+- [ ] Ensure only the active refresh generation can mutate `rootNodes` or clear `isLoading`; before mutating, verify that the captured root path still equals `rootDirectory` and the captured `loadGeneration` still matches the provider's current `loadGeneration`.
 - [ ] Refactor `mergeLevel` in `src/Views/RemoteFileTreeProvider.swift` into an async visible-level refresh path that awaits child directory listings for already-loaded expanded folders.
 - [ ] Remove untracked `Task` creation from `mergeLevel` in `src/Views/RemoteFileTreeProvider.swift`.
+- [ ] Stage refreshed child arrays during visible-level merge and apply them only after the full refresh succeeds; timeout or cancellation must not mutate existing `FileTreeNode.children`.
 - [ ] Preserve node identity for unchanged paths so sidebar selection, scroll stability, and expanded state remain stable after refresh.
 - [ ] Keep directory watch registration tied to visible directories: root and expanded loaded folders are watched, collapsed folder descendants are unwatched.
 
@@ -117,7 +120,7 @@ Spec review confirmed the approach is sound. All four changes (NotificationCente
 - [ ] Add an `isReusable` computed property to `src/Core/Remote/Client/SSHConnection.swift` that returns `!isIntentionallyDisconnected`. This distinguishes connections that exhausted reconnect attempts or lost connectivity (reusable — the manager can force-reconnect them) from connections that were intentionally closed via `disconnect()` or `disconnectAll()` (not reusable — the manager should replace them).
 - [ ] Update `src/Core/Remote/Client/SSHConnectionManager.swift` so `connection(for:)` checks `isReusable` on cached connections. If reusable, return the cached connection (regardless of its current state: `.connected`, `.connecting`, `.reconnecting`, or `.disconnected`). If not reusable, replace it.
 - [ ] When `connection(for:)` finds a reusable cached connection where `isAlive()` returns false, call `forceReconnect()` on that cached connection before returning it.
-- [ ] When `connection(for:)` replaces a non-reusable cached connection, call `disconnect()` on the old connection before removing it from `connections`. This stops orphaned reconnect tasks, health checks, and notification observers from running on a discarded connection object.
+- [ ] When `connection(for:)` replaces a non-reusable cached connection, capture and remove the old connection from `connections`, await `disconnect()` on it, then create and store the replacement connection. This stops orphaned reconnect tasks, health checks, and notification observers from running on a discarded connection object while avoiding reentrant manager calls returning the discarded object.
 - [ ] Ensure `disconnect(host:)` and `disconnectAll()` remain the only paths that intentionally close active cached connections.
 - [ ] Keep `ensureConnectionReady(fileProvider:)` in `AppMain/AppDelegateExtensions.swift` as the fast-fail readiness check for callers that receive an existing reconnecting connection.
 
@@ -146,9 +149,12 @@ Tests are implementation tasks — the implementer writes and passes each one.
 
 ### Unit Tests (`Tests/RemoteRefreshRoutingTests.swift`)
 
-- [ ] `testRemoteFolderRefreshWithoutSelectionSkipsDocumentRefresh` - Verifies the routing helper returns sidebar-only refresh when `isFolderMode == true`.
-- [ ] `testRemoteFolderRefreshWithSelectionRefreshesDocumentAndSidebar` - Verifies the routing helper returns document-and-sidebar refresh when `isFolderMode == false` (a file has been selected).
-- [ ] `testRemoteDocumentRefreshRefreshesDocumentAndSidebar` - Verifies the routing helper returns document-and-sidebar refresh for non-folder remote document windows.
+- [ ] `testRemoteFolderCommandRefreshWithoutSelectionSkipsDocumentRefresh` - Verifies the routing helper returns sidebar-only refresh when `isFolderMode == true` and the refresh source is `commandRefresh`, regardless of sidebar visibility.
+- [ ] `testRemoteFolderSidebarButtonRefreshWithoutSelectionSkipsDocumentRefresh` - Verifies the routing helper returns sidebar-only refresh when `isFolderMode == true` and the refresh source is `sidebarButton`.
+- [ ] `testRemoteFolderCommandRefreshWithSelectionRefreshesDocumentAndVisibleSidebar` - Verifies the routing helper returns document-and-sidebar refresh when `isFolderMode == false`, the refresh source is `commandRefresh`, the sidebar is visible, and a file has been selected.
+- [ ] `testRemoteFolderSidebarButtonRefreshWithSelectionRefreshesDocumentAndSidebar` - Verifies the routing helper returns document-and-sidebar refresh when `isFolderMode == false`, the refresh source is `sidebarButton`, and a file has been selected.
+- [ ] `testRemoteDocumentRefreshWithHiddenSidebarRefreshesDocumentOnly` - Verifies the routing helper returns document-only refresh for non-folder remote document windows when the refresh source is `commandRefresh` and the sidebar is hidden.
+- [ ] `testRemoteDocumentRefreshWithVisibleSidebarRefreshesDocumentAndSidebar` - Verifies the routing helper returns document-and-sidebar refresh for non-folder remote document windows when the refresh source is `commandRefresh` and the sidebar is visible.
 
 ### Unit Tests (`Tests/SSHConnectionTests.swift`)
 
