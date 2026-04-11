@@ -399,7 +399,12 @@ public actor SSHConnection {
         }
     }
 
-    public func send(type: String, payload: some Codable, timeout: TimeInterval = 10) async throws -> Data {
+    public func send(
+        type: String,
+        payload: some Codable,
+        timeout: TimeInterval = 10,
+        disconnectOnTimeout: Bool = true
+    ) async throws -> Data {
         #if canImport(os)
         sshLog.info("send() type=\(type)")
         #endif
@@ -458,6 +463,12 @@ public actor SSHConnection {
         registerPendingRequest(id: id)
 
         while Date() < deadline {
+            if Task.isCancelled {
+                pendingRequestIds.remove(id)
+                completedResponses.removeValue(forKey: id)
+                throw CancellationError()
+            }
+
             if let response = completedResponses.removeValue(forKey: id) {
                 #if canImport(os)
                 sshLog.info("send() id=\(id): got response")
@@ -479,7 +490,9 @@ public actor SSHConnection {
         #endif
         pendingRequestIds.remove(id)
         completedResponses.removeValue(forKey: id)
-        handleDisconnect()
+        if disconnectOnTimeout {
+            handleDisconnect()
+        }
         throw SSHConnectionError.operationTimeout(operation: type)
     }
 

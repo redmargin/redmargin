@@ -207,7 +207,9 @@ extension OpenRemoteSheet {
 
         Task {
             do {
-                let dirEntries = try await conn.listDirectory(path: path)
+                let dirEntries = try await withTimeout(seconds: 5) {
+                    try await conn.listDirectory(path: path)
+                }
                 await MainActor.run {
                     self.currentPath = path
                     self.pathInput = path
@@ -218,7 +220,11 @@ extension OpenRemoteSheet {
             } catch {
                 await MainActor.run {
                     self.isLoadingDirectory = false
-                    self.errorMessage = "Failed to load directory: \(error.localizedDescription)"
+                    if error is TimeoutError {
+                        self.errorMessage = "Directory load timed out. The connection may be stale; try again."
+                    } else {
+                        self.errorMessage = "Failed to load directory: \(error.localizedDescription)"
+                    }
                 }
             }
         }
@@ -288,6 +294,10 @@ extension OpenRemoteSheet {
 
 extension OpenRemoteSheet {
     func formatError(_ error: Error) -> String {
+        if error is TimeoutError {
+            return "Connection stalled while loading the remote directory. Try again."
+        }
+
         let message = error.localizedDescription
 
         if message.contains("Permission denied") || message.contains("publickey") {

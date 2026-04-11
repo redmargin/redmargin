@@ -110,14 +110,11 @@ extension AppDelegate {
         // Create remote file provider
         let fileProvider = RemoteFileProvider(connection: connection)
 
-        // Fast-fail check: ping with 3s timeout before the slower readFile.
-        // A freshly-connected daemon can still have a stuck peer that hangs
-        // the first readFile for the full 30s. Pinging first surfaces dead
-        // connections fast so the caller can retry.
-        await ensureConnectionReady(fileProvider: fileProvider)
-
         // Read content
-        let content = try await fileProvider.readFile(at: path)
+        let content = try await readRemoteDocumentContent(
+            fileProvider: fileProvider,
+            path: path
+        )
 
         // Create window on main thread
         await MainActor.run {
@@ -205,8 +202,10 @@ extension AppDelegate {
 
         // Create file provider and read content
         let fileProvider = RemoteFileProvider(connection: connection)
-        await ensureConnectionReady(fileProvider: fileProvider)
-        let content = try await fileProvider.readFile(at: path)
+        let content = try await readRemoteDocumentContent(
+            fileProvider: fileProvider,
+            path: path
+        )
 
         // Create window on main thread
         await MainActor.run {
@@ -221,21 +220,6 @@ extension AppDelegate {
             remoteDocumentWindows[location] = window
             window.delegate = self
             window.makeKeyAndOrderFront(nil)
-        }
-    }
-
-    /// Pings the remote with a short timeout; if unresponsive, forces a
-    /// reconnect and waits up to 15s for it to come back. Bounds the
-    /// worst-case first-read latency so a single hung peer can't stall
-    /// document opening for a full 30s RPC timeout.
-    func ensureConnectionReady(fileProvider: RemoteFileProvider) async {
-        let alive = await fileProvider.ping(timeout: 3)
-        if alive { return }
-        await fileProvider.forceReconnect()
-        let deadline = Date().addingTimeInterval(15)
-        while Date() < deadline {
-            if await fileProvider.getConnectionState() == .connected { return }
-            try? await Task.sleep(nanoseconds: 500_000_000)
         }
     }
 

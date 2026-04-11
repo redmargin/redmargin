@@ -38,6 +38,7 @@ class RemoteDocumentState {
     @ObservationIgnored private var stateObserverTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
     @ObservationIgnored private var reconnectObserver: Any?
+    @ObservationIgnored private var refreshTask: Task<Void, Never>?
 
     /// Last content that was confirmed on the server (read or successfully written)
     @ObservationIgnored private var lastKnownServerContent: String
@@ -83,6 +84,9 @@ class RemoteDocumentState {
         let provider = fileProvider
         let fToken = fileWatchToken
         let gToken = gitWatchToken
+        refreshTask?.cancel()
+        reloadTask?.cancel()
+        gitChangeTask?.cancel()
         stateObserverTask?.cancel()
         Task {
             if let token = fToken { await provider.unwatch(token) }
@@ -114,8 +118,17 @@ class RemoteDocumentState {
         // not here. The AsyncStream is used only for UI state (overlay).
     }
 
+    @discardableResult
+    private func applyServerContent(_ newContent: String, for expectedPath: String) -> Bool {
+        guard location.path == expectedPath else { return false }
+        content = newContent
+        lastKnownServerContent = newContent
+        return true
+    }
+
     private func handleReconnection() {
         refreshLog.info("handleReconnection() called")
+        let path = location.path
 
         // Clear the "Connecting" overlay immediately
         connectionState = .connected
@@ -133,9 +146,14 @@ class RemoteDocumentState {
             }
 
             do {
-                let serverContent = try await fileProvider.readFile(at: location.path)
+                let serverContent = try await readRemoteDocumentContent(
+                    fileProvider: fileProvider,
+                    path: path,
+                    pingFirst: false
+                )
 
                 await MainActor.run {
+                    guard self.location.path == path else { return }
                     let serverChanged = serverContent != lastKnownServerContent
 
                     if let pending = pendingToggle {
@@ -211,12 +229,16 @@ class RemoteDocumentState {
 
     /// Called when user chooses "Reload from Server" in conflict dialog
     func resolveConflictReloadFromServer() {
+        let path = location.path
         Task {
             do {
-                let serverContent = try await fileProvider.readFile(at: location.path)
+                let serverContent = try await readRemoteDocumentContent(
+                    fileProvider: fileProvider,
+                    path: path,
+                    pingFirst: true
+                )
                 await MainActor.run {
-                    content = serverContent
-                    lastKnownServerContent = serverContent
+                    guard self.applyServerContent(serverContent, for: path) else { return }
                     pendingToggle = nil
                     showConflictDialog = false
                     print("[RemoteDocumentState] Conflict resolved: reloaded from server")
@@ -257,22 +279,27 @@ class RemoteDocumentState {
             // Debounce: wait for events to settle (atomic writes, editor saves)
             try? await Task.sleep(nanoseconds: 300_000_000)
             guard !Task.isCancelled else { return }
+            let path = self.location.path
 
             refreshLog.info("reloadContent reading \(self.location.displayString)")
             do {
-                let newContent = try await fileProvider.readFile(at: location.path)
+                let newContent = try await readRemoteDocumentContent(
+                    fileProvider: fileProvider,
+                    path: path,
+                    pingFirst: false
+                )
 
                 // Check if cancelled (a write started while we were reading)
                 guard !Task.isCancelled else { return }
 
                 await MainActor.run {
+                    guard self.location.path == path else { return }
                     guard newContent != content else {
                         refreshLog.info("reloadContent: content unchanged")
                         return
                     }
                     refreshLog.info("reloadContent: content changed (\(newContent.count) chars)")
-                    content = newContent
-                    lastKnownServerContent = newContent
+                    guard self.applyServerContent(newContent, for: path) else { return }
                     Task {
                         await detectGitChanges()
                     }
@@ -286,40 +313,32 @@ class RemoteDocumentState {
     }
 
     func refresh() {
+        refreshTask?.cancel()
         isRefreshing = true
         refreshLog.info("refresh() starting for \(self.location.path)")
-        Task {
+        let path = location.path
+
+        refreshToken += 1
+        refreshTask = Task {
             var succeeded = false
 
-            // Always ping first with a short timeout. A connection can be hung
-            // even when it wasn't "idle" — e.g., the daemon died mid-session.
-            // This bounds worst-case refresh at ~3s ping + reconnect instead
-            // of ~30s for a readFile timeout.
-            let alive = await pingConnection()
-            if !alive {
-                refreshLog.info("refresh() ping failed, forcing reconnect")
-                await fileProvider.forceReconnect()
-                succeeded = await waitForReconnectAndRetryRead()
+            do {
+                let newContent = try await readRemoteDocumentContent(
+                    fileProvider: fileProvider,
+                    path: path,
+                    pingFirst: true
+                )
+                guard !Task.isCancelled else { return }
+                let applied = await MainActor.run { self.applyServerContent(newContent, for: path) }
+                guard applied else { return }
+                succeeded = true
+                refreshLog.info("refresh() read succeeded")
+            } catch {
+                guard !Task.isCancelled else { return }
+                refreshLog.error("refresh() read failed: \(error)")
             }
 
-            // Normal read (skipped if we already reconnected above)
-            if !succeeded {
-                refreshToken += 1
-                do {
-                    let newContent = try await fileProvider.readFile(at: location.path)
-                    await MainActor.run {
-                        content = newContent
-                        lastKnownServerContent = newContent
-                    }
-                    succeeded = true
-                    refreshLog.info("refresh() read succeeded")
-                } catch {
-                    refreshLog.error("refresh() read failed: \(error), forcing reconnect")
-                    await fileProvider.forceReconnect()
-                    succeeded = await waitForReconnectAndRetryRead()
-                }
-            }
-
+            guard !Task.isCancelled else { return }
             if succeeded {
                 // Sync connectionState from the actual connection — the AsyncStream
                 // observer can lag behind, leaving the "Connecting" overlay stuck.
@@ -336,6 +355,7 @@ class RemoteDocumentState {
             }
 
             try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
             refreshLog.info("refresh() done, clearing spinner (succeeded=\(succeeded))")
             await MainActor.run {
                 self.isRefreshing = false
@@ -343,56 +363,20 @@ class RemoteDocumentState {
         }
     }
 
-    /// Waits up to 20s for the connection to come back, then retries the read once.
-    private func waitForReconnectAndRetryRead() async -> Bool {
-        refreshLog.info("waitForReconnect: waiting for connection...")
-        let deadline = Date().addingTimeInterval(20)
-        while Date() < deadline {
-            let connState = await fileProvider.getConnectionState()
-            if connState == .connected {
-                refreshLog.info("waitForReconnect: connected, retrying read")
-                break
-            }
-            try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
-        }
-
-        do {
-            let newContent = try await fileProvider.readFile(at: location.path)
-            await MainActor.run {
-                content = newContent
-                lastKnownServerContent = newContent
-            }
-            refreshLog.info("waitForReconnect: retry succeeded")
-            return true
-        } catch {
-            refreshLog.error("waitForReconnect: retry failed: \(error)")
-            return false
-        }
-    }
-
-    /// Quick ping to verify the connection is responsive (no side effects if it fails)
-    private func pingConnection() async -> Bool {
-        await fileProvider.ping(timeout: 3)
-    }
-
     /// Loads a different file in the same window
     func loadFile(at path: String) async throws {
-        // Always ping first (3s). A hung connection can look "not idle" if
-        // other code was recently sending, but will still hang the read.
-        // This bounds worst-case load at ~3s + reconnect instead of ~30s.
-        let alive = await pingConnection()
-        if !alive {
-            refreshLog.info("loadFile() ping failed, forcing reconnect")
-            await fileProvider.forceReconnect()
-            let deadline = Date().addingTimeInterval(15)
-            while Date() < deadline {
-                let state = await fileProvider.getConnectionState()
-                if state == .connected { break }
-                try await Task.sleep(nanoseconds: 500_000_000)
-            }
-        }
+        refreshTask?.cancel()
+        refreshTask = nil
+        reloadTask?.cancel()
+        reloadTask = nil
+        isRefreshing = false
 
-        let newContent = try await fileProvider.readFile(at: path)
+        let newContent = try await readRemoteDocumentContent(
+            fileProvider: fileProvider,
+            path: path,
+            pingFirst: true,
+            reconnectWaitTimeout: RemoteOperationSupport.reconnectWaitTimeout
+        )
 
         // Update location and content
         location = RemoteLocation(host: location.host, path: path)

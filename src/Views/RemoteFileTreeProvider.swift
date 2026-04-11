@@ -138,7 +138,10 @@ public class RemoteFileTreeProvider: ObservableObject {
 
         // Try to find Git repo root first
         do {
-            if let repoRoot = try await fileProvider.detectGitRepo(for: currentFilePath) {
+            if let repoRoot = try await detectGitRepoInteractively(
+                for: currentFilePath,
+                pingFirst: true
+            ) {
                 guard isCurrentLoad(generation) else { return }
                 rootDirectory = repoRoot
                 await loadRootLevel(from: repoRoot, loadGeneration: generation)
@@ -278,7 +281,7 @@ public class RemoteFileTreeProvider: ObservableObject {
     /// Performs the actual refresh work: re-lists root and visible expanded folders.
     /// Returns the merged node array, or nil on failure.
     private func performRefresh(root: String, generation: Int) async -> [FileTreeNode]? {
-        guard let entries = try? await fileProvider.listDirectory(at: root) else { return nil }
+        guard let entries = try? await listDirectoryInteractively(at: root, pingFirst: false) else { return nil }
         guard !Task.isCancelled, refreshGeneration == generation else { return nil }
 
         let newNodes = buildNodes(from: entries, parentPath: root, depth: 0)
@@ -297,7 +300,7 @@ public class RemoteFileTreeProvider: ObservableObject {
     /// Load root level via a single listDirectory call
     private func loadRootLevel(from directory: String, loadGeneration: Int) async {
         do {
-            let entries = try await fileProvider.listDirectory(at: directory)
+            let entries = try await listDirectoryInteractively(at: directory, pingFirst: true)
             guard isCurrentLoad(loadGeneration, rootPath: directory) else { return }
             let nodes = buildNodes(from: entries, parentPath: directory, depth: 0)
             for node in nodes {
@@ -318,7 +321,7 @@ public class RemoteFileTreeProvider: ObservableObject {
         let parentDepth = node.depth
 
         do {
-            let entries = try await fileProvider.listDirectory(at: path)
+            let entries = try await listDirectoryInteractively(at: path, pingFirst: true)
             let children = buildNodes(from: entries, parentPath: path, depth: parentDepth + 1)
             for child in children {
                 wireUpNode(child)
@@ -438,7 +441,7 @@ public class RemoteFileTreeProvider: ObservableObject {
                 if existingNode.isDirectory && existingNode.childrenLoaded {
                     let path = existingNode.url.path
                     let childDepth = depth + 1
-                    if let entries = try? await fileProvider.listDirectory(at: path) {
+                    if let entries = try? await listDirectoryInteractively(at: path, pingFirst: false) {
                         guard !Task.isCancelled, self.refreshGeneration == refreshGeneration else {
                             return existing
                         }
@@ -465,6 +468,28 @@ public class RemoteFileTreeProvider: ObservableObject {
             }
         }
         return result
+    }
+
+    private func detectGitRepoInteractively(for path: String, pingFirst: Bool) async throws -> String? {
+        if let remoteFileProvider = fileProvider as? RemoteFileProvider {
+            return try await detectRemoteGitRepo(
+                fileProvider: remoteFileProvider,
+                path: path,
+                pingFirst: pingFirst
+            )
+        }
+        return try await fileProvider.detectGitRepo(for: path)
+    }
+
+    private func listDirectoryInteractively(at path: String, pingFirst: Bool) async throws -> [DirectoryEntry] {
+        if let remoteFileProvider = fileProvider as? RemoteFileProvider {
+            return try await listRemoteDirectoryEntries(
+                fileProvider: remoteFileProvider,
+                path: path,
+                pingFirst: pingFirst
+            )
+        }
+        return try await fileProvider.listDirectory(at: path)
     }
 
     private func handleFolderExpansionChange(path: String, expanded: Bool) {

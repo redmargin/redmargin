@@ -14,7 +14,7 @@ func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async throws 
     }
 }
 
-private struct TimeoutError: Error {}
+struct TimeoutError: Error {}
 
 struct OpenRemoteSheet: View {
     // Step 1: Server selection

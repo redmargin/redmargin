@@ -5,6 +5,96 @@ import XCTest
 
 final class RemoteIntegrationTests: XCTestCase {
 
+    func testSlowRemoteReadRecoversAfterProbeTimeout() async throws {
+        let connection = SSHConnection(host: "devtest")
+        try await connection.connect()
+
+        let provider = RemoteFileProvider(connection: connection)
+        let fifoPath = "/tmp/redmargin-slow-read.fifo"
+
+        defer {
+            Task {
+                _ = try? await ProcessRunner.run(
+                    executable: "ssh",
+                    arguments: ["devtest", "rm -f \(fifoPath)"],
+                    timeout: 15
+                )
+                await connection.disconnect()
+            }
+        }
+
+        try await prepareSlowRemoteFIFO(
+            path: fifoPath,
+            writes: [
+                (delay: 6, content: "# Slow\n"),
+                (delay: 12, content: "# Slow\n")
+            ]
+        )
+
+        let content = try await readRemoteDocumentContent(
+            fileProvider: provider,
+            path: fifoPath,
+            pingFirst: false,
+            probeTimeout: 5,
+            fullTimeout: 20,
+            reconnectWaitTimeout: 15
+        )
+
+        XCTAssertEqual(content, "# Slow\n")
+    }
+
+    @MainActor
+    func testLoadFileDoesNotApplyCancelledRefreshResult() async throws {
+        let connection = SSHConnection(host: "devtest")
+        try await connection.connect()
+
+        let provider = RemoteFileProvider(connection: connection)
+        let slowPath = "/tmp/redmargin-refresh-race.fifo"
+        let fastPath = "/tmp/redmargin-refresh-race-fast.md"
+
+        defer {
+            Task {
+                _ = try? await ProcessRunner.run(
+                    executable: "ssh",
+                    arguments: ["devtest", "rm -f \(slowPath) \(fastPath)"],
+                    timeout: 15
+                )
+                await connection.disconnect()
+            }
+        }
+
+        try await prepareSlowRemoteFIFO(
+            path: slowPath,
+            writes: [
+                (delay: 6, content: "# Slow\n"),
+                (delay: 12, content: "# Slow\n")
+            ]
+        )
+        _ = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: ["devtest", "printf '# Fast\\n' > \(fastPath)"],
+            timeout: 15
+        )
+
+        let state = RemoteDocumentState(
+            content: "# Initial\n",
+            location: RemoteLocation(host: "devtest", path: slowPath),
+            fileProvider: provider
+        )
+
+        state.refresh()
+        try await Task.sleep(nanoseconds: 250_000_000)
+        try await state.loadFile(at: fastPath)
+
+        XCTAssertEqual(state.location.path, fastPath)
+        XCTAssertEqual(state.content, "# Fast\n")
+
+        try await Task.sleep(nanoseconds: 8_000_000_000)
+
+        XCTAssertEqual(state.location.path, fastPath)
+        XCTAssertEqual(state.content, "# Fast\n")
+    }
+
     func testServerDeployer() async throws {
         let deployer = ServerDeployer()
         print("[Test] Testing deployment to devtest...")
@@ -237,5 +327,23 @@ final class RemoteIntegrationTests: XCTestCase {
 
         await connection.disconnect()
         print("[Test] ReadAsset test passed!")
+    }
+
+    private func prepareSlowRemoteFIFO(
+        path: String,
+        writes: [(delay: Int, content: String)]
+    ) async throws {
+        let writerCommands = writes.map { write in
+            let content = write.content
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "'\\''")
+            return "(sleep \(write.delay); printf '\(content)' > \(path)) &"
+        }.joined(separator: " ")
+
+        _ = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: ["devtest", "rm -f \(path) && mkfifo \(path) && \(writerCommands)"],
+            timeout: 15
+        )
     }
 }

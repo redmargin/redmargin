@@ -89,8 +89,21 @@ public actor RemoteFileProvider: FileProvider {
     }
 
     public func readFile(at path: String, timeout: TimeInterval) async throws -> String {
+        try await readFile(at: path, timeout: timeout, disconnectOnTimeout: true)
+    }
+
+    public func readFile(
+        at path: String,
+        timeout: TimeInterval,
+        disconnectOnTimeout: Bool
+    ) async throws -> String {
         let payload = ReadFilePayload(path: path)
-        let data = try await connection.send(type: RPCMessageType.readFile.rawValue, payload: payload, timeout: timeout)
+        let data = try await connection.send(
+            type: RPCMessageType.readFile.rawValue,
+            payload: payload,
+            timeout: timeout,
+            disconnectOnTimeout: disconnectOnTimeout
+        )
         let response = try JSONDecoder().decode(RPCMessage<ReadFileResponsePayload>.self, from: data)
 
         if let error = response.payload.error {
@@ -162,12 +175,28 @@ public actor RemoteFileProvider: FileProvider {
     }
 
     public func detectGitRepo(for path: String) async throws -> String? {
+        try await detectGitRepo(for: path, timeout: 20)
+    }
+
+    public func detectGitRepo(for path: String, timeout: TimeInterval) async throws -> String? {
+        try await detectGitRepo(for: path, timeout: timeout, disconnectOnTimeout: true)
+    }
+
+    public func detectGitRepo(
+        for path: String,
+        timeout: TimeInterval,
+        disconnectOnTimeout: Bool
+    ) async throws -> String? {
         if let cached = gitRepoCache[path] {
             return cached
         }
         let payload = GitDetectRepoPayload(path: path)
         let data = try await connection.send(
-            type: RPCMessageType.gitDetectRepo.rawValue, payload: payload, timeout: 20)
+            type: RPCMessageType.gitDetectRepo.rawValue,
+            payload: payload,
+            timeout: timeout,
+            disconnectOnTimeout: disconnectOnTimeout
+        )
         let response = try JSONDecoder().decode(
             RPCMessage<GitDetectRepoResponsePayload>.self, from: data)
         gitRepoCache[path] = response.payload.repoRoot
@@ -188,8 +217,25 @@ public actor RemoteFileProvider: FileProvider {
     }
 
     public func listDirectory(at path: String) async throws -> [DirectoryEntry] {
+        try await listDirectory(at: path, timeout: 30)
+    }
+
+    public func listDirectory(at path: String, timeout: TimeInterval) async throws -> [DirectoryEntry] {
+        try await listDirectory(at: path, timeout: timeout, disconnectOnTimeout: true)
+    }
+
+    public func listDirectory(
+        at path: String,
+        timeout: TimeInterval,
+        disconnectOnTimeout: Bool
+    ) async throws -> [DirectoryEntry] {
         let payload = ListDirectoryPayload(path: path)
-        let data = try await connection.send(type: RPCMessageType.listDirectory.rawValue, payload: payload, timeout: 30)
+        let data = try await connection.send(
+            type: RPCMessageType.listDirectory.rawValue,
+            payload: payload,
+            timeout: timeout,
+            disconnectOnTimeout: disconnectOnTimeout
+        )
         let response = try JSONDecoder().decode(RPCMessage<ListDirectoryResponsePayload>.self, from: data)
 
         if let error = response.payload.error {
