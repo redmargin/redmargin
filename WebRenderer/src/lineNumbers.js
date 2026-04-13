@@ -45,17 +45,6 @@
         }
     }
 
-    function collectListLines(el, startLine, gutterTop) {
-        const items = el.querySelectorAll(':scope > li');
-        let sourceLine = startLine;
-
-        items.forEach(function(item) {
-            const itemRect = item.getBoundingClientRect();
-            recordLine(sourceLine, itemRect.top - gutterTop);
-            sourceLine += 1;
-        });
-    }
-
     function fillGaps() {
         // Get all recorded line numbers sorted
         const lines = Object.keys(linePositions).map(Number).sort(function(a, b) {
@@ -132,8 +121,15 @@
                 collectTableLines(el, startLine, gutterRect.top);
             } else if (tagName === 'pre' || isMermaidBlock) {
                 collectCodeBlockLines(el, startLine, endLine, gutterRect.top);
+            } else if (tagName === 'tr') {
+                // Tables are handled as a unit so the separator line can be
+                // represented and row padding offsets stay intact.
+                return;
             } else if (tagName === 'ul' || tagName === 'ol') {
-                collectListLines(el, startLine, gutterRect.top);
+                // Lists already expose source lines on their <li> children.
+                // Treating the container as a line source invents bogus
+                // sequential numbers and can stack two labels at one Y offset.
+                return;
             } else {
                 const rect = el.getBoundingClientRect();
                 recordLine(startLine, rect.top - gutterRect.top);

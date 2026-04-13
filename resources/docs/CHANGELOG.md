@@ -15,6 +15,7 @@
 ### Bug Fixes
 
 - Print preview now forces Mermaid blocks onto the light print palette even when printing from dark mode
+- Line numbers and git gutter now prefer the most specific source-mapped elements, preventing duplicate list numbers and oversized list/table change markers
 
 ---
 

@@ -210,6 +210,67 @@ A native macOS Markdown viewer with live rendering.
         );
     });
 
+    await test('testSourcePosMapPrefersListItemsOverListContainer', async () => {
+        const harness = createAppHarness({ disableMermaid: true });
+
+        harness.window.App.render({
+            markdown: '- one\n- two\n- three',
+            options: { theme: 'light', basePath: '' }
+        });
+        await flushPromises();
+        await flushPromises();
+
+        const sourcePosMap = new harness.window.SourcePosMap();
+        sourcePosMap.build();
+        const matches = sourcePosMap.getElementsForLineRange(2, 2);
+
+        assertTrue(matches.some(entry => entry.element.tagName === 'LI'),
+            'Expected the matching list item to be returned');
+        assertTrue(matches.every(entry => entry.element.tagName !== 'UL'),
+            'List container should not shadow the specific list item');
+    });
+
+    await test('testSourcePosMapPrefersTableRowsOverTableForRowLines', async () => {
+        const harness = createAppHarness({ disableMermaid: true });
+
+        harness.window.App.render({
+            markdown: '| A | B |\n| - | - |\n| 1 | 2 |',
+            options: { theme: 'light', basePath: '' }
+        });
+        await flushPromises();
+        await flushPromises();
+
+        const sourcePosMap = new harness.window.SourcePosMap();
+        sourcePosMap.build();
+        const rowMatches = sourcePosMap.getElementsForLineRange(1, 1);
+        const separatorMatches = sourcePosMap.getElementsForLineRange(2, 2);
+
+        assertTrue(rowMatches.some(entry => entry.element.tagName === 'TR'),
+            'Expected table row lines to map to their row element');
+        assertTrue(rowMatches.every(entry => entry.element.tagName !== 'TABLE'),
+            'Table container should not shadow a specific row line');
+        assertTrue(separatorMatches.length === 1 && separatorMatches[0].element.tagName === 'TABLE',
+            'Separator lines should fall back to the table container');
+    });
+
+    await test('testDeletionAnchorPrefersSpecificElementAtSharedStartLine', async () => {
+        const harness = createAppHarness({ disableMermaid: true });
+
+        harness.window.App.render({
+            markdown: '- one\n- two',
+            options: { theme: 'light', basePath: '' }
+        });
+        await flushPromises();
+        await flushPromises();
+
+        const sourcePosMap = new harness.window.SourcePosMap();
+        sourcePosMap.build();
+        const match = sourcePosMap.getElementAtOrAfterLine(1);
+
+        assertEqual(match.element.tagName, 'LI',
+            'Deletion anchors should prefer the specific list item over the list container');
+    });
+
     await test('testFrontMatterOffsetAppliesToMermaidSourcepos', async () => {
         const harness = createAppHarness({ disableMermaid: true });
 

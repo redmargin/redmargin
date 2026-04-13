@@ -35,6 +35,50 @@
         return aStart <= bEnd && bStart <= aEnd;
     }
 
+    function getDepth(element) {
+        var depth = 0;
+        var current = element;
+
+        while (current && current.parentElement) {
+            depth += 1;
+            current = current.parentElement;
+        }
+
+        return depth;
+    }
+
+    function isMoreSpecific(candidate, currentBest) {
+        if (!currentBest) return true;
+
+        var candidateSpan = candidate.end - candidate.start;
+        var bestSpan = currentBest.end - currentBest.start;
+        if (candidateSpan !== bestSpan) {
+            return candidateSpan < bestSpan;
+        }
+
+        if (candidate.depth !== currentBest.depth) {
+            return candidate.depth > currentBest.depth;
+        }
+
+        if (candidate.start !== currentBest.start) {
+            return candidate.start > currentBest.start;
+        }
+
+        return candidate.end < currentBest.end;
+    }
+
+    function pushUnique(results, entry) {
+        if (!entry) return;
+
+        for (var i = 0; i < results.length; i++) {
+            if (results[i] === entry) {
+                return;
+            }
+        }
+
+        results.push(entry);
+    }
+
     /**
      * SourcePosMap class
      */
@@ -62,7 +106,8 @@
                 this.entries.push({
                     element: el,
                     start: range.start,
-                    end: range.end
+                    end: range.end,
+                    depth: getDepth(el)
                 });
             }
         }, this);
@@ -82,15 +127,22 @@
     SourcePosMap.prototype.getElementsForLineRange = function(start, end) {
         var results = [];
 
-        for (var i = 0; i < this.entries.length; i++) {
-            var entry = this.entries[i];
+        for (var line = start; line <= end; line++) {
+            var best = null;
 
-            // Early exit: if entry starts after our range ends, no more matches
-            if (entry.start > end) break;
+            for (var i = 0; i < this.entries.length; i++) {
+                var entry = this.entries[i];
 
-            if (rangesOverlap(entry.start, entry.end, start, end)) {
-                results.push(entry);
+                // Early exit: if entry starts after the current line, no more matches
+                if (entry.start > line) break;
+
+                if (rangesOverlap(entry.start, entry.end, line, line) &&
+                    isMoreSpecific(entry, best)) {
+                    best = entry;
+                }
             }
+
+            pushUnique(results, best);
         }
 
         return results;
@@ -103,16 +155,53 @@
      * @returns {{element: Element, start: number, end: number}|null}
      */
     SourcePosMap.prototype.getElementAtOrAfterLine = function(line) {
-        // Find first element that starts at or after the line
+        var candidates = [];
+        var earliestStart = null;
+
         for (var i = 0; i < this.entries.length; i++) {
-            if (this.entries[i].start >= line) {
-                return this.entries[i];
+            var entry = this.entries[i];
+            if (entry.start < line) {
+                continue;
+            }
+
+            if (earliestStart === null || entry.start < earliestStart) {
+                earliestStart = entry.start;
+                candidates = [entry];
+            } else if (entry.start === earliestStart) {
+                candidates.push(entry);
             }
         }
 
-        // If no element starts at or after, return the last element
+        if (candidates.length > 0) {
+            var best = null;
+            for (var j = 0; j < candidates.length; j++) {
+                if (isMoreSpecific(candidates[j], best)) {
+                    best = candidates[j];
+                }
+            }
+            return best;
+        }
+
+        // If no element starts at or after, return the most specific last entry
         if (this.entries.length > 0) {
-            return this.entries[this.entries.length - 1];
+            var latestStart = this.entries[this.entries.length - 1].start;
+            var trailing = [];
+
+            for (var k = this.entries.length - 1; k >= 0; k--) {
+                if (this.entries[k].start !== latestStart) {
+                    break;
+                }
+                trailing.push(this.entries[k]);
+            }
+
+            var fallback = null;
+            for (var m = 0; m < trailing.length; m++) {
+                if (isMoreSpecific(trailing[m], fallback)) {
+                    fallback = trailing[m];
+                }
+            }
+
+            return fallback;
         }
 
         return null;
