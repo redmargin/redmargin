@@ -3,17 +3,20 @@ import AppKit
 
 // MARK: - Number TextField with Arrow Key Support
 
+final class PreferencesNumberTextField: NSTextField {}
+
 struct NumberTextField: NSViewRepresentable {
     @Binding var value: Double
     var range: ClosedRange<Double>
     var step: Double
 
     func makeNSView(context: Context) -> NSTextField {
-        let textField = NSTextField()
+        let textField = PreferencesNumberTextField()
         textField.delegate = context.coordinator
         textField.alignment = .right
         textField.bezelStyle = .roundedBezel
         textField.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        textField.controlSize = .small
         textField.stringValue = "\(Int(value))"
         return textField
     }
@@ -43,9 +46,8 @@ struct NumberTextField: NSViewRepresentable {
 
         func controlTextDidEndEditing(_ obj: Notification) {
             isEditing = false
-            guard let textField = obj.object as? NSTextField,
-                  let newValue = Double(textField.stringValue) else { return }
-            parent.value = min(max(newValue, parent.range.lowerBound), parent.range.upperBound)
+            guard let textField = obj.object as? NSTextField else { return }
+            commitValue(from: textField)
         }
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -55,6 +57,16 @@ struct NumberTextField: NSViewRepresentable {
             } else if commandSelector == #selector(NSResponder.moveDown(_:)) {
                 adjustValue(by: -parent.step)
                 return true
+            } else if commandSelector == #selector(NSResponder.insertTab(_:)) {
+                commitValue(from: control)
+                isEditing = false
+                moveFocus(from: control, forward: true)
+                return true
+            } else if commandSelector == #selector(NSResponder.insertBacktab(_:)) {
+                commitValue(from: control)
+                isEditing = false
+                moveFocus(from: control, forward: false)
+                return true
             }
             return false
         }
@@ -62,6 +74,57 @@ struct NumberTextField: NSViewRepresentable {
         private func adjustValue(by delta: Double) {
             let newValue = min(max(parent.value + delta, parent.range.lowerBound), parent.range.upperBound)
             parent.value = newValue
+        }
+
+        private func commitValue(from control: NSControl) {
+            guard let textField = control as? NSTextField,
+                  let newValue = Double(textField.stringValue) else { return }
+            let clampedValue = min(max(newValue, parent.range.lowerBound), parent.range.upperBound)
+            parent.value = clampedValue
+            textField.stringValue = "\(Int(clampedValue))"
+        }
+
+        private func moveFocus(from control: NSControl, forward: Bool) {
+            guard let window = control.window,
+                  let contentView = window.contentView else {
+                return
+            }
+
+            let fields = numberFields(in: contentView)
+                .filter { !$0.isHidden && $0.isEnabled }
+                .sorted(by: visualOrder)
+            guard let currentIndex = fields.firstIndex(where: { $0 === control }) else {
+                return
+            }
+
+            let nextIndex: Int
+            if forward {
+                nextIndex = fields.index(after: currentIndex) == fields.endIndex ? fields.startIndex : fields.index(after: currentIndex)
+            } else {
+                nextIndex = currentIndex == fields.startIndex ? fields.index(before: fields.endIndex) : fields.index(before: currentIndex)
+            }
+
+            window.makeFirstResponder(fields[nextIndex])
+        }
+
+        private func numberFields(in view: NSView) -> [PreferencesNumberTextField] {
+            var fields = view.subviews.compactMap { $0 as? PreferencesNumberTextField }
+            for subview in view.subviews {
+                fields.append(contentsOf: numberFields(in: subview))
+            }
+            return fields
+        }
+
+        private func visualOrder(_ lhs: PreferencesNumberTextField, _ rhs: PreferencesNumberTextField) -> Bool {
+            let lhsFrame = lhs.convert(lhs.bounds, to: nil)
+            let rhsFrame = rhs.convert(rhs.bounds, to: nil)
+            let rowTolerance: CGFloat = 8
+
+            if abs(lhsFrame.midY - rhsFrame.midY) > rowTolerance {
+                return lhsFrame.midY > rhsFrame.midY
+            }
+
+            return lhsFrame.minX < rhsFrame.minX
         }
     }
 }
@@ -104,7 +167,7 @@ struct PreferencesView: View {
             detailView(for: selectedSection)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 450, minHeight: 300)
+        .frame(minWidth: 500, minHeight: 340)
     }
 
     @ViewBuilder
@@ -186,33 +249,54 @@ private struct PrintSettingsView: View {
     var body: some View {
         Form {
             Section {
-                marginRow("Top", value: $prefs.printTopMargin)
-                marginRow("Right", value: $prefs.printRightMargin)
-                marginRow("Bottom", value: $prefs.printBottomMargin)
-                marginRow("Left", value: $prefs.printLeftMargin)
-
-                HStack {
-                    Text("Base font size")
-                    Spacer()
-                    NumberTextField(value: $prefs.printFontSize, range: 10...24, step: 1)
-                        .frame(width: 50, height: 22)
-                    Text("px")
-                        .foregroundStyle(.secondary)
+                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 24, verticalSpacing: 10) {
+                    GridRow {
+                        marginField("Top", value: $prefs.printTopMargin)
+                        marginField("Right", value: $prefs.printRightMargin)
+                    }
+                    GridRow {
+                        marginField("Bottom", value: $prefs.printBottomMargin)
+                        marginField("Left", value: $prefs.printLeftMargin)
+                    }
                 }
+                .padding(.vertical, 2)
             } header: {
-                Text("Layout")
+                Text("Page Margins")
+            }
+
+            Section {
+                numberRow("Base font size", value: $prefs.printFontSize, range: 10...24, unit: "px")
+            } header: {
+                Text("Typography")
             }
         }
         .formStyle(.grouped)
     }
 
-    private func marginRow(_ title: String, value: Binding<Double>) -> some View {
-        HStack {
-            Text("\(title) margin")
-            Spacer()
+    private func marginField(_ title: String, value: Binding<Double>) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .frame(width: 48, alignment: .trailing)
+                .foregroundStyle(.secondary)
             NumberTextField(value: value, range: 0...144, step: 1)
-                .frame(width: 50, height: 22)
+                .frame(width: 56, height: 22)
             Text("pt")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func numberRow(
+        _ title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        unit: String
+    ) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            NumberTextField(value: value, range: range, step: 1)
+                .frame(width: 56, height: 22)
+            Text(unit)
                 .foregroundStyle(.secondary)
         }
     }

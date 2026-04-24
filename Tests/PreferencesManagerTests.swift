@@ -1,4 +1,6 @@
 import XCTest
+import AppKit
+import SwiftUI
 @testable import RedmarginLib
 
 final class PreferencesManagerTests: XCTestCase {
@@ -144,5 +146,26 @@ final class PreferencesManagerTests: XCTestCase {
         prefs.printRightMargin = 28
         prefs.printBottomMargin = 56
         prefs.printLeftMargin = 28
+    }
+
+    func testNumberTextFieldCommitsValueBeforeTabbing() {
+        var value = 10.0
+        let binding = Binding<Double>(
+            get: { value },
+            set: { value = $0 }
+        )
+        let numberField = NumberTextField(value: binding, range: 0...144, step: 1)
+        let coordinator = numberField.makeCoordinator()
+        let textField = NSTextField()
+        textField.stringValue = "42"
+
+        let handled = coordinator.control(
+            textField,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertTab(_:))
+        )
+
+        XCTAssertTrue(handled, "Tab should be handled by the number field")
+        XCTAssertEqual(value, 42, "Tabbing away should commit the edited value")
     }
 }
