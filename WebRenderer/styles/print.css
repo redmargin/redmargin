@@ -54,6 +54,7 @@
     html {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
+        font-size: var(--print-font-size, 15px);
         margin: 0;
         padding: 0;
         height: 100%;
@@ -67,6 +68,7 @@
         /* Margins handled via CSS padding to allow background color in margin area */
         margin: 0;
         padding: 0;
+        font-size: var(--print-font-size, 15px);
         box-sizing: border-box;
         min-height: 100%;
         overflow: visible;

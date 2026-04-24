@@ -11,8 +11,8 @@ Markdown viewer for macOS with Git change indicators, remote file access over SS
 - **Mermaid diagrams** — Fenced `mermaid` blocks render as diagrams, follow the active theme, and print/export with the preview.
 - **Interactive checkboxes** — Click to toggle, saves immediately (local and remote).
 - **Find in page** — Search with match count and navigation (Cmd+F).
-- **PDF export** — Export with theme, gutter, and line numbers preserved (Cmd+E). Saves to Downloads.
-- **Print support** — Configurable gutter and line number visibility (Cmd+P).
+- **PDF export** — Export with theme, gutter, line numbers, margins, and font size preserved (Cmd+E). Saves to Downloads.
+- **Print support** — Configurable gutter, line number visibility, margins, and font size (Cmd+P).
 - **Light/dark themes** — System, light, or dark (set in Preferences).
 - **Per-document settings** — Each file remembers view preferences, scroll position, and window size.
 - **Line numbers** — Optional display aligned with rendered content.

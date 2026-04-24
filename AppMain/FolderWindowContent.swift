@@ -307,7 +307,9 @@ struct FolderWindowContent: View {
 
         let printConfig = PrintConfiguration(
             includeGutter: showGutter,
-            includeLineNumbers: showLineNumbers
+            includeLineNumbers: showLineNumbers,
+            fontSize: prefs.printFontSize,
+            margins: prefs.printMargins
         )
 
         MarkdownWebView.preparePrint(webView: webView, config: printConfig) { [weak webView] in
@@ -317,10 +319,10 @@ struct FolderWindowContent: View {
 
             let printInfo = NSPrintInfo.shared
             printInfo.paperSize = NSSize(width: 595.28, height: 841.89)
-            printInfo.topMargin = 56
-            printInfo.bottomMargin = 56
-            printInfo.leftMargin = self.prefs.printMargin
-            printInfo.rightMargin = self.prefs.printMargin
+            printInfo.topMargin = printConfig.margins.top
+            printInfo.bottomMargin = printConfig.margins.bottom
+            printInfo.leftMargin = printConfig.margins.left
+            printInfo.rightMargin = printConfig.margins.right
 
             let printOperation = webView.printOperation(with: printInfo)
             if let state = self.documentState {
@@ -353,7 +355,8 @@ struct FolderWindowContent: View {
             webView: webView,
             filename: filename,
             theme: effectiveTheme,
-            printMargin: prefs.printMargin
+            printMargins: prefs.printMargins,
+            printFontSize: prefs.printFontSize
         ) { result in
             DispatchQueue.main.async {
                 self.isExporting = false

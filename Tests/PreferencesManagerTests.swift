@@ -8,7 +8,12 @@ final class PreferencesManagerTests: XCTestCase {
         "RedMargin.Preferences.ShowLineNumbers",
         "RedMargin.Preferences.ShowGitIndicators",
         "RedMargin.Preferences.AllowRemoteImages",
-        "RedMargin.Preferences.InlineCodeColor"
+        "RedMargin.Preferences.InlineCodeColor",
+        "RedMargin.Preferences.PrintTopMargin",
+        "RedMargin.Preferences.PrintRightMargin",
+        "RedMargin.Preferences.PrintBottomMargin",
+        "RedMargin.Preferences.PrintLeftMargin",
+        "RedMargin.Preferences.PrintFontSize"
     ]
 
     override func tearDown() {
@@ -104,5 +109,40 @@ final class PreferencesManagerTests: XCTestCase {
 
         // Reset
         prefs.showHiddenFiles = false
+    }
+
+    func testPrintFontSizePersists() {
+        let prefs = PreferencesManager.shared
+        prefs.printFontSize = 12
+
+        let saved = UserDefaults.standard.double(forKey: "RedMargin.Preferences.PrintFontSize")
+        XCTAssertEqual(saved, 12, "printFontSize should persist to UserDefaults")
+
+        // Reset
+        prefs.printFontSize = 15
+    }
+
+    func testPrintMarginsPersist() {
+        let prefs = PreferencesManager.shared
+        prefs.printTopMargin = 12
+        prefs.printRightMargin = 24
+        prefs.printBottomMargin = 36
+        prefs.printLeftMargin = 48
+
+        XCTAssertEqual(UserDefaults.standard.double(forKey: "RedMargin.Preferences.PrintTopMargin"), 12)
+        XCTAssertEqual(UserDefaults.standard.double(forKey: "RedMargin.Preferences.PrintRightMargin"), 24)
+        XCTAssertEqual(UserDefaults.standard.double(forKey: "RedMargin.Preferences.PrintBottomMargin"), 36)
+        XCTAssertEqual(UserDefaults.standard.double(forKey: "RedMargin.Preferences.PrintLeftMargin"), 48)
+        XCTAssertEqual(
+            prefs.printMargins,
+            PrintMargins(top: 12, right: 24, bottom: 36, left: 48),
+            "printMargins should combine all persisted margin fields"
+        )
+
+        // Reset
+        prefs.printTopMargin = 56
+        prefs.printRightMargin = 28
+        prefs.printBottomMargin = 56
+        prefs.printLeftMargin = 28
     }
 }

@@ -209,13 +209,23 @@ final class PrintTests: XCTestCase {
 
         XCTAssertTrue(config.includeGutter, "Default config should include gutter")
         XCTAssertFalse(config.includeLineNumbers, "Default config should not include line numbers")
+        XCTAssertEqual(config.fontSize, 15, "Default print font size should match the screen base size")
+        XCTAssertEqual(config.margins, .default, "Default config should preserve existing print/export margins")
     }
 
     func testPrintConfigurationCustomValues() {
-        let config = PrintConfiguration(includeGutter: false, includeLineNumbers: true)
+        let margins = PrintMargins(top: 24, right: 30, bottom: 36, left: 42)
+        let config = PrintConfiguration(
+            includeGutter: false,
+            includeLineNumbers: true,
+            fontSize: 12,
+            margins: margins
+        )
 
         XCTAssertFalse(config.includeGutter, "Custom config should not include gutter")
         XCTAssertTrue(config.includeLineNumbers, "Custom config should include line numbers")
+        XCTAssertEqual(config.fontSize, 12, "Custom config should store the print font size")
+        XCTAssertEqual(config.margins, margins, "Custom config should store all print margins")
     }
 
     // MARK: - WebView Print Class Tests
@@ -287,6 +297,27 @@ final class PrintTests: XCTestCase {
         wait(for: [checkExpectation], timeout: 5.0)
     }
 
+    func testPreparePrintSetsFontSizeVariable() {
+        loadRenderer()
+
+        let expectation = XCTestExpectation(description: "preparePrint completes")
+        let config = PrintConfiguration(includeGutter: true, includeLineNumbers: false, fontSize: 12)
+
+        MarkdownWebView.preparePrint(webView: webView, config: config) {
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 5.0)
+
+        let checkExpectation = XCTestExpectation(description: "Check font size variable")
+        webView.evaluateJavaScript("document.body.style.getPropertyValue('--print-font-size')") { result, _ in
+            XCTAssertEqual(result as? String, "12px", "Print font size should be applied as a CSS variable")
+            checkExpectation.fulfill()
+        }
+
+        wait(for: [checkExpectation], timeout: 5.0)
+    }
+
     func testRestoreFromPrintRemovesClasses() {
         loadRenderer()
 
@@ -315,10 +346,12 @@ final class PrintTests: XCTestCase {
         let script = """
             !document.body.classList.contains('print-light-theme') &&
             !document.body.classList.contains('print-hide-gutter') &&
-            !document.body.classList.contains('print-hide-line-numbers')
+            !document.body.classList.contains('print-hide-line-numbers') &&
+            document.documentElement.style.getPropertyValue('--print-font-size') === '' &&
+            document.body.style.getPropertyValue('--print-font-size') === ''
         """
         webView.evaluateJavaScript(script) { result, _ in
-            XCTAssertEqual(result as? Bool, true, "All print classes should be removed")
+            XCTAssertEqual(result as? Bool, true, "All print classes and style overrides should be removed")
             checkExpectation.fulfill()
         }
 

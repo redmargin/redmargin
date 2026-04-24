@@ -7,6 +7,7 @@
 
 - Mermaid fenced code blocks now render as diagrams in the preview, with copy-source buttons and source-mapped gutter/line-number support
 - Mermaid diagrams rerender for light/dark theme changes and are preserved in print preview and PDF export
+- Print and PDF export now share configurable top, right, bottom, and left margins plus a base font size in Preferences > Print & Export
 
 ### Security
 
@@ -15,6 +16,7 @@
 ### Bug Fixes
 
 - Print preview now forces Mermaid blocks onto the light print palette even when printing from dark mode
+- Preferences window can now be resized taller so every setting remains reachable
 - Line numbers and git gutter now prefer the most specific source-mapped elements, preventing duplicate list numbers and oversized list/table change markers
 
 ---

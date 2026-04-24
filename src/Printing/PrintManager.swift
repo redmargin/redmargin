@@ -17,10 +17,10 @@ public class PrintManager {
         printInfo.isVerticallyCentered = false
 
         // Set margins
-        printInfo.topMargin = 36
-        printInfo.bottomMargin = 36
-        printInfo.leftMargin = 36
-        printInfo.rightMargin = 36
+        printInfo.topMargin = config.margins.top
+        printInfo.bottomMargin = config.margins.bottom
+        printInfo.leftMargin = config.margins.left
+        printInfo.rightMargin = config.margins.right
 
         let printOperation = webView.printOperation(with: printInfo)
         printOperation.showsPrintPanel = true

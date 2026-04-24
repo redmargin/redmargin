@@ -15,7 +15,6 @@ public final class PreferencesWindowController: NSWindowController {
         )
         window.title = "Redmargin Settings"
         window.minSize = NSSize(width: 450, height: 300)
-        window.maxSize = NSSize(width: 700, height: 500)
 
         super.init(window: window)
 

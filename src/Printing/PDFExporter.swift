@@ -48,13 +48,15 @@ public final class PDFExporter {
     ///   - webView: The WKWebView containing rendered content
     ///   - filename: Base filename (without extension) for the PDF
     ///   - theme: Current theme ("light" or "dark") to preserve in PDF
-    ///   - printMargin: Left/right margin in points
+    ///   - printMargins: Page margins in points
+    ///   - printFontSize: Base font size in CSS pixels
     ///   - completion: Called with the result of the export
     public static func export(
         webView: WKWebView,
         filename: String,
         theme: String,
-        printMargin: CGFloat = 28,
+        printMargins: PrintMargins = .default,
+        printFontSize: Double = 15,
         completion: @escaping (ExportResult) -> Void
     ) {
         // Need a window for the print operation
@@ -85,6 +87,7 @@ public final class PDFExporter {
         // We set the document background just for the content area.
         let bgColor = theme == "dark" ? "#1a1a1a" : "white"
         let mermaidTheme = theme == "dark" ? "dark" : "default"
+        let fontSize = printFontSizeCSSValue(printFontSize)
 
         let classStatements = exportContext.cssClasses.map {
             "document.documentElement.classList.add('\($0)'); document.body.classList.add('\($0)');"
@@ -98,6 +101,8 @@ public final class PDFExporter {
             // Set backgrounds directly
             document.documentElement.style.background = '\(bgColor)';
             document.body.style.background = '\(bgColor)';
+            document.documentElement.style.setProperty('--print-font-size', '\(fontSize)');
+            document.body.style.setProperty('--print-font-size', '\(fontSize)');
         })();
         """
 
@@ -122,7 +127,7 @@ public final class PDFExporter {
                     webView: webView,
                     window: window,
                     context: exportContext,
-                    printMargin: printMargin,
+                    printMargins: printMargins,
                 )
             }
         }
@@ -132,16 +137,16 @@ public final class PDFExporter {
         webView: WKWebView,
         window: NSWindow,
         context: ExportRunContext,
-        printMargin: CGFloat
+        printMargins: PrintMargins
     ) {
         webView.setValue(true, forKey: "drawsBackground")
 
         let printInfo = NSPrintInfo()
         printInfo.paperSize = NSSize(width: 595.28, height: 841.89)  // A4
-        printInfo.topMargin = 56
-        printInfo.bottomMargin = 56
-        printInfo.leftMargin = printMargin
-        printInfo.rightMargin = printMargin
+        printInfo.topMargin = printMargins.top
+        printInfo.bottomMargin = printMargins.bottom
+        printInfo.leftMargin = printMargins.left
+        printInfo.rightMargin = printMargins.right
         printInfo.horizontalPagination = .fit
         printInfo.verticalPagination = .automatic
         printInfo.isHorizontallyCentered = false
@@ -206,6 +211,11 @@ public final class PDFExporter {
         return classes
     }
 
+    private static func printFontSizeCSSValue(_ fontSize: Double) -> String {
+        let clamped = min(max(fontSize, 10), 24)
+        return String(format: "%.0fpx", clamped)
+    }
+
 }
 
 private class PDFExportCompletionHandler: NSObject {
@@ -248,6 +258,8 @@ private class PDFExportCompletionHandler: NSObject {
             // Reset inline styles
             document.documentElement.style.background = '';
             document.body.style.background = '';
+            document.documentElement.style.removeProperty('--print-font-size');
+            document.body.style.removeProperty('--print-font-size');
         })();
         """
         webView.evaluateJavaScript(cleanupJS) { _, error in

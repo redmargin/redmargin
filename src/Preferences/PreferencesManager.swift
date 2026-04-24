@@ -39,6 +39,11 @@ public class PreferencesManager: ObservableObject {
     private let textWidthKey = "RedMargin.Preferences.TextWidth"
     private let contentWidthKey = "RedMargin.Preferences.ContentWidth"
     private let printMarginKey = "RedMargin.Preferences.PrintMargin"
+    private let printTopMarginKey = "RedMargin.Preferences.PrintTopMargin"
+    private let printRightMarginKey = "RedMargin.Preferences.PrintRightMargin"
+    private let printBottomMarginKey = "RedMargin.Preferences.PrintBottomMargin"
+    private let printLeftMarginKey = "RedMargin.Preferences.PrintLeftMargin"
+    private let printFontSizeKey = "RedMargin.Preferences.PrintFontSize"
     private let showHiddenFilesKey = "RedMargin.Preferences.ShowHiddenFiles"
 
     @Published public var theme: Theme {
@@ -73,8 +78,42 @@ public class PreferencesManager: ObservableObject {
         didSet { UserDefaults.standard.set(contentWidth.rawValue, forKey: contentWidthKey) }
     }
 
-    @Published public var printMargin: Double {
-        didSet { UserDefaults.standard.set(printMargin, forKey: printMarginKey) }
+    @Published public var printTopMargin: Double {
+        didSet { UserDefaults.standard.set(printTopMargin, forKey: printTopMarginKey) }
+    }
+
+    @Published public var printRightMargin: Double {
+        didSet { UserDefaults.standard.set(printRightMargin, forKey: printRightMarginKey) }
+    }
+
+    @Published public var printBottomMargin: Double {
+        didSet { UserDefaults.standard.set(printBottomMargin, forKey: printBottomMarginKey) }
+    }
+
+    @Published public var printLeftMargin: Double {
+        didSet { UserDefaults.standard.set(printLeftMargin, forKey: printLeftMarginKey) }
+    }
+
+    public var printMargin: Double {
+        get { printLeftMargin }
+        set {
+            printLeftMargin = newValue
+            printRightMargin = newValue
+            UserDefaults.standard.set(newValue, forKey: printMarginKey)
+        }
+    }
+
+    public var printMargins: PrintMargins {
+        PrintMargins(
+            top: printTopMargin,
+            right: printRightMargin,
+            bottom: printBottomMargin,
+            left: printLeftMargin
+        )
+    }
+
+    @Published public var printFontSize: Double {
+        didSet { UserDefaults.standard.set(printFontSize, forKey: printFontSizeKey) }
     }
 
     @Published public var showHiddenFiles: Bool {
@@ -101,7 +140,12 @@ public class PreferencesManager: ObservableObject {
             ?? ContentWidth.unrestricted.rawValue
         self.contentWidth = ContentWidth(rawValue: contentWidthString) ?? .unrestricted
 
-        self.printMargin = UserDefaults.standard.object(forKey: printMarginKey) as? Double ?? 28
+        let legacyPrintMargin = UserDefaults.standard.object(forKey: printMarginKey) as? Double ?? 28
+        self.printTopMargin = UserDefaults.standard.object(forKey: printTopMarginKey) as? Double ?? 56
+        self.printRightMargin = UserDefaults.standard.object(forKey: printRightMarginKey) as? Double ?? legacyPrintMargin
+        self.printBottomMargin = UserDefaults.standard.object(forKey: printBottomMarginKey) as? Double ?? 56
+        self.printLeftMargin = UserDefaults.standard.object(forKey: printLeftMarginKey) as? Double ?? legacyPrintMargin
+        self.printFontSize = UserDefaults.standard.object(forKey: printFontSizeKey) as? Double ?? 15
 
         self.showHiddenFiles = UserDefaults.standard.object(forKey: showHiddenFilesKey) as? Bool ?? false
     }

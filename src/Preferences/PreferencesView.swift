@@ -77,7 +77,7 @@ enum PreferencesSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: return "General"
-        case .print: return "Print"
+        case .print: return "Print & Export"
         }
     }
 
@@ -99,7 +99,7 @@ struct PreferencesView: View {
                     .tag(section)
             }
             .listStyle(.sidebar)
-            .frame(minWidth: 120)
+            .frame(minWidth: 150)
         } detail: {
             detailView(for: selectedSection)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -186,12 +186,17 @@ private struct PrintSettingsView: View {
     var body: some View {
         Form {
             Section {
+                marginRow("Top", value: $prefs.printTopMargin)
+                marginRow("Right", value: $prefs.printRightMargin)
+                marginRow("Bottom", value: $prefs.printBottomMargin)
+                marginRow("Left", value: $prefs.printLeftMargin)
+
                 HStack {
-                    Text("Margin")
+                    Text("Base font size")
                     Spacer()
-                    NumberTextField(value: $prefs.printMargin, range: 0...144, step: 1)
+                    NumberTextField(value: $prefs.printFontSize, range: 10...24, step: 1)
                         .frame(width: 50, height: 22)
-                    Text("pt")
+                    Text("px")
                         .foregroundStyle(.secondary)
                 }
             } header: {
@@ -199,5 +204,16 @@ private struct PrintSettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func marginRow(_ title: String, value: Binding<Double>) -> some View {
+        HStack {
+            Text("\(title) margin")
+            Spacer()
+            NumberTextField(value: value, range: 0...144, step: 1)
+                .frame(width: 50, height: 22)
+            Text("pt")
+                .foregroundStyle(.secondary)
+        }
     }
 }

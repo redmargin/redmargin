@@ -290,9 +290,12 @@ public struct MarkdownWebView: NSViewRepresentable {
             classes.append("print-hide-line-numbers")
         }
         let classString = classes.joined(separator: " ")
+        let fontSize = printFontSizeCSSValue(config.fontSize)
         let script = """
             document.documentElement.classList.add(...'\(classString)'.split(' '))
             document.body.classList.add(...'\(classString)'.split(' '))
+            document.documentElement.style.setProperty('--print-font-size', '\(fontSize)')
+            document.body.style.setProperty('--print-font-size', '\(fontSize)')
         """
         webView.evaluateJavaScript(script) { _, error in
             if let error = error {
@@ -325,6 +328,8 @@ public struct MarkdownWebView: NSViewRepresentable {
                 'print-hide-line-numbers'
             )
             document.body.classList.remove('print-light-theme', 'print-hide-gutter', 'print-hide-line-numbers')
+            document.documentElement.style.removeProperty('--print-font-size')
+            document.body.style.removeProperty('--print-font-size')
         """
         webView.evaluateJavaScript(script) { _, error in
             if let error = error {
@@ -349,6 +354,11 @@ public struct MarkdownWebView: NSViewRepresentable {
                 }
             }
         }
+    }
+
+    private static func printFontSizeCSSValue(_ fontSize: Double) -> String {
+        let clamped = min(max(fontSize, 10), 24)
+        return String(format: "%.0fpx", clamped)
     }
 
     public static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
