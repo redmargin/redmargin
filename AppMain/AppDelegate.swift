@@ -6,6 +6,35 @@ import RedmarginCore
 
 // Notification.Name and URL extensions are in AppDelegateExtensions.swift
 
+struct RecentFolderItem: Codable, Hashable {
+    enum Kind: String, Codable {
+        case local
+        case remote
+    }
+
+    let kind: Kind
+    let path: String
+    let host: String?
+
+    static func local(_ url: URL) -> RecentFolderItem {
+        RecentFolderItem(kind: .local, path: url.standardizedFileURL.path, host: nil)
+    }
+
+    static func remote(_ location: RemoteLocation) -> RecentFolderItem {
+        RecentFolderItem(kind: .remote, path: location.path, host: location.host)
+    }
+
+    var localURL: URL? {
+        guard kind == .local else { return nil }
+        return URL(fileURLWithPath: path).standardizedFileURL
+    }
+
+    var remoteLocation: RemoteLocation? {
+        guard kind == .remote, let host else { return nil }
+        return RemoteLocation(host: host, path: path)
+    }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     private var documentWindows: [URL: NSWindow] = [:]
     var remoteDocumentWindows: [RemoteLocation: NSWindow] = [:]
@@ -29,26 +58,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     }()
 
     private let savedURLsKey = "RedMargin.OpenDocumentURLs"
-    private let recentURLsKey = "RedMargin.RecentDocumentURLs"
+    private let recentFoldersKey = "RedMargin.RecentFolders"
+    private let legacyRecentURLsKey = "RedMargin.RecentDocumentURLs"
+    private let legacyRecentFolderURLsKey = "RedMargin.RecentFolderURLs"
     let recentRemoteKey = "RedMargin.RecentRemoteConnections"
-    let recentRemoteLocationsKey = "RedMargin.RecentRemoteLocations"
+    let legacyRecentRemoteLocationsKey = "RedMargin.RecentRemoteLocations"
     let openRemoteLocationsKey = "RedMargin.OpenRemoteLocations"
     private let savedFolderURLsKey = "RedMargin.OpenFolderURLs"
     private let folderSelectedFilesKey = "RedMargin.FolderSelectedFiles"
     private let windowOrderKey = "RedMargin.WindowOrder"
     private let frontmostWindowKey = "RedMargin.FrontmostWindow"
-    let maxRecentDocuments = 20
+    let maxRecentItems = 20
     let settings = DocumentSettingsStorage.shared
 
-    @Published var recentDocuments: [URL] = []
+    @Published var recentFolderItems: [RecentFolderItem] = []
     @Published var recentRemoteServers: [String] = []
-    @Published var recentRemoteLocations: [RemoteLocation] = []
 
     override init() {
         super.init()
-        recentDocuments = loadRecentDocuments()
+        loadRecentFolders()
         recentRemoteServers = loadRecentRemoteServers()
-        recentRemoteLocations = loadRecentRemoteLocations()
     }
 
     // MARK: - App Lifecycle
@@ -121,15 +150,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         // Save open folder URLs and their selected files
         let folderURLs = Array(folderWindows.keys)
         UserDefaults.standard.set(folderURLs.map { $0.path }, forKey: savedFolderURLsKey)
-        var selectedFilesDict: [String: String] = [:]
-        for (folderURL, fileURL) in folderSelectedFiles {
-            selectedFilesDict[folderURL.path] = fileURL.path
-        }
-        if !selectedFilesDict.isEmpty {
-            UserDefaults.standard.set(selectedFilesDict, forKey: folderSelectedFilesKey)
-        } else {
-            UserDefaults.standard.removeObject(forKey: folderSelectedFilesKey)
-        }
+        saveFolderSelectedFiles()
 
         let orderedURLs = NSApp.orderedWindows
             .compactMap { window -> URL? in
@@ -271,8 +292,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let newAutosaveName = newURL.absoluteString
         window.saveFrame(usingName: newAutosaveName)
         window.setFrameAutosaveName(newAutosaveName)
-
-        addToRecentDocuments(newURL)
     }
 
     /// Updates the window tracking for remote documents when navigating
@@ -286,8 +305,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let newAutosaveName = "remote:\(newLocation.host):\(newLocation.path)"
         window.saveFrame(usingName: newAutosaveName)
         window.setFrameAutosaveName(newAutosaveName)
-
-        addToRecentRemoteLocations(newLocation)
     }
 
     // MARK: - State Persistence
@@ -327,44 +344,147 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         }
     }
 
-    // MARK: - Recent Documents
-
-    func addToRecentDocuments(_ url: URL) {
-        recentDocuments.removeAll { $0 == url }
-        recentDocuments.insert(url, at: 0)
-        if recentDocuments.count > maxRecentDocuments {
-            recentDocuments = Array(recentDocuments.prefix(maxRecentDocuments))
+    func saveFolderSelectedFiles() {
+        var selectedFilesDict: [String: String] = savedFolderSelectedFiles()
+        for (folderURL, fileURL) in folderSelectedFiles {
+            selectedFilesDict[folderURL.path] = fileURL.path
         }
-        UserDefaults.standard.set(recentDocuments.map { $0.path }, forKey: recentURLsKey)
+        if !selectedFilesDict.isEmpty {
+            UserDefaults.standard.set(selectedFilesDict, forKey: folderSelectedFilesKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: folderSelectedFilesKey)
+        }
     }
 
-    private func loadRecentDocuments() -> [URL] {
-        guard let paths = UserDefaults.standard.stringArray(forKey: recentURLsKey) else { return [] }
+    func savedSelectedFile(for folderURL: URL) -> URL? {
+        let standardized = folderURL.standardizedFileURL
+        if let fileURL = folderSelectedFiles[standardized] {
+            return fileURL
+        }
+        guard let path = savedFolderSelectedFiles()[standardized.path] else { return nil }
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
+
+    func clearSavedSelectedFile(for folderURL: URL) {
+        var selectedFilesDict = savedFolderSelectedFiles()
+        selectedFilesDict.removeValue(forKey: folderURL.standardizedFileURL.path)
+        if selectedFilesDict.isEmpty {
+            UserDefaults.standard.removeObject(forKey: folderSelectedFilesKey)
+        } else {
+            UserDefaults.standard.set(selectedFilesDict, forKey: folderSelectedFilesKey)
+        }
+    }
+
+    private func savedFolderSelectedFiles() -> [String: String] {
+        UserDefaults.standard.dictionary(forKey: folderSelectedFilesKey) as? [String: String] ?? [:]
+    }
+
+    // MARK: - Recent Folders
+
+    func addToRecentFolder(_ url: URL) {
+        addRecentFolderItem(.local(url))
+    }
+
+    func addToRecentRemoteFolder(_ location: RemoteLocation) {
+        guard location.path.hasSuffix("/") else { return }
+        addRecentFolderItem(.remote(location))
+    }
+
+    private func addRecentFolderItem(_ item: RecentFolderItem) {
+        recentFolderItems.removeAll { $0 == item }
+        recentFolderItems.insert(item, at: 0)
+        recentFolderItems = pruneRecentFolderItems(recentFolderItems)
+        saveRecentFolders()
+    }
+
+    private func loadRecentFolders() {
+        let storedItems = loadRecentFolderItems()
+        let legacyURLs = loadRecentURLs(forKey: legacyRecentURLsKey)
+        let legacyFolders = loadRecentURLs(forKey: legacyRecentFolderURLsKey)
+        let legacyRemoteFolders = loadLegacyRecentRemoteFolders()
+
+        recentFolderItems = pruneRecentFolderItems(
+            storedItems
+            + (legacyFolders + legacyURLs).map(RecentFolderItem.local)
+            + legacyRemoteFolders.map(RecentFolderItem.remote)
+        )
+
+        saveRecentFolders()
+        UserDefaults.standard.removeObject(forKey: legacyRecentURLsKey)
+        UserDefaults.standard.removeObject(forKey: legacyRecentFolderURLsKey)
+        UserDefaults.standard.removeObject(forKey: legacyRecentRemoteLocationsKey)
+    }
+
+    private func loadRecentFolderItems() -> [RecentFolderItem] {
+        guard let data = UserDefaults.standard.data(forKey: recentFoldersKey) else { return [] }
+        return (try? JSONDecoder().decode([RecentFolderItem].self, from: data)) ?? []
+    }
+
+    private func loadRecentURLs(forKey key: String) -> [URL] {
+        guard let paths = UserDefaults.standard.stringArray(forKey: key) else { return [] }
         return paths.compactMap { path -> URL? in
-            let url = URL(fileURLWithPath: path)
+            let url = URL(fileURLWithPath: path).standardizedFileURL
             guard FileManager.default.fileExists(atPath: path) else { return nil }
             return url
         }
     }
 
-    func clearRecentDocuments() {
-        recentDocuments = []
-        UserDefaults.standard.removeObject(forKey: recentURLsKey)
+    private func loadLegacyRecentRemoteFolders() -> [RemoteLocation] {
+        guard let data = UserDefaults.standard.data(forKey: legacyRecentRemoteLocationsKey) else { return [] }
+        return ((try? JSONDecoder().decode([RemoteLocation].self, from: data)) ?? [])
+            .filter { $0.path.hasSuffix("/") }
+    }
+
+    private func pruneRecentFolderItems(_ items: [RecentFolderItem]) -> [RecentFolderItem] {
+        var result: [RecentFolderItem] = []
+        for item in items {
+            guard result.count < maxRecentItems else { break }
+            guard !result.contains(item), recentFolderItemIsValid(item) else { continue }
+            result.append(item)
+        }
+        return result
+    }
+
+    private func recentFolderItemIsValid(_ item: RecentFolderItem) -> Bool {
+        switch item.kind {
+        case .local:
+            guard let url = item.localURL else { return false }
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { return false }
+            return isDir.boolValue
+        case .remote:
+            return item.remoteLocation?.path.hasSuffix("/") == true
+        }
+    }
+
+    private func saveRecentFolders() {
+        if let data = try? JSONEncoder().encode(recentFolderItems) {
+            UserDefaults.standard.set(data, forKey: recentFoldersKey)
+        }
+    }
+
+    func removeRecentFolder(_ url: URL) {
+        recentFolderItems.removeAll { $0 == .local(url) }
+        saveRecentFolders()
+    }
+
+    func removeRecentRemoteFolder(_ location: RemoteLocation) {
+        recentFolderItems.removeAll { $0 == .remote(location) }
+        saveRecentFolders()
+    }
+
+    func clearRecentFolders() {
+        recentFolderItems = []
+        UserDefaults.standard.removeObject(forKey: recentFoldersKey)
+        UserDefaults.standard.removeObject(forKey: legacyRecentFolderURLsKey)
+        UserDefaults.standard.removeObject(forKey: legacyRecentURLsKey)
+        UserDefaults.standard.removeObject(forKey: legacyRecentRemoteLocationsKey)
     }
 
     func loadRecentRemoteServers() -> [String] {
         UserDefaults.standard.stringArray(forKey: recentRemoteKey) ?? []
-    }
-
-    func loadRecentRemoteLocations() -> [RemoteLocation] {
-        guard let data = UserDefaults.standard.data(forKey: recentRemoteLocationsKey) else { return [] }
-        return (try? JSONDecoder().decode([RemoteLocation].self, from: data)) ?? []
-    }
-
-    func saveRecentRemoteLocations() {
-        if let data = try? JSONEncoder().encode(recentRemoteLocations) {
-            UserDefaults.standard.set(data, forKey: recentRemoteLocationsKey)
-        }
     }
 
     // MARK: - Document Management
@@ -405,7 +525,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     }
 
     func openDocument(_ url: URL) {
-        addToRecentDocuments(url)
         BookmarkManager.shared.createBookmark(for: url)
 
         if let existingWindow = documentWindows[url] {
@@ -496,9 +615,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
-        if let folderURL = folderWindows.first(where: { $0.value === window })?.key {
-            folderSelectedFiles.removeValue(forKey: folderURL)
-        }
         documentWindows = documentWindows.filter { $0.value !== window }
         remoteDocumentWindows = remoteDocumentWindows.filter { $0.value !== window }
         folderWindows = folderWindows.filter { $0.value !== window }

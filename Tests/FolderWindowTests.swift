@@ -3,8 +3,30 @@ import XCTest
 
 final class FolderWindowTests: XCTestCase {
     private var tempDir: URL!
+    private var savedRecentFolderItems: Data?
+    private var savedLegacyMixedRecents: [String]?
+    private var savedLegacyRecentFolders: [String]?
+    private var savedLegacyRecentRemoteFolders: Data?
+    private var savedFolderSelectedFiles: [String: String]?
+
+    private let recentFoldersKey = "RedMargin.RecentFolders"
+    private let legacyMixedRecentsKey = "RedMargin.RecentDocumentURLs"
+    private let legacyRecentFoldersKey = "RedMargin.RecentFolderURLs"
+    private let legacyRecentRemoteFoldersKey = "RedMargin.RecentRemoteLocations"
+    private let folderSelectedFilesKey = "RedMargin.FolderSelectedFiles"
 
     override func setUp() async throws {
+        savedRecentFolderItems = UserDefaults.standard.data(forKey: recentFoldersKey)
+        savedLegacyMixedRecents = UserDefaults.standard.stringArray(forKey: legacyMixedRecentsKey)
+        savedLegacyRecentFolders = UserDefaults.standard.stringArray(forKey: legacyRecentFoldersKey)
+        savedLegacyRecentRemoteFolders = UserDefaults.standard.data(forKey: legacyRecentRemoteFoldersKey)
+        savedFolderSelectedFiles = UserDefaults.standard.dictionary(forKey: folderSelectedFilesKey) as? [String: String]
+        UserDefaults.standard.removeObject(forKey: legacyMixedRecentsKey)
+        UserDefaults.standard.removeObject(forKey: recentFoldersKey)
+        UserDefaults.standard.removeObject(forKey: legacyRecentFoldersKey)
+        UserDefaults.standard.removeObject(forKey: legacyRecentRemoteFoldersKey)
+        UserDefaults.standard.removeObject(forKey: folderSelectedFilesKey)
+
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("FolderWindowTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -13,6 +35,19 @@ final class FolderWindowTests: XCTestCase {
     override func tearDown() async throws {
         if let tempDir {
             try? FileManager.default.removeItem(at: tempDir)
+        }
+        restoreUserDefaults(savedRecentFolderItems, forKey: recentFoldersKey)
+        restoreUserDefaults(savedLegacyMixedRecents, forKey: legacyMixedRecentsKey)
+        restoreUserDefaults(savedLegacyRecentFolders, forKey: legacyRecentFoldersKey)
+        restoreUserDefaults(savedLegacyRecentRemoteFolders, forKey: legacyRecentRemoteFoldersKey)
+        restoreUserDefaults(savedFolderSelectedFiles, forKey: folderSelectedFilesKey)
+    }
+
+    private func restoreUserDefaults(_ value: Any?, forKey key: String) {
+        if let value {
+            UserDefaults.standard.set(value, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
         }
     }
 
@@ -25,6 +60,7 @@ final class FolderWindowTests: XCTestCase {
         let standardized = tempDir.standardizedFileURL
         let window = appDelegate.folderWindows[standardized]
         XCTAssertNotNil(window, "openFolder should create a window tracked in folderWindows")
+        XCTAssertEqual(appDelegate.recentFolderItems, [.local(standardized)])
 
         window?.close()
     }
@@ -69,5 +105,61 @@ final class FolderWindowTests: XCTestCase {
         )
 
         appDelegate.folderWindows[standardized]?.close()
+    }
+
+    @MainActor
+    func testLegacyMixedRecentsMigratesOnlyFoldersAndClearsLegacyKey() throws {
+        let standaloneFile = tempDir.appendingPathComponent("standalone.md")
+        try "# Standalone".write(to: standaloneFile, atomically: true, encoding: .utf8)
+        UserDefaults.standard.set(
+            [standaloneFile.path, tempDir.path],
+            forKey: legacyMixedRecentsKey
+        )
+
+        let appDelegate = AppDelegate()
+
+        XCTAssertEqual(appDelegate.recentFolderItems, [.local(tempDir.standardizedFileURL)])
+        XCTAssertNil(UserDefaults.standard.object(forKey: legacyMixedRecentsKey))
+    }
+
+    @MainActor
+    func testRecentFoldersHaveRetention() throws {
+        let appDelegate = AppDelegate()
+
+        for index in 0..<25 {
+            let folder = tempDir.appendingPathComponent("folder-\(index)")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            appDelegate.addToRecentFolder(folder)
+        }
+
+        XCTAssertEqual(appDelegate.recentFolderItems.count, appDelegate.maxRecentItems)
+        XCTAssertEqual(appDelegate.recentFolderItems.first?.localURL?.lastPathComponent, "folder-24")
+    }
+
+    @MainActor
+    func testRemoteFolderMovesAheadOfLocalFolders() throws {
+        let appDelegate = AppDelegate()
+        let remoteFolder = RemoteLocation(host: "cognel-dev", path: "/work/docs/")
+
+        appDelegate.addToRecentFolder(tempDir)
+        appDelegate.addToRecentRemoteFolder(remoteFolder)
+
+        XCTAssertEqual(appDelegate.recentFolderItems.first, .remote(remoteFolder))
+        XCTAssertEqual(appDelegate.recentFolderItems.dropFirst().first, .local(tempDir.standardizedFileURL))
+    }
+
+    @MainActor
+    func testRecentFolderRemembersLastSelectedFile() throws {
+        let appDelegate = AppDelegate()
+        let selectedFile = tempDir.appendingPathComponent("selected.md")
+        try "# Selected".write(to: selectedFile, atomically: true, encoding: .utf8)
+
+        appDelegate.updateFolderWindowFile(folder: tempDir, to: selectedFile)
+
+        let reloadedAppDelegate = AppDelegate()
+        XCTAssertEqual(
+            reloadedAppDelegate.savedSelectedFile(for: tempDir),
+            selectedFile.standardizedFileURL
+        )
     }
 }

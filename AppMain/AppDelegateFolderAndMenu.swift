@@ -8,7 +8,7 @@ import RedmarginCore
 extension AppDelegate {
     func openFolder(_ url: URL, selectedFile: URL? = nil) {
         let standardized = url.standardizedFileURL
-        addToRecentDocuments(standardized)
+        addToRecentFolder(standardized)
 
         if let existingWindow = folderWindows[standardized] {
             existingWindow.makeKeyAndOrderFront(nil)
@@ -66,9 +66,11 @@ extension AppDelegate {
     func updateFolderWindowFile(folder folderURL: URL, to fileURL: URL?) {
         let standardized = folderURL.standardizedFileURL
         if let fileURL {
-            folderSelectedFiles[standardized] = fileURL
+            folderSelectedFiles[standardized] = fileURL.standardizedFileURL
+            saveFolderSelectedFiles()
         } else {
             folderSelectedFiles.removeValue(forKey: standardized)
+            clearSavedSelectedFile(for: standardized)
         }
     }
 }

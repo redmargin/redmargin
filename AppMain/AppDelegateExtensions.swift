@@ -89,10 +89,9 @@ extension AppDelegate {
         let host = await connection.getHost()
         let location = RemoteLocation(host: host, path: path)
 
-        // Add to recent lists
+        // Remote files are opened normally, but Open Recent is folder-only.
         await MainActor.run {
             addToRecentRemoteServers(host)
-            addToRecentRemoteLocations(location)
         }
 
         // Check if already open
@@ -141,10 +140,10 @@ extension AppDelegate {
         let folderPath = path.hasSuffix("/") ? path : path + "/"
         let location = RemoteLocation(host: host, path: folderPath)
 
-        // Add to recent lists
+        // Keep folder recents ordered across local and remote folders.
         await MainActor.run {
             addToRecentRemoteServers(host)
-            addToRecentRemoteLocations(location)
+            addToRecentRemoteFolder(location)
         }
 
         // Check if already open
@@ -183,11 +182,6 @@ extension AppDelegate {
     /// Opens a remote document from sidebar navigation, reusing the existing connection
     func openRemoteDocumentFromSidebar(host: String, path: String) async throws {
         let location = RemoteLocation(host: host, path: path)
-
-        // Add to recent lists
-        await MainActor.run {
-            addToRecentRemoteLocations(location)
-        }
 
         // Check if already open
         if let existingWindow = remoteDocumentWindows[location] {
@@ -256,8 +250,8 @@ extension AppDelegate {
     func addToRecentRemoteServers(_ server: String) {
         recentRemoteServers.removeAll { $0 == server }
         recentRemoteServers.insert(server, at: 0)
-        if recentRemoteServers.count > maxRecentDocuments {
-            recentRemoteServers = Array(recentRemoteServers.prefix(maxRecentDocuments))
+        if recentRemoteServers.count > maxRecentItems {
+            recentRemoteServers = Array(recentRemoteServers.prefix(maxRecentItems))
         }
         UserDefaults.standard.set(recentRemoteServers, forKey: recentRemoteKey)
     }
@@ -267,32 +261,16 @@ extension AppDelegate {
         UserDefaults.standard.removeObject(forKey: recentRemoteKey)
     }
 
-    // MARK: - Recent Remote Locations
-
-    func addToRecentRemoteLocations(_ location: RemoteLocation) {
-        recentRemoteLocations.removeAll { $0 == location }
-        recentRemoteLocations.insert(location, at: 0)
-        if recentRemoteLocations.count > maxRecentDocuments {
-            recentRemoteLocations = Array(recentRemoteLocations.prefix(maxRecentDocuments))
-        }
-        saveRecentRemoteLocations()
-    }
-
-    func clearRecentRemoteLocations() {
-        recentRemoteLocations = []
-        UserDefaults.standard.removeObject(forKey: recentRemoteLocationsKey)
-    }
-
-    /// Opens a recent remote location by establishing a new connection
+    /// Opens a recent remote folder by establishing a new connection
     func openRecentRemoteLocation(_ location: RemoteLocation) {
         Task {
             do {
-                // Quick check if file or directory exists before establishing full connection
+                // Open Recent is folder-only; remove entries that are gone or no longer directories.
                 let sshArgs = [
                     "-o", "BatchMode=yes",
                     "-o", "ConnectTimeout=5",
                     location.host,
-                    "test -e '\(location.path)'"
+                    "test -d '\(location.path)'"
                 ]
                 let checkResult = try await ProcessRunner.run(
                     executable: "/usr/bin/ssh",
@@ -300,49 +278,31 @@ extension AppDelegate {
                     timeout: 10
                 )
                 if checkResult.exitCode != 0 {
-                    throw RemoteFileError(message: "File does not exist", code: .fileNotFound)
+                    throw RemoteFileError(message: "Folder does not exist", code: .fileNotFound)
                 }
 
                 let connection = try await SSHConnectionManager.shared.connection(for: location.host)
-
-                // Check if it's a directory
-                let isDirArgs = [
-                    "-o", "BatchMode=yes",
-                    "-o", "ConnectTimeout=5",
-                    location.host,
-                    "test -d '\(location.path)'"
-                ]
-                let isDirResult = try await ProcessRunner.run(
-                    executable: "/usr/bin/ssh",
-                    arguments: isDirArgs,
-                    timeout: 10
-                )
-                if isDirResult.exitCode == 0 {
-                    try await openRemoteFolder(connection: connection, path: location.path)
-                } else {
-                    try await openRemoteDocument(connection: connection, path: location.path)
-                }
+                try await openRemoteFolder(connection: connection, path: location.path)
             } catch {
                 await MainActor.run {
-                    let isFileNotFound = (error as? RemoteFileError)?.isFileNotFound == true
+                    let isFolderNotFound = (error as? RemoteFileError)?.isFileNotFound == true
 
                     let alert = NSAlert()
 
-                    if isFileNotFound {
-                        // Remove from recents since file no longer exists
-                        recentRemoteLocations.removeAll { $0 == location }
-                        saveRecentRemoteLocations()
+                    if isFolderNotFound {
+                        // Remove from recents since the folder no longer exists.
+                        removeRecentRemoteFolder(location)
 
-                        alert.messageText = "File Not Found"
+                        alert.messageText = "Folder Not Found"
                         let remotePath = "\(location.host):\(location.path)"
                         alert.informativeText = """
-                            The file no longer exists at:
+                            The folder no longer exists at:
                             \(remotePath)
 
-                            It has been removed from Recent Documents.
+                            It has been removed from Open Recent.
                             """
                     } else {
-                        alert.messageText = "Failed to open remote file"
+                        alert.messageText = "Failed to open remote folder"
                         alert.informativeText = error.localizedDescription
                     }
 
