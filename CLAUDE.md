@@ -6,13 +6,13 @@ macOS Markdown viewer with Git gutter indicators. Swift 5.9+, SwiftUI, WKWebView
 
 ## Building
 
-Use `/build` skill. Never run swift build or xcodebuild directly.
+For local build verification, run `./resources/scripts/build.sh`. Never run `swift build`, `xcodebuild`, `swiftlint`, or substitute verification commands unless Marco explicitly asks.
 
 ---
 
 ## Linting
 
-Run `swiftlint lint --quiet` before building and committing.
+For commits, use the repository/agent commit workflow. Do not run standalone `swiftlint` unless Marco explicitly asks.
 
 ---
 
@@ -20,8 +20,7 @@ Run `swiftlint lint --quiet` before building and committing.
 
 - Test files in `Tests/`, fixtures in `Tests/Fixtures/`
 - No mocks - use real file system with temp directories
-- Run tests one file at a time: `xcodebuild test -scheme Redmargin -destination 'platform=macOS' -only-testing:RedmarginTests/SomeTestClass`
-- Run verbosely: `-v --tb=short`, use `--maxfail=1`
+- For local verification, use `./resources/scripts/build.sh` unless Marco explicitly asks for a specific test command
 - Never pipe output through `head`/`tail` - show full output
 - Never suggest browser cache as solution
 
@@ -44,12 +43,14 @@ Use judgment on when to use a subagent for MCP calls:
 **Direct call** - Small/quick MCP calls where output is manageable
 
 **Subagent pattern** - Large outputs (docs, database queries, API responses):
+
 1. Spawn subagent to make the MCP call
 2. Subagent writes structured/summarized output to `.mcp/<server>/<tool>-<description>.md`
 3. Subagent greps and returns only what main agent needs
 4. Main agent never sees full MCP output
 
 **Caching rules:**
+
 - Check `.mcp/` before making new calls
 - Cache persists until explicitly told to invalidate
 - Never re-run if cached data answers the question
@@ -85,6 +86,7 @@ Prefer MCP tools over osascript. Never use osascript requiring active app.
 ## Git
 
 Remotes:
+
 - `origin` = MAF27/redmargin (private) - regular pushes go here
 - `public` = redmargin/redmargin (public) - only push for releases
 
@@ -104,6 +106,7 @@ Branch naming: `feature/git-gutter`, `fix/sourcepos-parsing`
 
 - Shell out to system `git` via `Process`
 - Parse `git diff --unified=0` for change ranges
+- Parse `git status --porcelain -uall` for sidebar file status indicators
 - Detect repo root via `git rev-parse --show-toplevel`
 
 ### Gutter Alignment
@@ -118,7 +121,7 @@ Branch naming: `feature/git-gutter`, `fix/sourcepos-parsing`
 
 - Specs: `resources/specs/`
 - Docs: `resources/docs/`
-- Always add to spec first before implementing
+- Add or update a spec for broad, multi-phase, or ambiguous work. Small scoped changes can be implemented directly when the behavior is clear.
 - Always add automated tests for features/fixes
 
 ## Migrations
@@ -133,15 +136,18 @@ Branch naming: `feature/git-gutter`, `fix/sourcepos-parsing`
 ## Remote Development Server
 
 The `devtest` SSH alias points to a Linux (Ubuntu 22.04) development server used for:
+
 - Building Linux server binaries (`resources/scripts/build-linux.sh`)
 - Running Linux-specific tests
 - Integration testing SSH remote file features
 
 Commands:
+
 - Build Linux binary: `./resources/scripts/build-linux.sh`
-- Run tests on devtest: `ssh devtest "cd ~/redmargin-build && swift test"`
+- Run Linux-specific tests on devtest only when explicitly requested, with a timeout guard
 
 **IMPORTANT:** Always run remote/SSH tests with timeouts - they tend to hang:
+
 ```bash
 swift test --filter RemoteIntegrationTests 2>&1 & pid=$!; sleep 60; kill $pid 2>/dev/null
 # Or use timeout command:

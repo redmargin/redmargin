@@ -38,7 +38,7 @@ Add a "Show Hidden Files" toggle as a per-window setting with a global default i
 - Expanding a folder loads its children on demand (single `contentsOfDirectory` or `listDirectory` call)
 - Collapsing a folder keeps its children in memory (no re-fetch on re-expand)
 - Toggling hidden files reloads only the currently visible levels
-- FSEvents watcher refreshes only the affected directory level, not the entire tree
+- FSEvents watcher refreshes visible sidebar levels without rebuilding collapsed subtrees
 - Opening a folder or file in the sidebar is instant regardless of directory size
 
 ### Out of scope
@@ -54,17 +54,17 @@ Add a "Show Hidden Files" toggle as a per-window setting with a global default i
 
 **Hidden files toggle (Phases 1-4, done):** Per-window setting following the sidebar-visibility pattern. Global default in PreferencesManager, per-window `@State`, loaded from DocumentSettingsStorage, View menu toggle with Cmd+Shift+. shortcut. Server-side `.skipsHiddenFiles` removed so all entries are returned; client filters based on the per-window setting.
 
-**Lazy sidebar loading (Phase 5):** Replace the recursive `buildTreeRecursive` in both `FileTreeProvider` and `RemoteFileTreeProvider` with single-level enumeration. This is the standard approach used by Finder, VS Code, and every other file browser.
+**Lazy sidebar loading (Phase 5):** Replace recursive eager tree building in both `FileTreeProvider` and `RemoteFileTreeProvider` with single-level enumeration. This is the standard approach used by Finder, VS Code, and every other file browser.
 
 **FileTreeNode** gains a `childrenLoaded: Bool` flag (default `false`). Directory nodes are created with empty `children` and `childrenLoaded=false`. The disclosure chevron is always shown for directories.
 
-**FileTreeProvider** replaces `buildTreeRecursive` with `loadChildren(for:)` — a single `contentsOfDirectory` call for one directory. On init, it loads the root level only. When a folder node is expanded and `childrenLoaded` is false, the provider loads that folder's children. All folders are included (no markdown-content filter on folders — only files are filtered to markdown). The `showHiddenFiles` flag controls whether `contentsOfDirectory` uses `.skipsHiddenFiles`. Hidden entries starting with `.` are excluded client-side when `showHiddenFiles` is false.
+**FileTreeProvider** replaces recursive eager tree building with single-level enumeration. On init, it loads the root level only. When a folder node is expanded and `childrenLoaded` is false, the provider loads that folder's children. All folders are included (no markdown-content filter on folders — only files are filtered to markdown). The `showHiddenFiles` flag controls whether `contentsOfDirectory` uses `.skipsHiddenFiles`.
 
-**RemoteFileTreeProvider** replaces `buildTreeRecursive` and the `findMarkdownFiles` path with single-level `listDirectory` calls. The `findMarkdownFiles` RPC is no longer used for tree building (it's inherently recursive). On init, it loads the root level via one `listDirectory` call. Expansion triggers another `listDirectory` for that folder. Same filtering rules.
+**RemoteFileTreeProvider** uses single-level `listDirectory` calls for tree building. The `findMarkdownFiles` RPC is no longer used for tree building (it's inherently recursive). On init, it loads the root level via one `listDirectory` call. Expansion triggers another `listDirectory` for that folder. Same filtering rules.
 
-**Remote directory watcher** continues to use `findMarkdownFiles` for change detection (it tells us which paths changed), but tree rebuilds are now per-directory — only the affected parent directory is re-enumerated instead of the entire tree.
+**Remote directory watcher** uses single-level `watchDirectory` subscriptions for the root and expanded folders. When a watched directory changes, the provider refreshes visible levels and preserves collapsed subtrees.
 
-**FSEvents watcher (local)** on change, re-enumerates only the changed directory level rather than rebuilding the entire tree. The watcher already receives per-file events — the provider maps the changed path to its parent directory and reloads that level.
+**FSEvents watcher (local)** on change, refreshes visible sidebar levels rather than eagerly rebuilding collapsed subtrees.
 
 **SidebarView / TreeNodeView** — on expand, calls the provider to load children if not yet loaded. The provider populates children asynchronously and the `@Published children` triggers a UI update.
 
@@ -90,7 +90,7 @@ This mirrors the established per-window settings pattern used throughout the cod
 **Phase 2: Local File Tree**
 
 - [x] Add `showHiddenFiles` property to `FileTreeProvider` (`src/Views/FileTreeProvider.swift`) that triggers `refresh()` on change
-- [x] Pass `showHiddenFiles` into `buildTreeRecursive` and conditionally include/exclude `.skipsHiddenFiles` in the `contentsOfDirectory` options
+- [x] Pass `showHiddenFiles` into single-level local directory enumeration and conditionally include/exclude `.skipsHiddenFiles` in the `contentsOfDirectory` options
 - [x] Add `showHiddenFiles` init parameter to `DocumentWindowContent` (`AppMain/DocumentView.swift`), defaulting to `PreferencesManager.shared.showHiddenFiles`. Add `@State var showHiddenFiles` initialized from it.
 - [x] Load `showHiddenFiles` from `DocumentSettingsStorage` in `AppDelegate.openDocument()` (`AppMain/AppDelegate.swift`) and pass it to `DocumentWindowContent`
 - [x] Add `showHiddenFiles` init parameter to `FolderWindowContent` (`AppMain/FolderWindowContent.swift`), same pattern. Add `@State var showHiddenFiles` initialized from it.
@@ -102,8 +102,7 @@ This mirrors the established per-window settings pattern used throughout the cod
 - [x] Remove `.skipsHiddenFiles` from `findMarkdownFiles` in `Server/FileOperations.swift` (line 60) so the server returns hidden `.md` files
 - [x] Remove `.skipsHiddenFiles` from `listDirectory` in `Server/FileOperations.swift` (line 25) so the server returns hidden directory entries
 - [x] Add `showHiddenFiles` property to `RemoteFileTreeProvider` (`src/Views/RemoteFileTreeProvider.swift`) that triggers `refresh()` on change
-- [x] In `buildTreeRecursive`, skip entries where `entry.name.hasPrefix(".")` unless `showHiddenFiles` is true (after the existing `ignoredDirectories` check)
-- [x] In `convertTrieToNodes`, skip directory names and file names starting with `.` unless `showHiddenFiles` is true
+- [x] In `buildNodes`, skip entries where `entry.name.hasPrefix(".")` unless `showHiddenFiles` is true (after the existing `ignoredDirectories` check)
 - [x] Add `@State var showHiddenFiles` to `RemoteDocumentWindowContent` (`AppMain/RemoteDocumentView.swift`), loaded from `DocumentSettingsStorage` in `.onAppear` (same pattern as `showGutter` and `showGitIndicators` at lines 197-201)
 - [x] Add `onChange(of: showHiddenFiles)` to persist via `DocumentSettingsStorage` and update `fileTreeProvider.showHiddenFiles`
 
@@ -120,17 +119,17 @@ This mirrors the established per-window settings pattern used throughout the cod
 **Phase 5: Lazy Sidebar Loading**
 
 - [x] Add `childrenLoaded: Bool` property to `FileTreeNode` (`src/Views/FileTreeProvider.swift`) — default `false`, set to `true` after children are populated
-- [x] Replace `buildTreeRecursive` in `FileTreeProvider` with `loadChildren(for:)` that does a single `contentsOfDirectory` call for one directory — returns `[FileTreeNode]` with directory nodes having empty children and `childrenLoaded=false`
+- [x] Replace recursive eager tree building in `FileTreeProvider` with single-level `contentsOfDirectory` enumeration — returns `[FileTreeNode]` with directory nodes having empty children and `childrenLoaded=false`
 - [x] Update `FileTreeProvider` init to load only the root level (call `loadChildren` for the root directory)
 - [x] Add `expandFolder(_:)` method to `FileTreeProvider` — when a directory node is expanded and `childrenLoaded` is false, load its children via `loadChildren`, then set `childrenLoaded=true`. All folders are included; only files are filtered to markdown.
 - [x] Hook `expandFolder` into the `onExpandedChange` callback on `FileTreeNode` — when `isExpanded` becomes true and `childrenLoaded` is false, trigger loading
 - [x] Update `refresh()` in `FileTreeProvider` to re-enumerate only the root level (and any currently-expanded directories that are already loaded)
 - [x] Update FSEvents watcher handler to re-enumerate only the affected parent directory, not rebuild the entire tree
-- [x] Replace `buildTreeRecursive` in `RemoteFileTreeProvider` with single-level `listDirectory` calls following the same pattern
+- [x] Replace recursive eager tree building in `RemoteFileTreeProvider` with single-level `listDirectory` calls following the same pattern
 - [x] Stop using `findMarkdownFiles` RPC for tree building in `RemoteFileTreeProvider` — use `listDirectory` for all tree operations
 - [x] Add `expandFolder(_:)` to `RemoteFileTreeProvider` with the same lazy-load-on-expand behavior
 - [x] When `showHiddenFiles` changes, reload all currently visible levels (root + expanded directories) rather than rebuilding the entire tree
-- [x] Remove the `buildTreeFromPaths` / `convertTrieToNodes` / `PathTrie` code from `RemoteFileTreeProvider` (no longer needed)
+- [x] Remove the old recursive path-trie tree-building code from `RemoteFileTreeProvider` (no longer needed)
 - [x] Update existing hidden-files tests to work with the new lazy loading model
 - [x] Rebuild Linux server binary (`resources/scripts/build-linux.sh`) after all changes
 

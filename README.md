@@ -4,9 +4,9 @@ Markdown viewer for macOS with Git change indicators, remote file access over SS
 
 ## Features
 
-- **Git change indicators** — Gutter shows added, modified, and deleted lines compared to HEAD. Updates on commit or branch switch.
+- **Git change indicators** — Gutter shows added, modified, and deleted lines compared to HEAD. Sidebar file rows show modified, staged, untracked, and conflict status.
 - **Remote file access** — Open Markdown on remote servers via SSH (Cmd+Shift+O). Git gutter, checkboxes, and sidebar all work remotely.
-- **File sidebar** — Browse Markdown files in the repository or directory (Cmd+1). Collapsible folders, current file highlighted.
+- **File sidebar** — Browse Markdown files in the repository or directory (Cmd+1). Collapsible folders, current file highlighted, and git status bars enabled by default.
 - **Syntax highlighting** — Code blocks render with language-aware coloring. Supports Python, JavaScript, Swift, Rust, Go, and more.
 - **Mermaid diagrams** — Fenced `mermaid` blocks render as diagrams, follow the active theme, and print/export with the preview.
 - **Interactive checkboxes** — Click to toggle, saves immediately (local and remote).
@@ -50,9 +50,10 @@ open /Applications/Redmargin.app
 
 The build script will:
 
-1. Compile with Swift Package Manager
-2. Create the app bundle with WebRenderer assets
-3. Install to /Applications
+1. Rebuild the Linux remote server binary on `devtest` when server or core sources are newer
+2. Compile with Swift Package Manager
+3. Create the app bundle with WebRenderer assets and server binaries
+4. Install to /Applications
 
 ## Keyboard Shortcuts
 
