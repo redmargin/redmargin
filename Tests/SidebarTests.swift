@@ -89,6 +89,68 @@ final class SidebarTests: XCTestCase {
         )
     }
 
+    func testFileTreeProviderAppliesGitStatusToFiles() async throws {
+        let repoDir = tempDir.appendingPathComponent("repo")
+        try FileManager.default.createDirectory(at: repoDir, withIntermediateDirectories: true)
+
+        let gitInit = try await ProcessRunner.run(executable: "git", arguments: ["init"], workingDirectory: repoDir)
+        guard gitInit.exitCode == 0 else {
+            throw XCTSkip("Could not initialize git repo")
+        }
+        _ = try await ProcessRunner.run(
+            executable: "git",
+            arguments: ["config", "user.email", "test@test.com"],
+            workingDirectory: repoDir
+        )
+        _ = try await ProcessRunner.run(
+            executable: "git",
+            arguments: ["config", "user.name", "Test User"],
+            workingDirectory: repoDir
+        )
+
+        let clean = repoDir.appendingPathComponent("clean.md")
+        let modified = repoDir.appendingPathComponent("modified.md")
+        let staged = repoDir.appendingPathComponent("staged.md")
+        let untracked = repoDir.appendingPathComponent("untracked.md")
+        try "# Clean\n".write(to: clean, atomically: true, encoding: .utf8)
+        try "# Modified\n".write(to: modified, atomically: true, encoding: .utf8)
+        try "# Staged\n".write(to: staged, atomically: true, encoding: .utf8)
+        _ = try await ProcessRunner.run(executable: "git", arguments: ["add", "-A"], workingDirectory: repoDir)
+        _ = try await ProcessRunner.run(executable: "git", arguments: ["commit", "-m", "Initial"], workingDirectory: repoDir)
+
+        try "# Modified\n\nchange\n".write(to: modified, atomically: true, encoding: .utf8)
+        try "# Staged\n\nchange\n".write(to: staged, atomically: true, encoding: .utf8)
+        try "# Untracked\n".write(to: untracked, atomically: true, encoding: .utf8)
+        _ = try await ProcessRunner.run(executable: "git", arguments: ["add", "staged.md"], workingDirectory: repoDir)
+
+        let provider = await FileTreeProvider(currentFileURL: clean)
+        try await waitForProvider(provider)
+        try await waitForGitStatus(provider, fileName: "modified.md")
+
+        let rootNodes = await provider.rootNodes
+        XCTAssertNil(findNode(named: "clean.md", in: rootNodes)?.gitStatus)
+        XCTAssertEqual(findNode(named: "modified.md", in: rootNodes)?.gitStatus, .modified)
+        XCTAssertEqual(findNode(named: "staged.md", in: rootNodes)?.gitStatus, .staged)
+        XCTAssertEqual(findNode(named: "untracked.md", in: rootNodes)?.gitStatus, .untracked)
+    }
+
+    func testFileTreeProviderClearsGitStatusWhenDisabled() async throws {
+        let file = tempDir.appendingPathComponent("untracked.md")
+        try "# Untracked\n".write(to: file, atomically: true, encoding: .utf8)
+        _ = try await ProcessRunner.run(executable: "git", arguments: ["init"], workingDirectory: tempDir)
+
+        let provider = await FileTreeProvider(currentFileURL: file)
+        try await waitForProvider(provider)
+        try await waitForGitStatus(provider, fileName: "untracked.md")
+
+        await MainActor.run {
+            provider.showGitStatus = false
+        }
+
+        let rootNodes = await provider.rootNodes
+        XCTAssertNil(findNode(named: "untracked.md", in: rootNodes)?.gitStatus)
+    }
+
     func testFileTreeProviderFallsBackToDirectory() async throws {
         // Create file outside any git repo
         try "# Test".write(to: tempDir.appendingPathComponent("test.md"), atomically: true, encoding: .utf8)
@@ -580,6 +642,38 @@ final class SidebarTests: XCTestCase {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
     }
+
+    private func waitForGitStatus(
+        _ provider: FileTreeProvider,
+        fileName: String,
+        timeout: TimeInterval = 5
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            let nodes = await provider.rootNodes
+            if findNode(named: fileName, in: nodes)?.gitStatus != nil {
+                return
+            }
+            if Date() > deadline {
+                XCTFail("Git status for \(fileName) timed out after \(timeout)s")
+                return
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+    }
+
+    private func findNode(named name: String, in nodes: [FileTreeNode]) -> FileTreeNode? {
+        for node in nodes {
+            if node.name == name {
+                return node
+            }
+            if let found = findNode(named: name, in: node.children) {
+                return found
+            }
+        }
+        return nil
+    }
+
     private func collectAllNames(_ nodes: [FileTreeNode]) -> Set<String> {
         var names = Set<String>()
         for node in nodes {

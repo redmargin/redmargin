@@ -10,6 +10,7 @@ public class FileTreeNode: Identifiable, ObservableObject {
     public let isDirectory: Bool
     public var depth: Int
     @Published public var children: [FileTreeNode]
+    @Published public var gitStatus: GitFileStatus?
     @Published public var isExpanded: Bool {
         didSet {
             if isDirectory {
@@ -28,6 +29,7 @@ public class FileTreeNode: Identifiable, ObservableObject {
         isDirectory: Bool,
         depth: Int,
         children: [FileTreeNode] = [],
+        gitStatus: GitFileStatus? = nil,
         isExpanded: Bool? = nil
     ) {
         self.name = name
@@ -35,6 +37,7 @@ public class FileTreeNode: Identifiable, ObservableObject {
         self.isDirectory = isDirectory
         self.depth = depth
         self.children = children
+        self.gitStatus = gitStatus
         self.childrenLoaded = !children.isEmpty || !isDirectory
         self.isExpanded = isExpanded ?? (depth == 0)  // Root level expanded by default
     }
@@ -52,10 +55,23 @@ public class FileTreeProvider: ObservableObject {
     private var directoryWatcher: FSEventsDirectoryWatcher?
     private var expandedFolders: Set<String> = []
     private let autoExpandRoot: Bool
+    private var gitStatusTask: Task<Void, Never>?
+    private var gitStatuses: [String: GitFileStatus] = [:]
 
     public var showHiddenFiles: Bool = false {
         didSet {
             if oldValue != showHiddenFiles { refresh() }
+        }
+    }
+
+    public var showGitStatus: Bool = true {
+        didSet {
+            guard oldValue != showGitStatus else { return }
+            if showGitStatus {
+                refreshGitStatus()
+            } else {
+                clearGitStatus(in: rootNodes)
+            }
         }
     }
 
@@ -204,6 +220,7 @@ public class FileTreeProvider: ObservableObject {
                     }
                 }
                 self.rootNodes = nodes
+                self.refreshGitStatus()
                 // Load children for expanded folders
                 for node in nodes where node.isDirectory && node.isExpanded {
                     self.loadChildrenIfNeeded(for: node)
@@ -236,6 +253,7 @@ public class FileTreeProvider: ObservableObject {
                     }
                 }
                 node.children = children
+                self.applyGitStatus(to: children)
                 // Recursively load children for any expanded subdirectories
                 for child in children where child.isDirectory && child.isExpanded {
                     self.loadChildrenIfNeeded(for: child)
@@ -293,6 +311,7 @@ public class FileTreeProvider: ObservableObject {
                     autoExpandRoot: autoExpand
                 )
                 self.rootNodes = merged
+                self.refreshGitStatus()
             }
         }
     }
@@ -339,6 +358,36 @@ public class FileTreeProvider: ObservableObject {
                 }
                 return newNode
             }
+        }
+    }
+
+    private func refreshGitStatus() {
+        guard showGitStatus, let root = rootDirectory else { return }
+        gitStatusTask?.cancel()
+        gitStatusTask = Task { @MainActor [weak self] in
+            let snapshot = await GitStatusProvider.shared.status(for: root)
+            guard let self, !Task.isCancelled else { return }
+            self.gitStatuses = snapshot.statuses
+            self.applyGitStatus(to: self.rootNodes)
+        }
+    }
+
+    private func applyGitStatus(to nodes: [FileTreeNode]) {
+        guard showGitStatus else { return }
+        for node in nodes {
+            node.gitStatus = node.isDirectory ? nil : gitStatuses[node.url.standardizedFileURL.path]
+            if node.isDirectory {
+                applyGitStatus(to: node.children)
+            }
+        }
+    }
+
+    private func clearGitStatus(in nodes: [FileTreeNode]) {
+        gitStatusTask?.cancel()
+        gitStatuses = [:]
+        for node in nodes {
+            node.gitStatus = nil
+            clearGitStatus(in: node.children)
         }
     }
 

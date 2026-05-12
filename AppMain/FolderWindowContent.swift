@@ -101,8 +101,12 @@ struct FolderWindowContent: View {
                 DocumentSettingsStorage.shared.saveHiddenFilesVisible(newValue, for: folderURL)
                 fileTreeProvider.showHiddenFiles = newValue
             }
+            .onChange(of: prefs.showSidebarGitStatus) { _, newValue in
+                fileTreeProvider.showGitStatus = newValue
+            }
             .onAppear {
                 fileTreeProvider.showHiddenFiles = showHiddenFiles
+                fileTreeProvider.showGitStatus = prefs.showSidebarGitStatus
                 setupExpandedFoldersPersistence()
             }
             .onChange(of: showSidebar) { _, newValue in

@@ -46,6 +46,8 @@ class RPCHandler {
             return try await handleGitDetectRepo(data)
         case .gitDiff:
             return try await handleGitDiff(data)
+        case .gitStatus:
+            return try await handleGitStatus(data)
         case .watchGitRepo:
             return try await handleWatchGitRepo(data)
         case .watchDirectory:
@@ -158,6 +160,16 @@ class RPCHandler {
         return try RPCStreamHandler.encode(
             id: msg.id,
             type: RPCMessageType.gitDiffResponse.rawValue,
+            payload: responsePayload
+        )
+    }
+
+    private func handleGitStatus(_ data: Data) async throws -> Data {
+        let msg = try JSONDecoder().decode(RPCMessage<GitStatusPayload>.self, from: data)
+        let responsePayload = await gitOperations.status(path: msg.payload.path)
+        return try RPCStreamHandler.encode(
+            id: msg.id,
+            type: RPCMessageType.gitStatusResponse.rawValue,
             payload: responsePayload
         )
     }

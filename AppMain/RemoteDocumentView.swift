@@ -168,6 +168,9 @@ struct RemoteDocumentWindowContent: View {
             .onChange(of: showHiddenFiles) { _, newValue in
                 fileTreeProvider.showHiddenFiles = newValue
             }
+            .onChange(of: prefs.showSidebarGitStatus) { _, newValue in
+                fileTreeProvider.showGitStatus = newValue
+            }
             .alert("Remote File Changed", isPresented: $state.showConflictDialog) {
                 Button("Overwrite Remote") {
                     state.resolveConflictKeepLocalToggle()
@@ -182,6 +185,7 @@ struct RemoteDocumentWindowContent: View {
                     """)
             }
             .onAppear {
+                fileTreeProvider.showGitStatus = prefs.showSidebarGitStatus
                 loadPersistedSettings()
             }
     }

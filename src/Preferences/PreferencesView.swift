@@ -229,6 +229,7 @@ private struct GeneralSettingsView: View {
 
             Section {
                 Toggle("Show hidden files", isOn: $prefs.showHiddenFiles)
+                Toggle("Show git status indicators", isOn: $prefs.showSidebarGitStatus)
             } header: {
                 Text("Sidebar (defaults for new windows)")
             }

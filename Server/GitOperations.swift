@@ -32,6 +32,12 @@ actor GitOperations {
         }
     }
 
+    func status(path: String) async -> GitStatusResponsePayload {
+        let url = URL(fileURLWithPath: path)
+        let snapshot = await GitStatusProvider.shared.status(for: url)
+        return GitStatusResponsePayload(snapshot: snapshot, error: nil)
+    }
+
     func watchRepo(repoRoot: String) -> String {
         // Remove existing watcher for this repo to prevent accumulation
         if let existingToken = repoToToken[repoRoot] {

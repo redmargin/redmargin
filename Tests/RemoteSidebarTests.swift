@@ -421,6 +421,10 @@ actor TestRemoteTreeFileProvider: RemoteFileTreeProviding {
         repoRoot
     }
 
+    func gitStatus(for path: String) async throws -> GitStatusSnapshot {
+        .empty
+    }
+
     func listDirectory(at path: String) async throws -> [DirectoryEntry] {
         listedPaths.append(path)
         if let delay = listDelays[path] {
@@ -435,6 +439,12 @@ actor TestRemoteTreeFileProvider: RemoteFileTreeProviding {
     }
 
     func unwatchDirectory(_ token: WatchToken) async {}
+
+    func watchGitRepo(at repoRoot: String, onChange: @escaping () -> Void) async -> WatchToken {
+        UUID()
+    }
+
+    func unwatch(_ token: WatchToken) async {}
 
     func recordedListPaths() -> [String] {
         listedPaths

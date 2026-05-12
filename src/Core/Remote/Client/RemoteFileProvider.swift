@@ -257,6 +257,18 @@ public actor RemoteFileProvider: FileProvider {
         return response.payload.diff ?? .empty
     }
 
+    public func gitStatus(for path: String) async throws -> GitStatusSnapshot {
+        let payload = GitStatusPayload(path: path)
+        let data = try await connection.send(type: RPCMessageType.gitStatus.rawValue, payload: payload, timeout: 20)
+        let response = try JSONDecoder().decode(RPCMessage<GitStatusResponsePayload>.self, from: data)
+
+        if let error = response.payload.error {
+            throw NSError(domain: "RemoteFileProvider", code: 4, userInfo: [NSLocalizedDescriptionKey: error])
+        }
+
+        return response.payload.snapshot ?? .empty
+    }
+
     public func watchDirectory(at path: String, onChange: @escaping ([String]) -> Void) async -> WatchToken {
         let token = WatchToken()
         directoryWatchers[token] = DirectoryWatchCallback(path: path, callback: onChange)

@@ -15,7 +15,9 @@ final class PreferencesManagerTests: XCTestCase {
         "RedMargin.Preferences.PrintRightMargin",
         "RedMargin.Preferences.PrintBottomMargin",
         "RedMargin.Preferences.PrintLeftMargin",
-        "RedMargin.Preferences.PrintFontSize"
+        "RedMargin.Preferences.PrintFontSize",
+        "RedMargin.Preferences.ShowHiddenFiles",
+        "RedMargin.Preferences.ShowSidebarGitStatus"
     ]
 
     override func tearDown() {
@@ -38,6 +40,7 @@ final class PreferencesManagerTests: XCTestCase {
         XCTAssertEqual(prefs.showGutter, true, "Default showGutter should be true")
         XCTAssertEqual(prefs.showLineNumbers, false, "Default showLineNumbers should be false")
         XCTAssertEqual(prefs.showGitIndicators, true, "Default showGitIndicators should be true")
+        XCTAssertEqual(prefs.showSidebarGitStatus, true, "Default showSidebarGitStatus should be true")
         XCTAssertEqual(prefs.allowRemoteImages, false, "Default allowRemoteImages should be false")
         XCTAssertEqual(prefs.inlineCodeColor, .warm, "Default inline code color should be warm")
     }
@@ -111,6 +114,16 @@ final class PreferencesManagerTests: XCTestCase {
 
         // Reset
         prefs.showHiddenFiles = false
+    }
+
+    func testSidebarGitStatusPersists() {
+        let prefs = PreferencesManager.shared
+        prefs.showSidebarGitStatus = false
+
+        let saved = UserDefaults.standard.bool(forKey: "RedMargin.Preferences.ShowSidebarGitStatus")
+        XCTAssertEqual(saved, false, "showSidebarGitStatus should persist to UserDefaults")
+
+        prefs.showSidebarGitStatus = true
     }
 
     func testPrintFontSizePersists() {

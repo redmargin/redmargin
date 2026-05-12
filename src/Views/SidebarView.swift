@@ -1,4 +1,5 @@
 import SwiftUI
+import RedmarginCore
 
 /// SwiftUI view displaying a hierarchical tree of Markdown files in the sidebar
 public struct SidebarView: View {
@@ -124,6 +125,8 @@ private struct TreeNodeView: View {
                         .frame(width: 12)
                 }
 
+                GitStatusIndicator(status: node.isDirectory ? nil : node.gitStatus)
+
                 // Icon
                 Image(systemName: node.isDirectory ? "folder.fill" : "doc.text")
                     .font(.system(size: 12))
@@ -163,6 +166,54 @@ private struct TreeNodeView: View {
                     )
                 }
             }
+        }
+    }
+}
+
+private struct GitStatusIndicator: View {
+    let status: GitFileStatus?
+
+    var body: some View {
+        ZStack {
+            if let status, status != .clean {
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(status.sidebarColor)
+                    .frame(width: 2, height: 12)
+                    .help(status.sidebarDescription)
+            }
+        }
+        .frame(width: 4, height: 12)
+    }
+}
+
+private extension GitFileStatus {
+    var sidebarColor: Color {
+        switch self {
+        case .clean:
+            return .clear
+        case .modified:
+            return .orange
+        case .staged:
+            return .green
+        case .untracked:
+            return .blue
+        case .conflict:
+            return .red
+        }
+    }
+
+    var sidebarDescription: String {
+        switch self {
+        case .clean:
+            return "Clean"
+        case .modified:
+            return "Modified"
+        case .staged:
+            return "Staged"
+        case .untracked:
+            return "Untracked"
+        case .conflict:
+            return "Conflict"
         }
     }
 }

@@ -3,9 +3,12 @@ import RedmarginCore
 
 protocol RemoteFileTreeProviding {
     func detectGitRepo(for path: String) async throws -> String?
+    func gitStatus(for path: String) async throws -> GitStatusSnapshot
     func listDirectory(at path: String) async throws -> [DirectoryEntry]
     func watchDirectory(at path: String, onChange: @escaping ([String]) -> Void) async -> WatchToken
     func unwatchDirectory(_ token: WatchToken) async
+    func watchGitRepo(at repoRoot: String, onChange: @escaping () -> Void) async -> WatchToken
+    func unwatch(_ token: WatchToken) async
 }
 
 extension RemoteFileProvider: RemoteFileTreeProviding {}
@@ -27,12 +30,15 @@ public class RemoteFileTreeProvider: ObservableObject {
     /// Nested watches are required because each server-side watch is
     /// single-level and only reports changes to its own direntries.
     private var directoryWatchTokens: [String: WatchToken] = [:]
+    private var gitWatchToken: WatchToken?
     private var reconnectHost: String?
     private var reconnectObserver: NSObjectProtocol?
     private var restoreExpandedFoldersTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
+    private var gitStatusTask: Task<Void, Never>?
     private var refreshGeneration = 0
     private var loadGeneration = 0
+    private var gitStatuses: [String: GitFileStatus] = [:]
 
     /// Timeout for sidebar refresh operations. Tests inject a shorter value.
     var refreshTimeout: TimeInterval = 15
@@ -46,6 +52,20 @@ public class RemoteFileTreeProvider: ObservableObject {
     public var showHiddenFiles: Bool = false {
         didSet {
             if oldValue != showHiddenFiles { refresh() }
+        }
+    }
+
+    public var showGitStatus: Bool = true {
+        didSet {
+            guard oldValue != showGitStatus else { return }
+            if showGitStatus {
+                refreshGitStatus()
+            } else {
+                clearGitStatus(in: rootNodes)
+                Task { [weak self] in
+                    await self?.unwatchGitStatus()
+                }
+            }
         }
     }
 
@@ -123,6 +143,7 @@ public class RemoteFileTreeProvider: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         refreshTask?.cancel()
+        gitStatusTask?.cancel()
         restoreExpandedFoldersTask?.cancel()
     }
 
@@ -130,6 +151,9 @@ public class RemoteFileTreeProvider: ObservableObject {
     public func loadFiles() async {
         refreshTask?.cancel()
         refreshTask = nil
+        gitStatusTask?.cancel()
+        await unwatchGitStatus()
+        clearGitStatus(in: rootNodes)
         loadGeneration += 1
         let generation = loadGeneration
         restoreExpandedFoldersTask?.cancel()
@@ -271,6 +295,7 @@ public class RemoteFileTreeProvider: ObservableObject {
 
             if let nodes = result {
                 self.rootNodes = nodes
+                self.refreshGitStatus()
             } else {
                 print("[RemoteFileTreeProvider] refresh timed out, preserving existing tree")
             }
@@ -307,6 +332,7 @@ public class RemoteFileTreeProvider: ObservableObject {
                 wireUpNode(node)
             }
             rootNodes = nodes
+            refreshGitStatus()
         } catch {
             print("[RemoteFileTreeProvider] Failed to list root \(directory): \(error)")
         }
@@ -333,6 +359,7 @@ public class RemoteFileTreeProvider: ObservableObject {
                 }
             }
             node.children = children
+            applyGitStatus(to: children)
             // Expanded folder is now visible — watch it so sidebar reflects
             // any changes inside it without polling the entire tree.
             await watchDirectoryIfNeeded(path)
@@ -468,6 +495,62 @@ public class RemoteFileTreeProvider: ObservableObject {
             }
         }
         return result
+    }
+
+    private func refreshGitStatus() {
+        guard showGitStatus, let root = rootDirectory else { return }
+        gitStatusTask?.cancel()
+        gitStatusTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let snapshot = try await self.fileProvider.gitStatus(for: root)
+                guard !Task.isCancelled else { return }
+                self.gitStatuses = snapshot.statuses
+                self.applyGitStatus(to: self.rootNodes)
+                await self.setupGitWatching(repoRoot: snapshot.repoRoot)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.gitStatuses = [:]
+                self.applyGitStatus(to: self.rootNodes)
+            }
+        }
+    }
+
+    private func setupGitWatching(repoRoot: String?) async {
+        await unwatchGitStatus()
+
+        guard let repoRoot, !repoRoot.isEmpty else { return }
+        gitWatchToken = await fileProvider.watchGitRepo(at: repoRoot) { [weak self] in
+            Task { @MainActor in
+                self?.refreshGitStatus()
+            }
+        }
+    }
+
+    private func unwatchGitStatus() async {
+        if let token = gitWatchToken {
+            gitWatchToken = nil
+            await fileProvider.unwatch(token)
+        }
+    }
+
+    private func applyGitStatus(to nodes: [FileTreeNode]) {
+        guard showGitStatus else { return }
+        for node in nodes {
+            node.gitStatus = node.isDirectory ? nil : gitStatuses[node.url.standardizedFileURL.path]
+            if node.isDirectory {
+                applyGitStatus(to: node.children)
+            }
+        }
+    }
+
+    private func clearGitStatus(in nodes: [FileTreeNode]) {
+        gitStatusTask?.cancel()
+        gitStatuses = [:]
+        for node in nodes {
+            node.gitStatus = nil
+            clearGitStatus(in: node.children)
+        }
     }
 
     private func detectGitRepoInteractively(for path: String, pingFirst: Bool) async throws -> String? {

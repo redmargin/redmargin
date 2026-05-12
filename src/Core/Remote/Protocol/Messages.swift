@@ -20,6 +20,8 @@ public enum RPCMessageType: String, Codable {
     case gitDetectRepoResponse = "GitDetectRepoResponse"
     case gitDiff = "GitDiff"
     case gitDiffResponse = "GitDiffResponse"
+    case gitStatus = "GitStatus"
+    case gitStatusResponse = "GitStatusResponse"
     case watchGitRepo = "WatchGitRepo"
     case watchGitRepoResponse = "WatchGitRepoResponse"
     case gitChanged = "GitChanged"
@@ -235,6 +237,24 @@ public struct GitDiffResponsePayload: Codable {
 
     public init(diff: GitChangeResult?, error: String?) {
         self.diff = diff
+        self.error = error
+    }
+}
+
+public struct GitStatusPayload: Codable {
+    public let path: String
+
+    public init(path: String) {
+        self.path = path
+    }
+}
+
+public struct GitStatusResponsePayload: Codable {
+    public let snapshot: GitStatusSnapshot?
+    public let error: String?
+
+    public init(snapshot: GitStatusSnapshot?, error: String?) {
+        self.snapshot = snapshot
         self.error = error
     }
 }
