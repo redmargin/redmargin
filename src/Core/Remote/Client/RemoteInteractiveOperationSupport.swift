@@ -140,6 +140,11 @@ private func performResponsiveRemoteOperation<T>(
             if alive {
                 return try await fullOperation(fullTimeout)
             }
+            return try await hardRestartAndRunRemoteOperation(
+                fileProvider: fileProvider,
+                fullTimeout: fullTimeout,
+                fullOperation: fullOperation
+            )
         }
     } catch {
         throw error
@@ -165,8 +170,30 @@ private func reconnectAndRunRemoteOperation<T>(
         timeout: reconnectWaitTimeout
     )
     guard connected else {
-        throw SSHConnectionError.unexpectedDisconnect
+        return try await hardRestartAndRunRemoteOperation(
+            fileProvider: fileProvider,
+            fullTimeout: fullTimeout,
+            fullOperation: fullOperation
+        )
     }
+    do {
+        return try await fullOperation(fullTimeout)
+    } catch let error as SSHConnectionError {
+        guard shouldRecoverRemoteOperation(from: error) else { throw error }
+        return try await hardRestartAndRunRemoteOperation(
+            fileProvider: fileProvider,
+            fullTimeout: fullTimeout,
+            fullOperation: fullOperation
+        )
+    }
+}
+
+private func hardRestartAndRunRemoteOperation<T>(
+    fileProvider: RemoteFileProvider,
+    fullTimeout: TimeInterval,
+    fullOperation: (TimeInterval) async throws -> T
+) async throws -> T {
+    try await fileProvider.forceRestartRemoteServer()
     return try await fullOperation(fullTimeout)
 }
 

@@ -117,6 +117,43 @@ public actor SSHConnection {
         }
     }
 
+    /// Forces a full restart of the remote Redmargin helper, then reconnects.
+    /// Use this when the proxy/socket is reachable but RPCs stop returning:
+    /// a plain reconnect can attach to the same wedged daemon.
+    public func forceRestartRemoteServer() async throws {
+        #if canImport(os)
+        sshLog.error("forceRestartRemoteServer() called, state=\(String(describing: self.state), privacy: .public)")
+        #endif
+
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        healthCheckTask?.cancel()
+        healthCheckTask = nil
+        resetTransportForReconnect()
+        isIntentionallyDisconnected = false
+        reconnectAttempts = 0
+        state = .reconnecting
+
+        await deployer.removeDeployedServer(host: host)
+        try await connect(onProgress: nil)
+    }
+
+    private func resetTransportForReconnect() {
+        stderrPipe?.fileHandleForReading.readabilityHandler = nil
+        stdoutPipe?.fileHandleForReading.readabilityHandler = nil
+
+        process?.terminate()
+        process = nil
+        stdinPipe = nil
+        stdoutPipe = nil
+        stderrPipe = nil
+
+        pendingRequestIds.removeAll()
+        completedResponses.removeAll()
+        streamHandler.reset()
+        nextRequestId = 1
+    }
+
     private var homeDirectory: String?
 
     public func getHomeDirectory() async throws -> String {

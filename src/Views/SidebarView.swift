@@ -7,6 +7,7 @@ public struct SidebarView: View {
     let rootDirectory: String?
     let currentFileURL: URL
     let isLoading: Bool
+    let loadError: String?
     let onFileSelected: (URL) -> Void
     let onRefresh: () -> Void
 
@@ -15,6 +16,7 @@ public struct SidebarView: View {
         rootDirectory: String?,
         currentFileURL: URL,
         isLoading: Bool,
+        loadError: String? = nil,
         onFileSelected: @escaping (URL) -> Void,
         onRefresh: @escaping () -> Void
     ) {
@@ -22,6 +24,7 @@ public struct SidebarView: View {
         self.rootDirectory = rootDirectory
         self.currentFileURL = currentFileURL
         self.isLoading = isLoading
+        self.loadError = loadError
         self.onFileSelected = onFileSelected
         self.onRefresh = onRefresh
     }
@@ -64,6 +67,23 @@ public struct SidebarView: View {
                         .scaleEffect(0.7)
                     Spacer()
                 }
+                Spacer()
+            } else if let loadError, rootNodes.isEmpty {
+                Spacer()
+                VStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 24))
+                        .foregroundColor(.secondary)
+                    Text(loadError)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Retry", action: onRefresh)
+                        .buttonStyle(.link)
+                        .font(.system(size: 12))
+                }
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity)
                 Spacer()
             } else if rootNodes.isEmpty {
                 Spacer()

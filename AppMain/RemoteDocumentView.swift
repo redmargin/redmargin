@@ -207,6 +207,7 @@ struct RemoteDocumentWindowContent: View {
             rootDirectory: fileTreeProvider.rootDirectory,
             currentFileURL: URL(fileURLWithPath: state.location.path),
             isLoading: fileTreeProvider.isLoading,
+            loadError: fileTreeProvider.loadError,
             onFileSelected: { url in
                 handleFileSelection(url)
             },

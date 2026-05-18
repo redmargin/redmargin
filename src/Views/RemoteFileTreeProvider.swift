@@ -20,6 +20,7 @@ public class RemoteFileTreeProvider: ObservableObject {
     @Published public private(set) var rootNodes: [FileTreeNode] = []
     @Published public private(set) var rootDirectory: String?
     @Published public private(set) var isLoading = false
+    @Published public private(set) var loadError: String?
 
     private let currentFilePath: String
     private let fileProvider: any RemoteFileTreeProviding
@@ -159,6 +160,7 @@ public class RemoteFileTreeProvider: ObservableObject {
         restoreExpandedFoldersTask?.cancel()
         restoreExpandedFoldersTask = nil
         isLoading = true
+        loadError = nil
 
         // Try to find Git repo root first
         do {
@@ -168,12 +170,16 @@ public class RemoteFileTreeProvider: ObservableObject {
             ) {
                 guard isCurrentLoad(generation) else { return }
                 rootDirectory = repoRoot
-                await loadRootLevel(from: repoRoot, loadGeneration: generation)
+                let loaded = await loadRootLevel(from: repoRoot, loadGeneration: generation)
                 guard isCurrentLoad(generation) else { return }
-                await setupDirectoryWatching(for: repoRoot)
+                if loaded {
+                    await setupDirectoryWatching(for: repoRoot)
+                }
                 guard isCurrentLoad(generation) else { return }
                 isLoading = false
-                restoreExpandedFoldersAfterLoad(rootPath: repoRoot, loadGeneration: generation)
+                if loaded {
+                    restoreExpandedFoldersAfterLoad(rootPath: repoRoot, loadGeneration: generation)
+                }
                 return
             }
         } catch {
@@ -186,12 +192,16 @@ public class RemoteFileTreeProvider: ObservableObject {
             : (currentFilePath as NSString).deletingLastPathComponent
         guard isCurrentLoad(generation) else { return }
         rootDirectory = fallbackDir
-        await loadRootLevel(from: fallbackDir, loadGeneration: generation)
+        let loaded = await loadRootLevel(from: fallbackDir, loadGeneration: generation)
         guard isCurrentLoad(generation) else { return }
-        await setupDirectoryWatching(for: fallbackDir)
+        if loaded {
+            await setupDirectoryWatching(for: fallbackDir)
+        }
         guard isCurrentLoad(generation) else { return }
         isLoading = false
-        restoreExpandedFoldersAfterLoad(rootPath: fallbackDir, loadGeneration: generation)
+        if loaded {
+            restoreExpandedFoldersAfterLoad(rootPath: fallbackDir, loadGeneration: generation)
+        }
     }
 
     private func isCurrentLoad(_ generation: Int, rootPath: String? = nil) -> Bool {
@@ -295,9 +305,11 @@ public class RemoteFileTreeProvider: ObservableObject {
 
             if let nodes = result {
                 self.rootNodes = nodes
+                self.loadError = nil
                 self.refreshGitStatus()
             } else {
                 print("[RemoteFileTreeProvider] refresh timed out, preserving existing tree")
+                self.loadError = "Could not refresh the remote file list."
             }
             self.isLoading = false
         }
@@ -323,18 +335,23 @@ public class RemoteFileTreeProvider: ObservableObject {
     // MARK: - Lazy Loading
 
     /// Load root level via a single listDirectory call
-    private func loadRootLevel(from directory: String, loadGeneration: Int) async {
+    private func loadRootLevel(from directory: String, loadGeneration: Int) async -> Bool {
         do {
             let entries = try await listDirectoryInteractively(at: directory, pingFirst: true)
-            guard isCurrentLoad(loadGeneration, rootPath: directory) else { return }
+            guard isCurrentLoad(loadGeneration, rootPath: directory) else { return false }
             let nodes = buildNodes(from: entries, parentPath: directory, depth: 0)
             for node in nodes {
                 wireUpNode(node)
             }
             rootNodes = nodes
+            loadError = nil
             refreshGitStatus()
+            return true
         } catch {
             print("[RemoteFileTreeProvider] Failed to list root \(directory): \(error)")
+            guard isCurrentLoad(loadGeneration, rootPath: directory) else { return false }
+            loadError = "Could not load the remote file list."
+            return false
         }
     }
 

@@ -116,6 +116,28 @@ final class RemoteSidebarTests: XCTestCase {
         }
     }
 
+    func testRemoteFileTreeProviderReportsLoadErrorWhenRootListingFails() async throws {
+        let remoteProvider = FailingRemoteTreeFileProvider()
+
+        let provider = await RemoteFileTreeProvider(
+            currentFilePath: "/repo",
+            fileProvider: remoteProvider,
+            isDirectory: true,
+            expandedFoldersLoader: { _ in Set<String>() }
+        )
+
+        try await waitUntil("remote load failure", timeout: 2) {
+            let isLoading = await provider.isLoading
+            let loadError = await provider.loadError
+            return !isLoading && loadError != nil
+        }
+
+        let rootNodes = await provider.rootNodes
+        let loadError = await provider.loadError
+        XCTAssertTrue(rootNodes.isEmpty)
+        XCTAssertEqual(loadError, "Could not load the remote file list.")
+    }
+
     // MARK: - Reconnect Tests
 
     func testRemoteSidebarReloadsOnMatchingReconnectNotification() async throws {
@@ -457,4 +479,30 @@ actor TestRemoteTreeFileProvider: RemoteFileTreeProviding {
     func updateEntries(_ entries: [String: [DirectoryEntry]]) {
         directoryEntries = entries
     }
+}
+
+actor FailingRemoteTreeFileProvider: RemoteFileTreeProviding {
+    func detectGitRepo(for path: String) async throws -> String? {
+        nil
+    }
+
+    func gitStatus(for path: String) async throws -> GitStatusSnapshot {
+        .empty
+    }
+
+    func listDirectory(at path: String) async throws -> [DirectoryEntry] {
+        throw RPCError.serverError("stuck helper")
+    }
+
+    func watchDirectory(at path: String, onChange: @escaping ([String]) -> Void) async -> WatchToken {
+        UUID()
+    }
+
+    func unwatchDirectory(_ token: WatchToken) async {}
+
+    func watchGitRepo(at repoRoot: String, onChange: @escaping () -> Void) async -> WatchToken {
+        UUID()
+    }
+
+    func unwatch(_ token: WatchToken) async {}
 }

@@ -60,6 +60,11 @@ public actor RemoteFileProvider: FileProvider {
         await connection.forceReconnect()
     }
 
+    /// Restart the remote helper daemon, then reconnect.
+    public func forceRestartRemoteServer() async throws {
+        try await connection.forceRestartRemoteServer()
+    }
+
     private struct WatchCallback {
         let path: String
         let callback: () -> Void
