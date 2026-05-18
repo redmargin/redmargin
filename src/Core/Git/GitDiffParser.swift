@@ -17,6 +17,10 @@ public enum GitDiffParser {
         let isTracked = try await isFileTracked(relativePath: relativePath, repoRoot: repoRoot)
 
         if !isTracked {
+            if try await isFileIgnored(relativePath: relativePath, repoRoot: repoRoot) {
+                return .empty
+            }
+
             // Untracked file: all lines are "added"
             let lineCount = countLines(in: fileURL)
             return .untracked(lineCount: lineCount)
@@ -48,6 +52,18 @@ public enum GitDiffParser {
         )
 
         // Exit code 0 = tracked, non-zero = untracked
+        return result.exitCode == 0
+    }
+
+    /// Checks if an untracked file is ignored by Git.
+    private static func isFileIgnored(relativePath: String, repoRoot: URL) async throws -> Bool {
+        let result = try await ProcessRunner.run(
+            executable: "git",
+            arguments: ["check-ignore", "--quiet", "--", relativePath],
+            workingDirectory: repoRoot
+        )
+
+        // Exit code 0 = ignored, 1 = not ignored, other codes are treated as not ignored.
         return result.exitCode == 0
     }
 

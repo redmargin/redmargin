@@ -67,6 +67,31 @@ final class GutterIntegrationTests: XCTestCase {
         XCTAssertTrue(changes.deletedAnchors.isEmpty, "Clean file should have no deleted anchors")
     }
 
+    func testGutterEmptyForIgnoredUntrackedFile() async throws {
+        let repoURL = try gitHelper.createRepo(named: "ignored-test")
+        _ = try gitHelper.createFile(
+            named: ".gitignore",
+            content: "emails/\n",
+            in: repoURL
+        )
+        try gitHelper.commit(message: "Ignore generated emails", in: repoURL)
+
+        let fileURL = try gitHelper.createFile(
+            named: "emails/message.md",
+            content: "Line 1\nLine 2\n",
+            in: repoURL
+        )
+
+        let repoRoot = try await GitRepoDetector.detectRepoRoot(forFile: fileURL)
+        XCTAssertNotNil(repoRoot)
+
+        let changes = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: repoRoot!)
+
+        XCTAssertTrue(changes.addedRanges.isEmpty, "Ignored files should not show added gutters")
+        XCTAssertTrue(changes.modifiedRanges.isEmpty, "Ignored files should not show modified gutters")
+        XCTAssertTrue(changes.deletedAnchors.isEmpty, "Ignored files should not show deleted gutters")
+    }
+
     func testGutterEmptyForNonRepoFile() async throws {
         // Create file outside any git repo
         let tempDir = FileManager.default.temporaryDirectory
