@@ -162,28 +162,31 @@ public class RemoteFileTreeProvider: ObservableObject {
         isLoading = true
         loadError = nil
 
-        // Try to find Git repo root first
-        do {
-            if let repoRoot = try await detectGitRepoInteractively(
-                for: currentFilePath,
-                pingFirst: true
-            ) {
-                guard isCurrentLoad(generation) else { return }
-                rootDirectory = repoRoot
-                let loaded = await loadRootLevel(from: repoRoot, loadGeneration: generation)
-                guard isCurrentLoad(generation) else { return }
-                if loaded {
-                    await setupDirectoryWatching(for: repoRoot)
+        if !pathIsDirectory {
+            // File opens use the surrounding Git repo as the sidebar root when available.
+            // Directory opens must honor the explicitly opened folder, including ignored subtrees.
+            do {
+                if let repoRoot = try await detectGitRepoInteractively(
+                    for: currentFilePath,
+                    pingFirst: true
+                ) {
+                    guard isCurrentLoad(generation) else { return }
+                    rootDirectory = repoRoot
+                    let loaded = await loadRootLevel(from: repoRoot, loadGeneration: generation)
+                    guard isCurrentLoad(generation) else { return }
+                    if loaded {
+                        await setupDirectoryWatching(for: repoRoot)
+                    }
+                    guard isCurrentLoad(generation) else { return }
+                    isLoading = false
+                    if loaded {
+                        restoreExpandedFoldersAfterLoad(rootPath: repoRoot, loadGeneration: generation)
+                    }
+                    return
                 }
-                guard isCurrentLoad(generation) else { return }
-                isLoading = false
-                if loaded {
-                    restoreExpandedFoldersAfterLoad(rootPath: repoRoot, loadGeneration: generation)
-                }
-                return
+            } catch {
+                print("[RemoteFileTreeProvider] Git detection failed: \(error)")
             }
-        } catch {
-            print("[RemoteFileTreeProvider] Git detection failed: \(error)")
         }
 
         // Fall back to the directory itself (if opened as folder) or file's parent

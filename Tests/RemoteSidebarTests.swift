@@ -34,6 +34,37 @@ final class RemoteSidebarTests: XCTestCase {
         XCTAssertEqual(listedPaths, ["/repo"])
     }
 
+    func testRemoteDirectoryOpenKeepsOpenedFolderAsRootInsideRepo() async throws {
+        let remoteProvider = TestRemoteTreeFileProvider(
+            repoRoot: "/repo",
+            directoryEntries: [
+                "/repo": [
+                    DirectoryEntry(name: "README.md", isDirectory: false),
+                    DirectoryEntry(name: "emails", isDirectory: true)
+                ],
+                "/repo/emails": [
+                    DirectoryEntry(name: "digest.md", isDirectory: false)
+                ]
+            ]
+        )
+
+        let provider = await RemoteFileTreeProvider(
+            currentFilePath: "/repo/emails",
+            fileProvider: remoteProvider,
+            isDirectory: true,
+            expandedFoldersLoader: { _ in Set<String>() }
+        )
+        try await waitForRemoteProvider(provider)
+
+        let rootDirectory = await provider.rootDirectory
+        let rootNodes = await provider.rootNodes
+        let listedPaths = await remoteProvider.recordedListPaths()
+
+        XCTAssertEqual(rootDirectory, "/repo/emails")
+        XCTAssertEqual(rootNodes.map(\.name), ["digest.md"])
+        XCTAssertEqual(listedPaths, ["/repo/emails"])
+    }
+
     func testRemoteFileTreeProviderRestoresNestedExpandedFoldersAfterInitialLoad() async throws {
         let remoteProvider = TestRemoteTreeFileProvider(
             repoRoot: "/repo",
