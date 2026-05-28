@@ -4,6 +4,12 @@ macOS Markdown viewer with Git gutter indicators. Swift 5.9+, SwiftUI, WKWebView
 
 ---
 
+## User Intent
+
+- If Marco asks a question, answer the question only. Do not implement, edit files, run builds/tests, or otherwise change the repo unless Marco explicitly asks for changes.
+
+---
+
 ## Building
 
 For local build verification, run `./resources/scripts/build.sh`. Never run `swift build`, `xcodebuild`, `swiftlint`, or substitute verification commands unless Marco explicitly asks.

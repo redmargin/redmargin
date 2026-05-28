@@ -5,7 +5,7 @@ Markdown viewer for macOS with Git change indicators, remote file access over SS
 ## Features
 
 - **Git change indicators** — Gutter shows added, modified, and deleted lines compared to HEAD. Sidebar file rows show modified, staged, untracked, and conflict status.
-- **Remote file access** — Open Markdown on remote servers via SSH (Cmd+Shift+O). Git gutter, checkboxes, and sidebar all work remotely.
+- **Remote file access** — Open Markdown on remote servers via SSH (Cmd+Shift+O or `redmargin host:/path`). Git gutter, checkboxes, and sidebar all work remotely.
 - **File sidebar** — Browse Markdown files in the repository or directory (Cmd+1). Collapsible folders, current file highlighted, and git status bars enabled by default.
 - **Syntax highlighting** — Code blocks render with language-aware coloring. Supports Python, JavaScript, Swift, Rust, Go, and more.
 - **Mermaid diagrams** — Fenced `mermaid` blocks render as diagrams, follow the active theme, and print/export with the preview.
@@ -54,6 +54,19 @@ The build script will:
 2. Compile with Swift Package Manager
 3. Create the app bundle with WebRenderer assets and server binaries
 4. Install to /Applications
+5. Install `/usr/local/bin/redmargin` when `/usr/local/bin` is writable
+
+## Command Line
+
+The installed `redmargin` command opens local files/folders and remote SSH paths in the running app:
+
+```bash
+redmargin README.md
+redmargin ~/dev/redmargin
+redmargin devvm:/home/marco/docs/readme.md
+```
+
+Remote command-line targets use Redmargin's existing Mac -> SSH support. The command must run on the Mac that opens Redmargin; it does not SSH from a VM back to the Mac.
 
 ## Keyboard Shortcuts
 
@@ -94,14 +107,14 @@ redmargin/
 ├── Tests/                # Swift XCTest suite
 ├── resources/
 │   ├── specs/            # Feature specifications
-│   ├── scripts/          # Build scripts
+│   ├── scripts/          # Build and CLI scripts
 │   └── icons/            # App icon assets
 └── Package.swift
 ```
 
 ## Status
 
-v1.0.2 - See `resources/docs/CHANGELOG.md` for version history.
+v1.3.0 - See `resources/docs/CHANGELOG.md` for version history.
 
 ## License
 

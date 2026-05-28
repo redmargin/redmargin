@@ -43,6 +43,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     var folderSelectedFiles: [URL: URL] = [:]
     private var launchedWithFiles = false
     private var launchURLs: [URL] = []
+    private var pendingRemoteLaunches: [RedmarginLaunchRequest] = []
+    private var didFinishLaunching = false
 
     // Cache UTType to avoid repeated LaunchServices lookups
     private static let markdownType = UTType(filenameExtension: "md")!
@@ -83,6 +85,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     // MARK: - App Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        didFinishLaunching = true
         setupMainMenu(target: self)
         BookmarkManager.shared.cleanupStaleBookmarks()
         _ = openPanel  // Pre-initialize to avoid delay on first open
@@ -135,6 +138,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         for url in launchURLs {
             documentWindows[url]?.makeKeyAndOrderFront(nil)
         }
+        processPendingRemoteLaunches()
     }
 
     private func restoreOpenRemoteLocations() -> [RemoteLocation] {
@@ -253,14 +257,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     func application(_ application: NSApplication, open urls: [URL]) {
         launchedWithFiles = true
-        launchURLs = urls
         for url in urls {
-            var isDir: ObjCBool = false
-            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
-            if isDir.boolValue {
-                openFolder(url)
+            if let request = RedmarginLaunchRequest.parse(url) {
+                enqueueRemoteLaunch(request)
             } else {
-                openDocument(url)
+                launchURLs.append(url)
+                openLocalLaunchURL(url)
             }
         }
     }
@@ -269,6 +271,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         let url = URL(fileURLWithPath: filename)
         launchedWithFiles = true
         launchURLs = [url]
+        openLocalLaunchURL(url)
+        return true
+    }
+
+    private func openLocalLaunchURL(_ url: URL) {
         var isDir: ObjCBool = false
         FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
         if isDir.boolValue {
@@ -276,7 +283,67 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         } else {
             openDocument(url)
         }
-        return true
+    }
+
+    private func enqueueRemoteLaunch(_ request: RedmarginLaunchRequest) {
+        pendingRemoteLaunches.append(request)
+        if didFinishLaunching {
+            processPendingRemoteLaunches()
+        }
+    }
+
+    private func processPendingRemoteLaunches() {
+        let requests = pendingRemoteLaunches
+        pendingRemoteLaunches.removeAll()
+
+        for request in requests {
+            Task {
+                await openRemoteLaunchRequest(request)
+            }
+        }
+    }
+
+    private func openRemoteLaunchRequest(_ request: RedmarginLaunchRequest) async {
+        do {
+            let connection = try await SSHConnectionManager.shared.connection(for: request.host)
+
+            switch request.kind {
+            case .file:
+                try await openRemoteDocument(connection: connection, path: request.path)
+            case .folder:
+                try await openRemoteFolder(connection: connection, path: request.path)
+            case .auto:
+                try await openRemoteAuto(connection: connection, request: request)
+            }
+        } catch {
+            await MainActor.run {
+                showRemoteLaunchError(error, request: request)
+            }
+        }
+    }
+
+    private func openRemoteAuto(connection: SSHConnection, request: RedmarginLaunchRequest) async throws {
+        let provider = RemoteFileProvider(connection: connection)
+        do {
+            _ = try await listRemoteDirectoryEntries(
+                fileProvider: provider,
+                path: request.path,
+                probeTimeout: 3,
+                fullTimeout: 5
+            )
+            try await openRemoteFolder(connection: connection, path: request.path)
+        } catch {
+            try await openRemoteDocument(connection: connection, path: request.path)
+        }
+    }
+
+    private func showRemoteLaunchError(_ error: Error, request: RedmarginLaunchRequest) {
+        let alert = NSAlert()
+        alert.messageText = "Failed to open remote path"
+        alert.informativeText = "\(request.host):\(request.path)\n\n\(error.localizedDescription)"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     // MARK: - Window Tracking Updates

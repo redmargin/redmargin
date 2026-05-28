@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    cat <<'USAGE'
+Usage: redmargin FILE_OR_FOLDER [...]
+
+Open local files/folders:
+  redmargin README.md .
+
+Open remote files/folders using Redmargin's existing Mac -> SSH support:
+  redmargin devvm:/home/marco/docs/readme.md
+USAGE
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
+fi
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "redmargin: this command must run on the Mac that opens Redmargin" >&2
+    exit 2
+fi
+
+if [[ $# -eq 0 ]]; then
+    exec /usr/bin/open -a Redmargin
+fi
+
+urlencode() {
+    local input="$1"
+    local length=${#input}
+    local i char
+    for ((i = 0; i < length; i++)); do
+        char=${input:i:1}
+        case "$char" in
+            [a-zA-Z0-9.~_-]) printf '%s' "$char" ;;
+            *) printf '%%%02X' "'$char" ;;
+        esac
+    done
+}
+
+make_remote_url() {
+    local spec="$1"
+    local host="${spec%%:/*}"
+    local path="${spec#*:}"
+
+    if [[ -z "$host" || "$path" != /* ]]; then
+        return 1
+    fi
+
+    printf 'redmargin://open?host=%s&path=%s&kind=auto\n' \
+        "$(urlencode "$host")" \
+        "$(urlencode "$path")"
+}
+
+items=()
+for arg in "$@"; do
+    if [[ "$arg" == *:/* ]]; then
+        if remote_url="$(make_remote_url "$arg")"; then
+            items+=("$remote_url")
+            continue
+        fi
+    fi
+
+    items+=("$arg")
+done
+
+if [[ ${#items[@]} -eq 0 ]]; then
+    usage >&2
+    exit 2
+fi
+
+exec /usr/bin/open -a Redmargin "${items[@]}"

@@ -188,3 +188,41 @@ final class RemoteLocationTests: XCTestCase {
         XCTAssertEqual(location, decoded)
     }
 }
+
+final class RedmarginLaunchRequestTests: XCTestCase {
+    func testParseLaunchURL() throws {
+        let url = try XCTUnwrap(URL(string: "redmargin://open?host=devtest&path=/home/marco/readme.md&kind=file"))
+        let request = try XCTUnwrap(RedmarginLaunchRequest.parse(url))
+
+        XCTAssertEqual(request.host, "devtest")
+        XCTAssertEqual(request.path, "/home/marco/readme.md")
+        XCTAssertEqual(request.kind, .file)
+    }
+
+    func testParseLaunchURLWithEncodedValues() throws {
+        var components = URLComponents()
+        components.scheme = "redmargin"
+        components.host = "open"
+        components.queryItems = [
+            URLQueryItem(name: "host", value: "marco@dev vm"),
+            URLQueryItem(name: "path", value: "/home/marco/docs/a file.md"),
+            URLQueryItem(name: "kind", value: "folder")
+        ]
+
+        let request = try XCTUnwrap(components.url.flatMap(RedmarginLaunchRequest.parse))
+        XCTAssertEqual(request.host, "marco@dev vm")
+        XCTAssertEqual(request.path, "/home/marco/docs/a file.md")
+        XCTAssertEqual(request.kind, .folder)
+    }
+
+    func testRejectsNonRedmarginURL() throws {
+        let url = try XCTUnwrap(URL(string: "file:///tmp/readme.md"))
+        XCTAssertNil(RedmarginLaunchRequest.parse(url))
+    }
+
+    func testBuildsRoundTrippableURL() throws {
+        let original = RedmarginLaunchRequest(host: "devtest", path: "/tmp/readme.md", kind: .file)
+        let parsed = try XCTUnwrap(original.url.flatMap(RedmarginLaunchRequest.parse))
+        XCTAssertEqual(parsed, original)
+    }
+}

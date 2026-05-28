@@ -113,6 +113,14 @@ if [[ "$NO_INSTALL" == "false" ]]; then
     rm -rf /Applications/Redmargin.app 2>/dev/null || true
     mv build/Redmargin.app /Applications/
 
+    if [[ -d /usr/local/bin && -w /usr/local/bin ]]; then
+        echo "Installing CLI to /usr/local/bin/redmargin..."
+        install -m 0755 resources/scripts/redmargin /usr/local/bin/redmargin
+    else
+        echo "CLI not installed: /usr/local/bin is not writable."
+        echo "Install manually with: install -m 0755 resources/scripts/redmargin /usr/local/bin/redmargin"
+    fi
+
     echo "Launching Redmargin..."
     open -a Redmargin
 fi
