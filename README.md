@@ -114,7 +114,7 @@ redmargin/
 
 ## Status
 
-v1.3.0 - See `resources/docs/CHANGELOG.md` for version history.
+v1.4.0 - See `resources/docs/CHANGELOG.md` for version history.
 
 ## License
 
