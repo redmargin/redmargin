@@ -34,7 +34,7 @@ extension SSHConnection {
         streamHandler.reset()
         nextRequestId = 1
 
-        process?.terminate()
+        process?.terminateIfRunning()
         process = nil
         stdinPipe = nil
         stdoutPipe = nil
@@ -144,7 +144,7 @@ extension SSHConnection {
         stderrPipe?.fileHandleForReading.readabilityHandler = nil
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil
 
-        process?.terminate()
+        process?.terminateIfRunning()
         process = nil
         stdinPipe = nil
         stdoutPipe = nil

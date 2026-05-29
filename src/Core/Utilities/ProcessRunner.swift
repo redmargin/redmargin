@@ -87,7 +87,7 @@ public enum ProcessRunner {
             if let timeout {
                 group.addTask {
                     try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                    process.terminate()
+                    process.terminateIfRunning()
                     throw ProcessRunnerError.timeout(timeout)
                 }
             }

@@ -142,7 +142,7 @@ public actor SSHConnection {
         stderrPipe?.fileHandleForReading.readabilityHandler = nil
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil
 
-        process?.terminate()
+        process?.terminateIfRunning()
         process = nil
         stdinPipe = nil
         stdoutPipe = nil
@@ -273,7 +273,7 @@ public actor SSHConnection {
                 // to prevent race conditions with readabilityHandler closures
                 self.stderrPipe?.fileHandleForReading.readabilityHandler = nil
                 self.stdoutPipe?.fileHandleForReading.readabilityHandler = nil
-                self.process?.terminate()
+                self.process?.terminateIfRunning()
                 self.process = nil
                 self.stdinPipe = nil
                 self.stdoutPipe = nil

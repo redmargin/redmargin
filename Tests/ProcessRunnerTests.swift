@@ -71,4 +71,12 @@ class ProcessRunnerTests: XCTestCase {
 
         XCTAssertEqual(result.stdout, "hello world foo bar\n")
     }
+
+    func testTerminateIfRunningIsNoOpBeforeLaunch() {
+        let process = Process()
+
+        process.terminateIfRunning()
+
+        XCTAssertFalse(process.isRunning)
+    }
 }
