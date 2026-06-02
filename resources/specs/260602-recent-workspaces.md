@@ -180,8 +180,8 @@ Relevant references:
 **Phase 5: Cleanup And Documentation**
 
 - [x] **T34** Remove dead code after T4 and T17 land: the `RecentFolderItem` struct in `AppMain/AppDelegate.swift`, the old `loadRecentFolders` / `saveRecentFolders` private helpers, and any reference to `recentFolderItems` outside the new store. The `RecentFoldersMenuDelegate` class is renamed (not deleted) per T17.
-- [ ] **T35** Update `README.md` to describe the Recent Workspaces window, the keyboard shortcuts (Shift-Cmd-1, Cmd-P, Cmd-Shift-P), the Print shortcut change to Cmd-Option-P, and the Settings toggle. Update `resources/docs/CHANGELOG.md` under the next unreleased version with a "Recent Workspaces window and command palette; Print shortcut moved to Cmd-Option-P" entry.
-- [ ] **T36** Keep all new UI text concise and consistent: "Recent Workspaces", "Command Palette", "Open", "Remove", "Pin", "Unpin", "Locate...", "Try Again", "Clear Missing", "Clear All...", "Unavailable", "File", "Folder", "Local", "Remote", "Search recent workspaces", "Search workspaces and commands".
+- [x] **T35** Update `README.md` to describe the Recent Workspaces window, the keyboard shortcuts (Shift-Cmd-1, Cmd-P, Cmd-Shift-P), the Print shortcut change to Cmd-Option-P, and the Settings toggle. Update `resources/docs/CHANGELOG.md` under the next unreleased version with a "Recent Workspaces window and command palette; Print shortcut moved to Cmd-Option-P" entry.
+- [x] **T36** Keep all new UI text concise and consistent: "Recent Workspaces", "Command Palette", "Open", "Remove", "Pin", "Unpin", "Locate...", "Try Again", "Clear Missing", "Clear All...", "Unavailable", "File", "Folder", "Local", "Remote", "Search recent workspaces", "Search workspaces and commands".
 
 ---
 
@@ -271,4 +271,4 @@ Tests are implementation tasks - the implementer writes and passes each one on t
 
 ### Build Verification
 
-- [ ] **T96** Run `./resources/scripts/build.sh` and fix every relevant failure until the build passes.
+- [x] **T96** Run `./resources/scripts/build.sh` and fix every relevant failure until the build passes.

@@ -130,7 +130,7 @@ public class PreferencesManager: ObservableObject {
         didSet { UserDefaults.standard.set(showRecentWorkspacesAtLaunch, forKey: showRecentWorkspacesAtLaunchKey) }
     }
 
-    private init() {
+    public init() {
         let themeString = UserDefaults.standard.string(forKey: themeKey) ?? Theme.system.rawValue
         self.theme = Theme(rawValue: themeString) ?? .system
 

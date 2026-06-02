@@ -6,6 +6,7 @@
 ### New Features
 
 - Installed `redmargin` command opens local files/folders and remote SSH paths in the running app without replacing existing windows
+- Recent Workspaces window and command palette; Print shortcut moved to Cmd-Option-P
 - Mermaid fenced code blocks now render as diagrams in the preview, with copy-source buttons and source-mapped gutter/line-number support
 - Mermaid diagrams rerender for light/dark theme changes and are preserved in print preview and PDF export
 - Print and PDF export now share configurable top, right, bottom, and left margins plus a base font size in Preferences > Print & Export

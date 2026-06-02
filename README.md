@@ -6,13 +6,15 @@ Markdown viewer for macOS with Git change indicators, remote file access over SS
 
 - **Git change indicators** — Gutter shows added, modified, and deleted lines compared to HEAD. Sidebar file rows show modified, staged, untracked, and conflict status.
 - **Remote file access** — Open Markdown on remote servers via SSH (Cmd+Shift+O or `redmargin host:/path`). Git gutter, checkboxes, and sidebar all work remotely.
+- **Recent Workspaces** — Return to local files, local folders, remote files, and remote folders from File > Recent Workspaces, the toolbar history button, or Cmd+Shift+1.
+- **Command palette** — Search recent workspaces and common app actions with Cmd+P; Cmd+Shift+P opens with actions first.
 - **File sidebar** — Browse Markdown files in the repository or directory (Cmd+1). Collapsible folders, current file highlighted, and git status bars enabled by default.
 - **Syntax highlighting** — Code blocks render with language-aware coloring. Supports Python, JavaScript, Swift, Rust, Go, and more.
 - **Mermaid diagrams** — Fenced `mermaid` blocks render as diagrams, follow the active theme, and print/export with the preview.
 - **Interactive checkboxes** — Click to toggle, saves immediately (local and remote).
 - **Find in page** — Search with match count and navigation (Cmd+F).
 - **PDF export** — Export with theme, gutter, line numbers, margins, and font size preserved (Cmd+E). Saves to Downloads.
-- **Print support** — Configurable gutter, line number visibility, margins, and font size (Cmd+P).
+- **Print support** — Configurable gutter, line number visibility, margins, and font size (Cmd+Option+P).
 - **Light/dark themes** — System, light, or dark (set in Preferences).
 - **Per-document settings** — Each file remembers view preferences, scroll position, and window size.
 - **Line numbers** — Optional display aligned with rendered content.
@@ -74,8 +76,11 @@ Remote command-line targets use Redmargin's existing Mac -> SSH support. The com
 | ------ | -------- |
 | Open File | Cmd-O |
 | Open Remote | Cmd-Shift-O |
+| Recent Workspaces | Cmd-Shift-1 |
+| Command Palette | Cmd-P |
+| Command Palette - Actions | Cmd-Shift-P |
 | Export PDF | Cmd-E |
-| Print | Cmd-P |
+| Print | Cmd-Option-P |
 | Preferences | Cmd-, |
 | Refresh | Cmd-R |
 | Toggle Sidebar | Cmd-1 |

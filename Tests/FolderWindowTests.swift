@@ -77,6 +77,18 @@ final class FolderWindowTests: XCTestCase {
     }
 
     @MainActor
+    func testOpeningLocalFileRecordsRecentWorkspace() throws {
+        let appDelegate = AppDelegate()
+        let file = tempDir.appendingPathComponent("document.md")
+        try "# Document".write(to: file, atomically: true, encoding: .utf8)
+
+        appDelegate.openDocument(file)
+
+        XCTAssertEqual(appDelegate.recentWorkspaces.items.first?.kind, .localFile)
+        XCTAssertEqual(appDelegate.recentWorkspaces.items.first?.localURL, file.standardizedFileURL)
+    }
+
+    @MainActor
     func testOpenFolderDeduplication() throws {
         let appDelegate = AppDelegate()
 
@@ -173,5 +185,17 @@ final class FolderWindowTests: XCTestCase {
             reloadedAppDelegate.savedSelectedFile(for: tempDir),
             selectedFile.standardizedFileURL
         )
+    }
+
+    @MainActor
+    func testRecentFolderOpensWhenSavedSelectedFileIsMissing() throws {
+        let appDelegate = AppDelegate()
+        let selectedFile = tempDir.appendingPathComponent("missing.md")
+
+        appDelegate.updateFolderWindowFile(folder: tempDir, to: selectedFile)
+        appDelegate.openFolder(tempDir, selectedFile: appDelegate.savedSelectedFile(for: tempDir))
+
+        XCTAssertNil(appDelegate.savedSelectedFile(for: tempDir))
+        XCTAssertNotNil(appDelegate.folderWindows[tempDir.standardizedFileURL])
     }
 }
