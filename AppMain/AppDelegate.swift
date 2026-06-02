@@ -16,6 +16,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private var launchURLs: [URL] = []
     private var pendingRemoteLaunches: [RedmarginLaunchRequest] = []
     private var didFinishLaunching = false
+    var restoreActivityCount = 0
+    var restoreProgressWindowController: RestoreProgressWindowController?
 
     // Cache UTType to avoid repeated LaunchServices lookups
     static let markdownType = UTType(filenameExtension: "md")!
@@ -271,12 +273,43 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private func processPendingRemoteLaunches() {
         let requests = pendingRemoteLaunches
         pendingRemoteLaunches.removeAll()
+        guard !requests.isEmpty else { return }
 
-        for request in requests {
-            Task {
+        Task {
+            await MainActor.run {
+                beginRestoreActivity("Opening remote windows...")
+            }
+            defer {
+                Task { @MainActor in
+                    self.endRestoreActivity()
+                }
+            }
+            for request in requests {
                 await openRemoteLaunchRequest(request)
             }
         }
+    }
+
+    @MainActor
+    func beginRestoreActivity(_ message: String) {
+        restoreActivityCount += 1
+        if let controller = restoreProgressWindowController {
+            controller.update(message: message)
+            controller.showWindow(nil)
+        } else {
+            let controller = RestoreProgressWindowController(message: message)
+            restoreProgressWindowController = controller
+            controller.showWindow(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @MainActor
+    func endRestoreActivity() {
+        restoreActivityCount = max(0, restoreActivityCount - 1)
+        guard restoreActivityCount == 0 else { return }
+        restoreProgressWindowController?.close()
+        restoreProgressWindowController = nil
     }
 
     private func openRemoteLaunchRequest(_ request: RedmarginLaunchRequest) async {

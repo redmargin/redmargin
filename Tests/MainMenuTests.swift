@@ -6,11 +6,14 @@ import XCTest
 @MainActor
 final class MainMenuTests: XCTestCase {
     private var savedRecentWorkspaces: Data?
+    private var savedRecentWorkspacesFrame: String?
 
     override func setUp() {
         super.setUp()
         savedRecentWorkspaces = UserDefaults.standard.data(forKey: RecentWorkspaceStore.defaultsKey)
         UserDefaults.standard.removeObject(forKey: RecentWorkspaceStore.defaultsKey)
+        savedRecentWorkspacesFrame = UserDefaults.standard.string(forKey: RecentWorkspacesWindowController.frameDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: RecentWorkspacesWindowController.frameDefaultsKey)
     }
 
     override func tearDown() {
@@ -20,6 +23,12 @@ final class MainMenuTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: RecentWorkspaceStore.defaultsKey)
         }
         savedRecentWorkspaces = nil
+        if let savedRecentWorkspacesFrame {
+            UserDefaults.standard.set(savedRecentWorkspacesFrame, forKey: RecentWorkspacesWindowController.frameDefaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: RecentWorkspacesWindowController.frameDefaultsKey)
+        }
+        savedRecentWorkspacesFrame = nil
         NSApp.mainMenu = nil
         super.tearDown()
     }
@@ -90,5 +99,38 @@ final class MainMenuTests: XCTestCase {
         XCTAssertEqual(item?.paletteLabel, "Recent Workspaces")
         XCTAssertEqual(item?.toolTip, "Show Recent Workspaces (⇧⌘1)")
         XCTAssertEqual(item?.action, #selector(AppDelegate.showRecentWorkspaces(_:)))
+    }
+
+    func testRecentWorkspacesWindowRestoresSavedFrame() {
+        let savedFrame = NSRect(x: 80, y: 90, width: 700, height: 500)
+        UserDefaults.standard.set(
+            NSStringFromRect(savedFrame),
+            forKey: RecentWorkspacesWindowController.frameDefaultsKey
+        )
+
+        let restoredWindow = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        RecentWorkspacesWindowController.configureFramePersistence(on: restoredWindow)
+
+        XCTAssertEqual(restoredWindow.frame.width, 700, accuracy: 1)
+        XCTAssertEqual(restoredWindow.frame.height, 500, accuracy: 1)
+    }
+
+    func testRestoreProgressWindowBalancesActivities() {
+        let appDelegate = AppDelegate()
+
+        appDelegate.beginRestoreActivity("Restoring remote windows...")
+        XCTAssertEqual(appDelegate.restoreActivityCount, 1)
+        XCTAssertNotNil(appDelegate.restoreProgressWindowController)
+
+        appDelegate.beginRestoreActivity("Opening remote windows...")
+        XCTAssertEqual(appDelegate.restoreActivityCount, 2)
+
+        appDelegate.endRestoreActivity()
+        XCTAssertEqual(appDelegate.restoreActivityCount, 1)
+        XCTAssertNotNil(appDelegate.restoreProgressWindowController)
+
+        appDelegate.endRestoreActivity()
+        XCTAssertEqual(appDelegate.restoreActivityCount, 0)
+        XCTAssertNil(appDelegate.restoreProgressWindowController)
     }
 }

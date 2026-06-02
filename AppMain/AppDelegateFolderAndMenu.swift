@@ -82,6 +82,14 @@ extension AppDelegate {
     func restoreRemoteDocuments(_ savedRemoteLocations: [RemoteLocation]) {
         print("[AppDelegate] Restoring \(savedRemoteLocations.count) remote documents")
         Task {
+            await MainActor.run {
+                beginRestoreActivity("Restoring remote windows...")
+            }
+            defer {
+                Task { @MainActor in
+                    self.endRestoreActivity()
+                }
+            }
             var failedLocations: [RemoteLocation] = []
             let retryDelays: [UInt64] = [0, 3_000_000_000, 5_000_000_000]  // 0s, 3s, 5s
 

@@ -156,12 +156,12 @@ final class RemoteLocationTests: XCTestCase {
 
     func testDisplayTitle() {
         let location = RemoteLocation(host: "user@server", path: "/home/user/docs/readme.md")
-        XCTAssertEqual(location.displayTitle, "[remote] readme.md")
+        XCTAssertEqual(location.displayTitle, "[user@server] readme.md")
     }
 
     func testDisplayTitleRootFile() {
         let location = RemoteLocation(host: "host", path: "/file.md")
-        XCTAssertEqual(location.displayTitle, "[remote] file.md")
+        XCTAssertEqual(location.displayTitle, "[host] file.md")
     }
 
     func testHashable() {

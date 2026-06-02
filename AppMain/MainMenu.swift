@@ -7,7 +7,9 @@ private var recentMenuDelegate: OpenRecentMenuDelegate?
 
 @MainActor
 func setupMainMenu(target: AppDelegate) {
+    let app = NSApplication.shared
     let mainMenu = NSMenu()
+    app.mainMenu = mainMenu
 
     mainMenu.addItem(createAppMenu(target: target))
     mainMenu.addItem(createFileMenu(target: target))
@@ -15,8 +17,6 @@ func setupMainMenu(target: AppDelegate) {
     mainMenu.addItem(createViewMenu(target: target))
     mainMenu.addItem(createWindowMenu())
     mainMenu.addItem(createHelpMenu())
-
-    NSApp.mainMenu = mainMenu
 }
 
 // MARK: - Menu Builders

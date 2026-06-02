@@ -16,7 +16,7 @@ public struct RemoteLocation: Hashable, Codable, Sendable {
 
     public var displayTitle: String {
         let title = URL(fileURLWithPath: path).lastPathComponent
-        return "[remote] \(title.isEmpty ? path : title)"
+        return "[\(host)] \(title.isEmpty ? path : title)"
     }
 
     public var storageKey: String {
