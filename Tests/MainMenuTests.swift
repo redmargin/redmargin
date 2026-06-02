@@ -133,4 +133,19 @@ final class MainMenuTests: XCTestCase {
         XCTAssertEqual(appDelegate.restoreActivityCount, 0)
         XCTAssertNil(appDelegate.restoreProgressWindowController)
     }
+
+    func testRestoreProgressWindowCentersOnVisibleScreen() throws {
+        let screen = try XCTUnwrap(NSScreen.main)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 440, height: 132),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+
+        RestoreProgressWindowController.centerOnVisibleScreen(window, screen: screen)
+
+        XCTAssertEqual(window.frame.midX, screen.visibleFrame.midX, accuracy: 1)
+        XCTAssertEqual(window.frame.midY, screen.visibleFrame.midY, accuracy: 1)
+    }
 }
