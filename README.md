@@ -2,6 +2,10 @@
 
 Markdown viewer for macOS with Git change indicators, remote file access over SSH, Mermaid diagrams, syntax highlighting, and PDF export.
 
+## Download
+
+Download the latest notarized macOS build from [GitHub Releases](https://github.com/redmargin/redmargin/releases/latest).
+
 ## Features
 
 - **Git change indicators** — Gutter shows added, modified, and deleted lines compared to HEAD. Sidebar file rows show modified, staged, untracked, and conflict status.
@@ -119,7 +123,7 @@ redmargin/
 
 ## Status
 
-v1.4.0 - See `resources/docs/CHANGELOG.md` for version history.
+v1.5.0 - See `resources/docs/CHANGELOG.md` for version history.
 
 ## License
 

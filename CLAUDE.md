@@ -1,6 +1,6 @@
 # Redmargin Project Instructions
 
-macOS Markdown viewer with Git gutter indicators. Swift 5.9+, SwiftUI, WKWebView, markdown-it, macOS 14.0+
+macOS Markdown viewer with Git gutter indicators, folder workspaces, remote SSH support, Mermaid diagrams, and PDF export. Swift 5.9+, SwiftUI, WKWebView, markdown-it, macOS 14.0+
 
 ---
 

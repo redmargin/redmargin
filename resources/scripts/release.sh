@@ -64,7 +64,7 @@ $ENTRY_BODY
 
 ---
 
-Redmargin is a Markdown viewer for macOS with Git diff gutter, remote file support via SSH, and PDF export.
+Redmargin is a Markdown viewer for macOS with Git diff gutter, remote file support via SSH, folder workspaces, Mermaid diagrams, and PDF export.
 
 **Requirements:** macOS 14.0 (Sonoma) or later
 EOF
