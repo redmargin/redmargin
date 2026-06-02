@@ -3,22 +3,37 @@
 
 ## v1.5.0 (2026-06-02)
 
-### New Features
+This release catches the public build up with several months of Redmargin work: folder browsing, stronger remote SSH recovery, Mermaid diagrams, richer export controls, Git-aware sidebars, and a new Recent Workspaces flow.
 
-- Recent Workspaces window and command palette surfaces for local files, local folders, remote files, and remote folders
-- Recent Workspaces supports search, type filtering, pinning, removing entries, missing-local-file handling, and persisted window size and position
-- App launch and restore now show centered progress while previously opened remote windows are restored
+### Workspace and Folder Browsing
 
-### Improvements
+Redmargin now opens folders as full workspaces with a Markdown sidebar, remembered selection, sidebar width, visibility, expansion state, and scroll position. Folder windows support local and remote folders, drag-and-drop/open flows, and live sidebar updates when files change.
 
-- Remote document titles now include the SSH host so similarly named remote files are distinguishable
-- Remote restore progress text is sized to avoid truncation
-- Remote client and deployer version metadata now read from the app bundle version instead of duplicated literals
+The sidebar is faster and more capable: it loads large folders lazily, can show hidden files, follows symlinked directories correctly, and includes Git status indicators for modified, staged, untracked, and conflicted files.
 
-### Bug Fixes
+### Recent Workspaces
 
-- App relaunch no longer terminates inactive helper processes while restoring windows
-- Command palette and menu shortcuts now route Recent Workspaces and Print commands consistently
+A new Recent Workspaces window helps reopen local files, local folders, remote files, and remote folders. It supports search, type filtering, pinning, removing entries, missing-local-file handling, and persisted window size and position.
+
+Recent Workspaces is also available from the command palette, while Open Recent and folder restore behavior have been tightened up.
+
+### Remote SSH Reliability
+
+Remote documents and folders recover much better after sleep, idle time, stale connections, and remote helper issues. Redmargin now proactively checks idle connections, reconnects on wake, recovers stale refreshes, and avoids long hangs when a remote machine or daemon stops responding.
+
+When previous remote windows are restored on launch, Redmargin shows centered progress until the windows are ready. Remote document titles now include the SSH host, so similarly named files are easier to tell apart.
+
+### Markdown Rendering and Export
+
+Mermaid fenced code blocks now render as diagrams in the preview, with copy-source buttons and source-mapped gutter and line-number support. Diagrams update for light/dark theme changes and are preserved in print preview and PDF export.
+
+Print and PDF export now share configurable top, right, bottom, and left margins, plus a base font size. Print preview also handles dark-mode Mermaid output correctly.
+
+### Reading and Editing Polish
+
+Redmargin now has configurable content-width preferences, front matter renders as a styled metadata card, code blocks include copy-to-clipboard buttons, and Markdown table checkboxes render interactively.
+
+Search, sidebar selection, refresh behavior, settings navigation, gutter alignment, and line-number handling have all been tightened up across local and remote windows.
 
 ---
 
