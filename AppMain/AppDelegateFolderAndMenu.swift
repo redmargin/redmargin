@@ -59,6 +59,7 @@ extension AppDelegate {
                 window.center()
             }
         }
+        RedmarginWindowToolbar.install(on: window)
         return window
     }
 
@@ -192,6 +193,19 @@ extension AppDelegate {
             .version: "",
             .credits: credits
         ])
+    }
+
+    @objc func showRecentWorkspaces(_ sender: Any?) {
+        RecentWorkspacesWindowController.show(store: recentWorkspaces, appDelegate: self)
+    }
+
+    @objc func showCommandPaletteFromMenu(_ sender: NSMenuItem) {
+        let focus = sender.representedObject as? CommandPaletteFocus ?? .recents
+        showCommandPalette(focus: focus)
+    }
+
+    func showCommandPalette(focus: CommandPaletteFocus) {
+        CommandPaletteWindowController.show(store: recentWorkspaces, appDelegate: self, focus: focus)
     }
 
     @objc func printDocument(_ sender: Any?) {

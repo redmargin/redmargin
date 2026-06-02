@@ -243,6 +243,7 @@ extension AppDelegate {
                 window.center()
             }
         }
+        RedmarginWindowToolbar.install(on: window)
         return window
     }
 

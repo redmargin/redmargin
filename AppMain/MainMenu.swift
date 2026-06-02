@@ -65,9 +65,38 @@ private func createFileMenu(target: AppDelegate) -> NSMenuItem {
     recentMenu.delegate = recentMenuDelegate
     fileMenu.addItem(recentMenuItem)
 
+    let recentWorkspacesItem = NSMenuItem(
+        title: "Recent Workspaces...",
+        action: #selector(AppDelegate.showRecentWorkspaces(_:)),
+        keyEquivalent: "1"
+    )
+    recentWorkspacesItem.keyEquivalentModifierMask = [.command, .shift]
+    recentWorkspacesItem.target = target
+    fileMenu.addItem(recentWorkspacesItem)
+
+    let commandPaletteItem = NSMenuItem(
+        title: "Command Palette",
+        action: #selector(AppDelegate.showCommandPaletteFromMenu(_:)),
+        keyEquivalent: "p"
+    )
+    commandPaletteItem.target = target
+    commandPaletteItem.representedObject = CommandPaletteFocus.recents
+    fileMenu.addItem(commandPaletteItem)
+
+    let commandPaletteActionsItem = NSMenuItem(
+        title: "Command Palette — Actions",
+        action: #selector(AppDelegate.showCommandPaletteFromMenu(_:)),
+        keyEquivalent: "P"
+    )
+    commandPaletteActionsItem.keyEquivalentModifierMask = [.command, .shift]
+    commandPaletteActionsItem.target = target
+    commandPaletteActionsItem.representedObject = CommandPaletteFocus.actions
+    fileMenu.addItem(commandPaletteActionsItem)
+
     fileMenu.addItem(NSMenuItem.separator())
 
     let printItem = NSMenuItem(title: "Print...", action: #selector(AppDelegate.printDocument(_:)), keyEquivalent: "p")
+    printItem.keyEquivalentModifierMask = [.command, .option]
     printItem.target = target
     fileMenu.addItem(printItem)
 

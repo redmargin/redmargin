@@ -98,7 +98,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             restoreFrontmostWindow()
         }
 
-        if savedURLs.isEmpty && savedRemoteLocations.isEmpty && savedFolderURLs.isEmpty && !launchedWithFiles {
+        if RecentWorkspacesPolicy.shouldShowAtLaunch(
+            restoredLocalCount: savedURLs.count,
+            restoredRemoteCount: savedRemoteLocations.count,
+            restoredFolderCount: savedFolderURLs.count,
+            launchedWithFiles: launchedWithFiles,
+            hasPendingRemoteLaunches: !pendingRemoteLaunches.isEmpty,
+            settingEnabled: PreferencesManager.shared.showRecentWorkspacesAtLaunch
+        ) {
+            showRecentWorkspaces(nil)
+        } else if savedURLs.isEmpty && savedRemoteLocations.isEmpty && savedFolderURLs.isEmpty && !launchedWithFiles {
             showOpenPanel()
         }
 
@@ -218,7 +227,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { showOpenPanel() }
+        if !flag { showRecentWorkspaces(nil) }
         return false
     }
 
@@ -541,6 +550,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
                 window.center()
             }
         }
+        RedmarginWindowToolbar.install(on: window)
         return window
     }
 
