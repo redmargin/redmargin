@@ -17,7 +17,8 @@ final class PreferencesManagerTests: XCTestCase {
         "RedMargin.Preferences.PrintLeftMargin",
         "RedMargin.Preferences.PrintFontSize",
         "RedMargin.Preferences.ShowHiddenFiles",
-        "RedMargin.Preferences.ShowSidebarGitStatus"
+        "RedMargin.Preferences.ShowSidebarGitStatus",
+        "RedMargin.ShowRecentWorkspacesAtLaunch"
     ]
 
     override func tearDown() {
@@ -124,6 +125,23 @@ final class PreferencesManagerTests: XCTestCase {
         XCTAssertEqual(saved, false, "showSidebarGitStatus should persist to UserDefaults")
 
         prefs.showSidebarGitStatus = true
+    }
+
+    func testShowRecentWorkspacesAtLaunchDefaultsTrue() {
+        UserDefaults.standard.removeObject(forKey: "RedMargin.ShowRecentWorkspacesAtLaunch")
+
+        let prefs = PreferencesManager()
+
+        XCTAssertTrue(prefs.showRecentWorkspacesAtLaunch)
+    }
+
+    func testShowRecentWorkspacesAtLaunchRoundTrips() {
+        let prefs = PreferencesManager()
+
+        prefs.showRecentWorkspacesAtLaunch = false
+
+        XCTAssertFalse(UserDefaults.standard.bool(forKey: "RedMargin.ShowRecentWorkspacesAtLaunch"))
+        XCTAssertFalse(PreferencesManager().showRecentWorkspacesAtLaunch)
     }
 
     func testPrintFontSizePersists() {

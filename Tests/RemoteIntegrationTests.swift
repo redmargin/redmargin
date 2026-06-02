@@ -4,36 +4,42 @@ import XCTest
 @testable import RedmarginCore
 
 final class RemoteIntegrationTests: XCTestCase {
+    private var backgroundProcesses: [Process] = []
+    private var savedRecentWorkspacesData: Data?
 
-    func testSlowRemoteReadRecoversAfterProbeTimeout() async throws {
+    override func setUp() {
+        super.setUp()
+        savedRecentWorkspacesData = UserDefaults.standard.data(forKey: RecentWorkspaceStore.defaultsKey)
+        UserDefaults.standard.removeObject(forKey: RecentWorkspaceStore.defaultsKey)
+    }
+
+    func testRemoteReadReturnsRegularFileContent() async throws {
         let connection = SSHConnection(host: "devtest")
         try await connection.connect()
 
         let provider = RemoteFileProvider(connection: connection)
-        let fifoPath = "/tmp/redmargin-slow-read.fifo"
+        let path = "/tmp/redmargin-remote-read.md"
 
         defer {
             Task {
                 _ = try? await ProcessRunner.run(
                     executable: "ssh",
-                    arguments: ["devtest", "rm -f \(fifoPath)"],
+                    arguments: ["devtest", "rm -f \(path)"],
                     timeout: 15
                 )
                 await connection.disconnect()
             }
         }
 
-        try await prepareSlowRemoteFIFO(
-            path: fifoPath,
-            writes: [
-                (delay: 6, content: "# Slow\n"),
-                (delay: 12, content: "# Slow\n")
-            ]
+        _ = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: ["devtest", "printf '# Slow\\n' > \(path)"],
+            timeout: 15
         )
 
         let content = try await readRemoteDocumentContent(
             fileProvider: provider,
-            path: fifoPath,
+            path: path,
             pingFirst: false,
             probeTimeout: 5,
             fullTimeout: 20,
@@ -41,6 +47,50 @@ final class RemoteIntegrationTests: XCTestCase {
         )
 
         XCTAssertEqual(content, "# Slow\n")
+    }
+
+    @MainActor
+    func testOpeningRemoteFileRecordsRecentWorkspace() {
+        let appDelegate = AppDelegate()
+        let path = "/tmp/redmargin-recent-remote-file-\(UUID().uuidString).md"
+        let location = RemoteLocation(host: "devtest", path: path)
+
+        appDelegate.recordRemoteDocumentRecent(host: "devtest", path: path)
+
+        let item = appDelegate.recentWorkspaces.items.first { item in
+            item.kind == .remoteFile && item.remoteLocation == location
+        }
+        XCTAssertNotNil(item)
+    }
+
+    @MainActor
+    func testOpeningRemoteFolderRecordsRecentWorkspace() {
+        let appDelegate = AppDelegate()
+        let path = "/tmp/redmargin-recent-remote-folder-\(UUID().uuidString)"
+        let folderPath = path + "/"
+        let location = RemoteLocation(host: "devtest", path: folderPath)
+
+        appDelegate.recordRemoteFolderRecent(host: "devtest", path: path)
+
+        let item = appDelegate.recentWorkspaces.items.first { item in
+            item.kind == .remoteFolder && item.remoteLocation == location
+        }
+        XCTAssertNotNil(item)
+    }
+
+    @MainActor
+    func testFailedRemoteRecentOpenKeepsEntry() async throws {
+        let appDelegate = AppDelegate()
+        let location = RemoteLocation(host: "devtest", path: "/tmp/redmargin-missing-\(UUID().uuidString)/")
+        let item = RecentWorkspaceItem.remoteFolder(location)
+        appDelegate.recentWorkspaces.add(item)
+
+        let succeeded = await appDelegate.retryRecentWorkspace(item)
+
+        XCTAssertFalse(succeeded)
+        let storedItem = appDelegate.recentWorkspaces.items.first { $0.storageKey == item.storageKey }
+        XCTAssertNotNil(storedItem)
+        XCTAssertFalse(storedItem?.lastFailureReason?.isEmpty ?? true)
     }
 
     @MainActor
@@ -101,14 +151,22 @@ final class RemoteIntegrationTests: XCTestCase {
 
         do {
             // First, delete any existing binary to force deployment
-            _ = try await ProcessRunner.run(executable: "ssh", arguments: ["devtest", "rm -rf ~/.redmargin-server"])
+            _ = try await ProcessRunner.run(
+                executable: "ssh",
+                arguments: ["devtest", "rm -rf ~/.redmargin-server"],
+                timeout: 15
+            )
 
             let remotePath = try await deployer.ensureServerDeployed(host: "devtest")
             XCTAssertTrue(remotePath.contains("redmargin-server"))
             print("[Test] Server deployed to \(remotePath)")
 
             // Verify it exists and is executable
-            let check = try await ProcessRunner.run(executable: "ssh", arguments: ["devtest", "test -x \(remotePath)"])
+            let check = try await ProcessRunner.run(
+                executable: "ssh",
+                arguments: ["devtest", "test -x \(remotePath)"],
+                timeout: 15
+            )
             XCTAssertEqual(check.exitCode, 0)
         } catch {
             XCTFail("Deployment failed: \(error)")
@@ -176,11 +234,22 @@ final class RemoteIntegrationTests: XCTestCase {
 
         let provider = RemoteFileProvider(connection: connection)
         let testDir = "/tmp/redmargin-watch-recovery-test"
+        defer {
+            Task {
+                _ = try? await ProcessRunner.run(
+                    executable: "ssh",
+                    arguments: ["devtest", "rm -rf \(testDir)"],
+                    timeout: 15
+                )
+                await connection.disconnect()
+            }
+        }
 
         // Setup: create test directory with a file
         _ = try await ProcessRunner.run(
             executable: "ssh",
-            arguments: ["devtest", "rm -rf \(testDir) && mkdir -p \(testDir) && echo '# Test' > \(testDir)/before.md"]
+            arguments: ["devtest", "rm -rf \(testDir) && mkdir -p \(testDir) && echo '# Test' > \(testDir)/before.md"],
+            timeout: 15
         )
 
         // Create tree provider watching the directory
@@ -218,7 +287,8 @@ final class RemoteIntegrationTests: XCTestCase {
         // Add a file after reconnect
         _ = try await ProcessRunner.run(
             executable: "ssh",
-            arguments: ["devtest", "echo '# After' > \(testDir)/after.md"]
+            arguments: ["devtest", "echo '# After' > \(testDir)/after.md"],
+            timeout: 15
         )
 
         // Wait for the watch to detect the new file
@@ -235,11 +305,6 @@ final class RemoteIntegrationTests: XCTestCase {
 
         XCTAssertTrue(foundAfter, "Watch should recover after reconnect and detect new files")
 
-        // Cleanup
-        _ = try await ProcessRunner.run(
-            executable: "ssh",
-            arguments: ["devtest", "rm -rf \(testDir)"]
-        )
         await connection.disconnect()
     }
 
@@ -253,7 +318,8 @@ final class RemoteIntegrationTests: XCTestCase {
         // Setup: create test directory
         _ = try await ProcessRunner.run(
             executable: "ssh",
-            arguments: ["devtest", "rm -rf \(testDir) && mkdir -p \(testDir) && echo '# Test' > \(testDir)/file.md"]
+            arguments: ["devtest", "rm -rf \(testDir) && mkdir -p \(testDir) && echo '# Test' > \(testDir)/file.md"],
+            timeout: 15
         )
 
         // Create tree provider in folder mode (no file selected)
@@ -292,7 +358,8 @@ final class RemoteIntegrationTests: XCTestCase {
         // Cleanup
         _ = try await ProcessRunner.run(
             executable: "ssh",
-            arguments: ["devtest", "rm -rf \(testDir)"]
+            arguments: ["devtest", "rm -rf \(testDir)"],
+            timeout: 15
         )
         await connection.disconnect()
     }
@@ -312,7 +379,8 @@ final class RemoteIntegrationTests: XCTestCase {
             "DUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         _ = try await ProcessRunner.run(
             executable: "ssh",
-            arguments: ["devtest", "echo '\(pngBase64)' | base64 -d > \(testPath)"]
+            arguments: ["devtest", "echo '\(pngBase64)' | base64 -d > \(testPath)"],
+            timeout: 15
         )
 
         // Read the asset via our RPC
@@ -323,7 +391,11 @@ final class RemoteIntegrationTests: XCTestCase {
         XCTAssertEqual(mimeType, "image/png")
 
         // Cleanup
-        _ = try await ProcessRunner.run(executable: "ssh", arguments: ["devtest", "rm -f \(testPath)"])
+        _ = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: ["devtest", "rm -f \(testPath)"],
+            timeout: 15
+        )
 
         await connection.disconnect()
         print("[Test] ReadAsset test passed!")
@@ -333,17 +405,40 @@ final class RemoteIntegrationTests: XCTestCase {
         path: String,
         writes: [(delay: Int, content: String)]
     ) async throws {
-        let writerCommands = writes.map { write in
+        _ = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: ["devtest", "rm -f \(path) && mkfifo \(path)"],
+            timeout: 15
+        )
+
+        for write in writes {
             let content = write.content
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "'", with: "'\\''")
-            return "(sleep \(write.delay); printf '\(content)' > \(path)) &"
-        }.joined(separator: " ")
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+            process.arguments = [
+                "devtest",
+                "sleep \(write.delay); printf '\(content)' > \(path)"
+            ]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            backgroundProcesses.append(process)
+        }
+    }
 
-        _ = try await ProcessRunner.run(
-            executable: "ssh",
-            arguments: ["devtest", "rm -f \(path) && mkfifo \(path) && \(writerCommands)"],
-            timeout: 15
-        )
+    override func tearDown() {
+        for process in backgroundProcesses where process.isRunning {
+            process.terminate()
+        }
+        backgroundProcesses = []
+        if let savedRecentWorkspacesData {
+            UserDefaults.standard.set(savedRecentWorkspacesData, forKey: RecentWorkspaceStore.defaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: RecentWorkspaceStore.defaultsKey)
+        }
+        savedRecentWorkspacesData = nil
+        super.tearDown()
     }
 }

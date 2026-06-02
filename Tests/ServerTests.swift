@@ -26,8 +26,7 @@ final class ServerTests: XCTestCase {
 
     override func tearDown() async throws {
         if let process = serverProcess, process.isRunning {
-            process.terminate()
-            process.waitUntilExit()
+            await stopProcess(process)
         }
         serverProcess = nil
         try? FileManager.default.removeItem(at: tempDir)
@@ -78,8 +77,7 @@ final class ServerTests: XCTestCase {
         XCTAssertTrue(response.payload.accepted)
         XCTAssertEqual(response.payload.protocolVersion, 1)
 
-        process.terminate()
-        process.waitUntilExit()
+        await stopProcess(process)
         XCTAssertFalse(process.isRunning, "Daemon should have stopped")
     }
 
@@ -140,8 +138,7 @@ final class ServerTests: XCTestCase {
         XCTAssertTrue(response.payload.accepted)
         _ = testSystemClose(client2)
 
-        process.terminate()
-        process.waitUntilExit()
+        await stopProcess(process)
     }
 
     // MARK: - Helpers
@@ -174,6 +171,23 @@ final class ServerTests: XCTestCase {
         process.standardError = stderrPipe
         try process.run()
         return (process, stderrPipe)
+    }
+
+    private func stopProcess(_ process: Process) async {
+        guard process.isRunning else { return }
+        process.terminate()
+
+        let deadline = Date().addingTimeInterval(2)
+        while process.isRunning && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        if process.isRunning {
+            kill(process.processIdentifier, SIGKILL)
+            while process.isRunning {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
     }
 
     private func connectToSocket(_ path: String) -> Int32 {

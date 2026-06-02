@@ -46,6 +46,7 @@ public class PreferencesManager: ObservableObject {
     private let printFontSizeKey = "RedMargin.Preferences.PrintFontSize"
     private let showHiddenFilesKey = "RedMargin.Preferences.ShowHiddenFiles"
     private let showSidebarGitStatusKey = "RedMargin.Preferences.ShowSidebarGitStatus"
+    private let showRecentWorkspacesAtLaunchKey = "RedMargin.ShowRecentWorkspacesAtLaunch"
 
     @Published public var theme: Theme {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: themeKey) }
@@ -125,7 +126,11 @@ public class PreferencesManager: ObservableObject {
         didSet { UserDefaults.standard.set(showSidebarGitStatus, forKey: showSidebarGitStatusKey) }
     }
 
-    private init() {
+    @Published public var showRecentWorkspacesAtLaunch: Bool {
+        didSet { UserDefaults.standard.set(showRecentWorkspacesAtLaunch, forKey: showRecentWorkspacesAtLaunchKey) }
+    }
+
+    public init() {
         let themeString = UserDefaults.standard.string(forKey: themeKey) ?? Theme.system.rawValue
         self.theme = Theme(rawValue: themeString) ?? .system
 
@@ -154,5 +159,8 @@ public class PreferencesManager: ObservableObject {
 
         self.showHiddenFiles = UserDefaults.standard.object(forKey: showHiddenFilesKey) as? Bool ?? false
         self.showSidebarGitStatus = UserDefaults.standard.object(forKey: showSidebarGitStatusKey) as? Bool ?? true
+        self.showRecentWorkspacesAtLaunch = UserDefaults.standard.object(
+            forKey: showRecentWorkspacesAtLaunchKey
+        ) as? Bool ?? true
     }
 }

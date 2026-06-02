@@ -6,35 +6,6 @@ import RedmarginCore
 
 // Notification.Name and URL extensions are in AppDelegateExtensions.swift
 
-struct RecentFolderItem: Codable, Hashable {
-    enum Kind: String, Codable {
-        case local
-        case remote
-    }
-
-    let kind: Kind
-    let path: String
-    let host: String?
-
-    static func local(_ url: URL) -> RecentFolderItem {
-        RecentFolderItem(kind: .local, path: url.standardizedFileURL.path, host: nil)
-    }
-
-    static func remote(_ location: RemoteLocation) -> RecentFolderItem {
-        RecentFolderItem(kind: .remote, path: location.path, host: location.host)
-    }
-
-    var localURL: URL? {
-        guard kind == .local else { return nil }
-        return URL(fileURLWithPath: path).standardizedFileURL
-    }
-
-    var remoteLocation: RemoteLocation? {
-        guard kind == .remote, let host else { return nil }
-        return RemoteLocation(host: host, path: path)
-    }
-}
-
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     private var documentWindows: [URL: NSWindow] = [:]
     var remoteDocumentWindows: [RemoteLocation: NSWindow] = [:]
@@ -45,9 +16,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private var launchURLs: [URL] = []
     private var pendingRemoteLaunches: [RedmarginLaunchRequest] = []
     private var didFinishLaunching = false
+    var restoreActivityCount = 0
+    var restoreProgressWindowController: RestoreProgressWindowController?
 
     // Cache UTType to avoid repeated LaunchServices lookups
-    private static let markdownType = UTType(filenameExtension: "md")!
+    static let markdownType = UTType(filenameExtension: "md")!
 
     // Reuse panel to avoid slow NSOpenPanel initialization
     private lazy var openPanel: NSOpenPanel = {
@@ -60,25 +33,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     }()
 
     private let savedURLsKey = "RedMargin.OpenDocumentURLs"
-    private let recentFoldersKey = "RedMargin.RecentFolders"
-    private let legacyRecentURLsKey = "RedMargin.RecentDocumentURLs"
-    private let legacyRecentFolderURLsKey = "RedMargin.RecentFolderURLs"
     let recentRemoteKey = "RedMargin.RecentRemoteConnections"
-    let legacyRecentRemoteLocationsKey = "RedMargin.RecentRemoteLocations"
     let openRemoteLocationsKey = "RedMargin.OpenRemoteLocations"
     private let savedFolderURLsKey = "RedMargin.OpenFolderURLs"
     private let folderSelectedFilesKey = "RedMargin.FolderSelectedFiles"
     private let windowOrderKey = "RedMargin.WindowOrder"
     private let frontmostWindowKey = "RedMargin.FrontmostWindow"
-    let maxRecentItems = 20
+    let maxRecentItems = RecentWorkspaceStore.defaultMaxUnpinnedItems
     let settings = DocumentSettingsStorage.shared
+    let recentWorkspaces: RecentWorkspaceStore
 
-    @Published var recentFolderItems: [RecentFolderItem] = []
     @Published var recentRemoteServers: [String] = []
 
     override init() {
+        recentWorkspaces = RecentWorkspaceStore()
         super.init()
-        loadRecentFolders()
         recentRemoteServers = loadRecentRemoteServers()
     }
 
@@ -131,7 +100,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             restoreFrontmostWindow()
         }
 
-        if savedURLs.isEmpty && savedRemoteLocations.isEmpty && savedFolderURLs.isEmpty && !launchedWithFiles {
+        if RecentWorkspacesPolicy.shouldShowAtLaunch(
+            restoredLocalCount: savedURLs.count,
+            restoredRemoteCount: savedRemoteLocations.count,
+            restoredFolderCount: savedFolderURLs.count,
+            launchedWithFiles: launchedWithFiles,
+            hasPendingRemoteLaunches: !pendingRemoteLaunches.isEmpty,
+            settingEnabled: PreferencesManager.shared.showRecentWorkspacesAtLaunch
+        ) {
+            showRecentWorkspaces(nil)
+        } else if savedURLs.isEmpty && savedRemoteLocations.isEmpty && savedFolderURLs.isEmpty && !launchedWithFiles {
             showOpenPanel()
         }
 
@@ -251,7 +229,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { showOpenPanel() }
+        if !flag { showRecentWorkspaces(nil) }
         return false
     }
 
@@ -295,12 +273,43 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private func processPendingRemoteLaunches() {
         let requests = pendingRemoteLaunches
         pendingRemoteLaunches.removeAll()
+        guard !requests.isEmpty else { return }
 
-        for request in requests {
-            Task {
+        Task {
+            await MainActor.run {
+                beginRestoreActivity("Opening remote windows...")
+            }
+            defer {
+                Task { @MainActor in
+                    self.endRestoreActivity()
+                }
+            }
+            for request in requests {
                 await openRemoteLaunchRequest(request)
             }
         }
+    }
+
+    @MainActor
+    func beginRestoreActivity(_ message: String) {
+        restoreActivityCount += 1
+        if let controller = restoreProgressWindowController {
+            controller.update(message: message)
+            controller.showWindow(nil)
+        } else {
+            let controller = RestoreProgressWindowController(message: message)
+            restoreProgressWindowController = controller
+            controller.showWindow(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @MainActor
+    func endRestoreActivity() {
+        restoreActivityCount = max(0, restoreActivityCount - 1)
+        guard restoreActivityCount == 0 else { return }
+        restoreProgressWindowController?.close()
+        restoreProgressWindowController = nil
     }
 
     private func openRemoteLaunchRequest(_ request: RedmarginLaunchRequest) async {
@@ -426,7 +435,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     func savedSelectedFile(for folderURL: URL) -> URL? {
         let standardized = folderURL.standardizedFileURL
         if let fileURL = folderSelectedFiles[standardized] {
-            return fileURL
+            let standardizedFile = fileURL.standardizedFileURL
+            guard FileManager.default.fileExists(atPath: standardizedFile.path) else { return nil }
+            return standardizedFile
         }
         guard let path = savedFolderSelectedFiles()[standardized.path] else { return nil }
         let url = URL(fileURLWithPath: path).standardizedFileURL
@@ -446,108 +457,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     private func savedFolderSelectedFiles() -> [String: String] {
         UserDefaults.standard.dictionary(forKey: folderSelectedFilesKey) as? [String: String] ?? [:]
-    }
-
-    // MARK: - Recent Folders
-
-    func addToRecentFolder(_ url: URL) {
-        addRecentFolderItem(.local(url))
-    }
-
-    func addToRecentRemoteFolder(_ location: RemoteLocation) {
-        guard location.path.hasSuffix("/") else { return }
-        addRecentFolderItem(.remote(location))
-    }
-
-    private func addRecentFolderItem(_ item: RecentFolderItem) {
-        recentFolderItems.removeAll { $0 == item }
-        recentFolderItems.insert(item, at: 0)
-        recentFolderItems = pruneRecentFolderItems(recentFolderItems)
-        saveRecentFolders()
-    }
-
-    private func loadRecentFolders() {
-        let storedItems = loadRecentFolderItems()
-        let legacyURLs = loadRecentURLs(forKey: legacyRecentURLsKey)
-        let legacyFolders = loadRecentURLs(forKey: legacyRecentFolderURLsKey)
-        let legacyRemoteFolders = loadLegacyRecentRemoteFolders()
-
-        recentFolderItems = pruneRecentFolderItems(
-            storedItems
-            + (legacyFolders + legacyURLs).map(RecentFolderItem.local)
-            + legacyRemoteFolders.map(RecentFolderItem.remote)
-        )
-
-        saveRecentFolders()
-        UserDefaults.standard.removeObject(forKey: legacyRecentURLsKey)
-        UserDefaults.standard.removeObject(forKey: legacyRecentFolderURLsKey)
-        UserDefaults.standard.removeObject(forKey: legacyRecentRemoteLocationsKey)
-    }
-
-    private func loadRecentFolderItems() -> [RecentFolderItem] {
-        guard let data = UserDefaults.standard.data(forKey: recentFoldersKey) else { return [] }
-        return (try? JSONDecoder().decode([RecentFolderItem].self, from: data)) ?? []
-    }
-
-    private func loadRecentURLs(forKey key: String) -> [URL] {
-        guard let paths = UserDefaults.standard.stringArray(forKey: key) else { return [] }
-        return paths.compactMap { path -> URL? in
-            let url = URL(fileURLWithPath: path).standardizedFileURL
-            guard FileManager.default.fileExists(atPath: path) else { return nil }
-            return url
-        }
-    }
-
-    private func loadLegacyRecentRemoteFolders() -> [RemoteLocation] {
-        guard let data = UserDefaults.standard.data(forKey: legacyRecentRemoteLocationsKey) else { return [] }
-        return ((try? JSONDecoder().decode([RemoteLocation].self, from: data)) ?? [])
-            .filter { $0.path.hasSuffix("/") }
-    }
-
-    private func pruneRecentFolderItems(_ items: [RecentFolderItem]) -> [RecentFolderItem] {
-        var result: [RecentFolderItem] = []
-        for item in items {
-            guard result.count < maxRecentItems else { break }
-            guard !result.contains(item), recentFolderItemIsValid(item) else { continue }
-            result.append(item)
-        }
-        return result
-    }
-
-    private func recentFolderItemIsValid(_ item: RecentFolderItem) -> Bool {
-        switch item.kind {
-        case .local:
-            guard let url = item.localURL else { return false }
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { return false }
-            return isDir.boolValue
-        case .remote:
-            return item.remoteLocation?.path.hasSuffix("/") == true
-        }
-    }
-
-    private func saveRecentFolders() {
-        if let data = try? JSONEncoder().encode(recentFolderItems) {
-            UserDefaults.standard.set(data, forKey: recentFoldersKey)
-        }
-    }
-
-    func removeRecentFolder(_ url: URL) {
-        recentFolderItems.removeAll { $0 == .local(url) }
-        saveRecentFolders()
-    }
-
-    func removeRecentRemoteFolder(_ location: RemoteLocation) {
-        recentFolderItems.removeAll { $0 == .remote(location) }
-        saveRecentFolders()
-    }
-
-    func clearRecentFolders() {
-        recentFolderItems = []
-        UserDefaults.standard.removeObject(forKey: recentFoldersKey)
-        UserDefaults.standard.removeObject(forKey: legacyRecentFolderURLsKey)
-        UserDefaults.standard.removeObject(forKey: legacyRecentURLsKey)
-        UserDefaults.standard.removeObject(forKey: legacyRecentRemoteLocationsKey)
     }
 
     func loadRecentRemoteServers() -> [String] {
@@ -593,6 +502,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     func openDocument(_ url: URL) {
         BookmarkManager.shared.createBookmark(for: url)
+        recentWorkspaces.add(.localFile(url.standardizedFileURL))
 
         if let existingWindow = documentWindows[url] {
             existingWindow.makeKeyAndOrderFront(nil)
@@ -675,6 +585,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
                 window.center()
             }
         }
+        RedmarginWindowToolbar.install(on: window)
         return window
     }
 

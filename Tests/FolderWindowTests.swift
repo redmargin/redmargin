@@ -1,14 +1,19 @@
 import XCTest
 @testable import Redmargin
+@testable import RedmarginCore
 
 final class FolderWindowTests: XCTestCase {
     private var tempDir: URL!
+    private var savedRecentWorkspaces: Data?
+    private var savedCorruptRecentWorkspaces: Data?
     private var savedRecentFolderItems: Data?
     private var savedLegacyMixedRecents: [String]?
     private var savedLegacyRecentFolders: [String]?
     private var savedLegacyRecentRemoteFolders: Data?
     private var savedFolderSelectedFiles: [String: String]?
 
+    private let recentWorkspacesKey = "RedMargin.RecentWorkspaces"
+    private let corruptRecentWorkspacesKey = "RedMargin.RecentWorkspaces.Corrupt"
     private let recentFoldersKey = "RedMargin.RecentFolders"
     private let legacyMixedRecentsKey = "RedMargin.RecentDocumentURLs"
     private let legacyRecentFoldersKey = "RedMargin.RecentFolderURLs"
@@ -16,11 +21,15 @@ final class FolderWindowTests: XCTestCase {
     private let folderSelectedFilesKey = "RedMargin.FolderSelectedFiles"
 
     override func setUp() async throws {
+        savedRecentWorkspaces = UserDefaults.standard.data(forKey: recentWorkspacesKey)
+        savedCorruptRecentWorkspaces = UserDefaults.standard.data(forKey: corruptRecentWorkspacesKey)
         savedRecentFolderItems = UserDefaults.standard.data(forKey: recentFoldersKey)
         savedLegacyMixedRecents = UserDefaults.standard.stringArray(forKey: legacyMixedRecentsKey)
         savedLegacyRecentFolders = UserDefaults.standard.stringArray(forKey: legacyRecentFoldersKey)
         savedLegacyRecentRemoteFolders = UserDefaults.standard.data(forKey: legacyRecentRemoteFoldersKey)
         savedFolderSelectedFiles = UserDefaults.standard.dictionary(forKey: folderSelectedFilesKey) as? [String: String]
+        UserDefaults.standard.removeObject(forKey: recentWorkspacesKey)
+        UserDefaults.standard.removeObject(forKey: corruptRecentWorkspacesKey)
         UserDefaults.standard.removeObject(forKey: legacyMixedRecentsKey)
         UserDefaults.standard.removeObject(forKey: recentFoldersKey)
         UserDefaults.standard.removeObject(forKey: legacyRecentFoldersKey)
@@ -36,6 +45,8 @@ final class FolderWindowTests: XCTestCase {
         if let tempDir {
             try? FileManager.default.removeItem(at: tempDir)
         }
+        restoreUserDefaults(savedRecentWorkspaces, forKey: recentWorkspacesKey)
+        restoreUserDefaults(savedCorruptRecentWorkspaces, forKey: corruptRecentWorkspacesKey)
         restoreUserDefaults(savedRecentFolderItems, forKey: recentFoldersKey)
         restoreUserDefaults(savedLegacyMixedRecents, forKey: legacyMixedRecentsKey)
         restoreUserDefaults(savedLegacyRecentFolders, forKey: legacyRecentFoldersKey)
@@ -52,7 +63,7 @@ final class FolderWindowTests: XCTestCase {
     }
 
     @MainActor
-    func testOpenFolderCreatesWindow() throws {
+    func testOpeningLocalFolderRecordsRecentWorkspace() throws {
         let appDelegate = AppDelegate()
 
         appDelegate.openFolder(tempDir)
@@ -60,9 +71,22 @@ final class FolderWindowTests: XCTestCase {
         let standardized = tempDir.standardizedFileURL
         let window = appDelegate.folderWindows[standardized]
         XCTAssertNotNil(window, "openFolder should create a window tracked in folderWindows")
-        XCTAssertEqual(appDelegate.recentFolderItems, [.local(standardized)])
+        XCTAssertEqual(appDelegate.recentWorkspaces.items.first?.kind, .localFolder)
+        XCTAssertEqual(appDelegate.recentWorkspaces.items.first?.localURL, standardized)
 
         window?.close()
+    }
+
+    @MainActor
+    func testOpeningLocalFileRecordsRecentWorkspace() throws {
+        let appDelegate = AppDelegate()
+        let file = tempDir.appendingPathComponent("document.md")
+        try "# Document".write(to: file, atomically: true, encoding: .utf8)
+
+        appDelegate.openDocument(file)
+
+        XCTAssertEqual(appDelegate.recentWorkspaces.items.first?.kind, .localFile)
+        XCTAssertEqual(appDelegate.recentWorkspaces.items.first?.localURL, file.standardizedFileURL)
     }
 
     @MainActor
@@ -108,17 +132,18 @@ final class FolderWindowTests: XCTestCase {
     }
 
     @MainActor
-    func testLegacyMixedRecentsMigratesOnlyFoldersAndClearsLegacyKey() throws {
+    func testLegacyDocumentRecentsMigrateToWorkspaceFilesAndClearLegacyKey() throws {
         let standaloneFile = tempDir.appendingPathComponent("standalone.md")
         try "# Standalone".write(to: standaloneFile, atomically: true, encoding: .utf8)
         UserDefaults.standard.set(
-            [standaloneFile.path, tempDir.path],
+            [standaloneFile.path],
             forKey: legacyMixedRecentsKey
         )
 
         let appDelegate = AppDelegate()
 
-        XCTAssertEqual(appDelegate.recentFolderItems, [.local(tempDir.standardizedFileURL)])
+        XCTAssertEqual(appDelegate.recentWorkspaces.items.first?.kind, .localFile)
+        XCTAssertEqual(appDelegate.recentWorkspaces.items.first?.localURL, standaloneFile.standardizedFileURL)
         XCTAssertNil(UserDefaults.standard.object(forKey: legacyMixedRecentsKey))
     }
 
@@ -129,11 +154,11 @@ final class FolderWindowTests: XCTestCase {
         for index in 0..<25 {
             let folder = tempDir.appendingPathComponent("folder-\(index)")
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            appDelegate.addToRecentFolder(folder)
+            appDelegate.recentWorkspaces.add(.localFolder(folder))
         }
 
-        XCTAssertEqual(appDelegate.recentFolderItems.count, appDelegate.maxRecentItems)
-        XCTAssertEqual(appDelegate.recentFolderItems.first?.localURL?.lastPathComponent, "folder-24")
+        XCTAssertEqual(appDelegate.recentWorkspaces.recent.count, appDelegate.maxRecentItems)
+        XCTAssertEqual(appDelegate.recentWorkspaces.recent.first?.localURL?.lastPathComponent, "folder-24")
     }
 
     @MainActor
@@ -141,15 +166,15 @@ final class FolderWindowTests: XCTestCase {
         let appDelegate = AppDelegate()
         let remoteFolder = RemoteLocation(host: "cognel-dev", path: "/work/docs/")
 
-        appDelegate.addToRecentFolder(tempDir)
-        appDelegate.addToRecentRemoteFolder(remoteFolder)
+        appDelegate.recentWorkspaces.add(.localFolder(tempDir))
+        appDelegate.recentWorkspaces.add(.remoteFolder(remoteFolder))
 
-        XCTAssertEqual(appDelegate.recentFolderItems.first, .remote(remoteFolder))
-        XCTAssertEqual(appDelegate.recentFolderItems.dropFirst().first, .local(tempDir.standardizedFileURL))
+        XCTAssertEqual(appDelegate.recentWorkspaces.recent.first?.remoteLocation, remoteFolder)
+        XCTAssertEqual(appDelegate.recentWorkspaces.recent.dropFirst().first?.localURL, tempDir.standardizedFileURL)
     }
 
     @MainActor
-    func testRecentFolderRemembersLastSelectedFile() throws {
+    func testRecentFolderStillRemembersLastSelectedFile() throws {
         let appDelegate = AppDelegate()
         let selectedFile = tempDir.appendingPathComponent("selected.md")
         try "# Selected".write(to: selectedFile, atomically: true, encoding: .utf8)
@@ -161,5 +186,17 @@ final class FolderWindowTests: XCTestCase {
             reloadedAppDelegate.savedSelectedFile(for: tempDir),
             selectedFile.standardizedFileURL
         )
+    }
+
+    @MainActor
+    func testRecentFolderOpensWhenSavedSelectedFileIsMissing() throws {
+        let appDelegate = AppDelegate()
+        let selectedFile = tempDir.appendingPathComponent("missing.md")
+
+        appDelegate.updateFolderWindowFile(folder: tempDir, to: selectedFile)
+        appDelegate.openFolder(tempDir, selectedFile: appDelegate.savedSelectedFile(for: tempDir))
+
+        XCTAssertNil(appDelegate.savedSelectedFile(for: tempDir))
+        XCTAssertNotNil(appDelegate.folderWindows[tempDir.standardizedFileURL])
     }
 }

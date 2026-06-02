@@ -187,6 +187,15 @@ private struct GeneralSettingsView: View {
     var body: some View {
         Form {
             Section {
+                Toggle(
+                    "Show Recent Workspaces when Redmargin launches with no open windows",
+                    isOn: $prefs.showRecentWorkspacesAtLaunch
+                )
+            } header: {
+                Text("Startup")
+            }
+
+            Section {
                 Picker("Theme", selection: $prefs.theme) {
                     Text("System").tag(Theme.system)
                     Text("Light").tag(Theme.light)

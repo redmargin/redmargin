@@ -282,7 +282,7 @@ struct FolderWindowContent: View {
                     // (documentState is @State, not @ObservedObject, so SwiftUI
                     // doesn't observe its @Published property changes directly.)
                     selectedFileURL = url
-                    appDelegate?.addToRecentFolder(folderURL)
+                    appDelegate?.recentWorkspaces.add(.localFolder(folderURL))
                     appDelegate?.updateFolderWindowFile(folder: folderURL, to: url)
                     if let window = NSApp.keyWindow {
                         window.title = url.displayPath
@@ -296,7 +296,7 @@ struct FolderWindowContent: View {
             let content = (try? String(contentsOf: url, encoding: .utf8)) ?? "Error loading file"
             documentState = DocumentState(content: content, fileURL: url)
             selectedFileURL = url
-            appDelegate?.addToRecentFolder(folderURL)
+            appDelegate?.recentWorkspaces.add(.localFolder(folderURL))
             appDelegate?.updateFolderWindowFile(folder: folderURL, to: url)
             if let window = NSApp.keyWindow {
                 window.title = url.displayPath

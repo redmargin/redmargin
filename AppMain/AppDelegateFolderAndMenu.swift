@@ -8,7 +8,7 @@ import RedmarginCore
 extension AppDelegate {
     func openFolder(_ url: URL, selectedFile: URL? = nil) {
         let standardized = url.standardizedFileURL
-        addToRecentFolder(standardized)
+        recentWorkspaces.add(.localFolder(standardized))
 
         if let existingWindow = folderWindows[standardized] {
             existingWindow.makeKeyAndOrderFront(nil)
@@ -59,6 +59,7 @@ extension AppDelegate {
                 window.center()
             }
         }
+        RedmarginWindowToolbar.install(on: window)
         return window
     }
 
@@ -81,6 +82,14 @@ extension AppDelegate {
     func restoreRemoteDocuments(_ savedRemoteLocations: [RemoteLocation]) {
         print("[AppDelegate] Restoring \(savedRemoteLocations.count) remote documents")
         Task {
+            await MainActor.run {
+                beginRestoreActivity("Restoring remote windows...")
+            }
+            defer {
+                Task { @MainActor in
+                    self.endRestoreActivity()
+                }
+            }
             var failedLocations: [RemoteLocation] = []
             let retryDelays: [UInt64] = [0, 3_000_000_000, 5_000_000_000]  // 0s, 3s, 5s
 
@@ -192,6 +201,19 @@ extension AppDelegate {
             .version: "",
             .credits: credits
         ])
+    }
+
+    @objc func showRecentWorkspaces(_ sender: Any?) {
+        RecentWorkspacesWindowController.show(store: recentWorkspaces, appDelegate: self)
+    }
+
+    @objc func showCommandPaletteFromMenu(_ sender: NSMenuItem) {
+        let focus = sender.representedObject as? CommandPaletteFocus ?? .recents
+        showCommandPalette(focus: focus)
+    }
+
+    func showCommandPalette(focus: CommandPaletteFocus) {
+        CommandPaletteWindowController.show(store: recentWorkspaces, appDelegate: self, focus: focus)
     }
 
     @objc func printDocument(_ sender: Any?) {

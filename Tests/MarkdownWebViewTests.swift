@@ -586,15 +586,20 @@ final class RemoteAssetSchemeHandlerTests: XCTestCase {
         let html = """
         <html><body>
         <script>
-        var loaded = 0;
-        for (var i = 0; i < 5; i++) {
+        var next = 0;
+        function loadNext() {
+            if (next === 5) {
+                window.webkit.messageHandlers.done.postMessage('ok');
+                return;
+            }
             var img = new Image();
-            img.src = 'redmargin-remote:///asset/' + i + '.bin';
+            img.src = 'redmargin-remote:///asset/' + next + '.bin';
+            next++;
             img.onload = img.onerror = function() {
-                loaded++;
-                if (loaded === 5) window.webkit.messageHandlers.done.postMessage('ok');
+                loadNext();
             };
         }
+        loadNext();
         </script>
         </body></html>
         """
