@@ -5,10 +5,12 @@ import WebKit
 private class CachedAsset {
     let data: Data
     let mimeType: String
+    let cost: Int
 
     init(data: Data, mimeType: String) {
         self.data = data
         self.mimeType = mimeType
+        self.cost = data.count
     }
 }
 
@@ -21,12 +23,12 @@ public class RemoteAssetSchemeHandler: NSObject, WKURLSchemeHandler {
     private var activeTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private let lock = NSLock()
 
-    // Thread-safe auto-evicting cache (~20MB limit)
-    private let cache: NSCache<NSString, CachedAsset> = {
-        let cache = NSCache<NSString, CachedAsset>()
-        cache.totalCostLimit = 20 * 1024 * 1024
-        return cache
-    }()
+    // Thread-safe deterministic cache (~20MB limit).
+    private let cacheCostLimit = 20 * 1024 * 1024
+    private var cache: [String: CachedAsset] = [:]
+    private var cacheOrder: [String] = []
+    private var cacheCost = 0
+    private let cacheLock = NSLock()
 
     public init(fetchAsset: @escaping (String) async throws -> (Data, String)?) {
         self.fetchAsset = fetchAsset
@@ -50,7 +52,7 @@ public class RemoteAssetSchemeHandler: NSObject, WKURLSchemeHandler {
                 let mimeType: String
 
                 // Check cache first
-                if let cached = self.cache.object(forKey: path as NSString) {
+                if let cached = self.cachedAsset(for: path) {
                     (data, mimeType) = (cached.data, cached.mimeType)
                 } else {
                     // Fetch from remote
@@ -62,12 +64,7 @@ public class RemoteAssetSchemeHandler: NSObject, WKURLSchemeHandler {
                         return
                     }
                     (data, mimeType) = result
-                    // Cache for future requests (cost = data size for eviction)
-                    self.cache.setObject(
-                        CachedAsset(data: data, mimeType: mimeType),
-                        forKey: path as NSString,
-                        cost: data.count
-                    )
+                    self.cacheAsset(data: data, mimeType: mimeType, for: path)
                 }
 
                 guard !Task.isCancelled else {
@@ -106,6 +103,39 @@ public class RemoteAssetSchemeHandler: NSObject, WKURLSchemeHandler {
         lock.lock()
         activeTasks.removeValue(forKey: taskId)
         lock.unlock()
+    }
+
+    private func cachedAsset(for path: String) -> CachedAsset? {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        guard let cached = cache[path] else { return nil }
+        cacheOrder.removeAll { $0 == path }
+        cacheOrder.append(path)
+        return cached
+    }
+
+    private func cacheAsset(data: Data, mimeType: String, for path: String) {
+        let cached = CachedAsset(data: data, mimeType: mimeType)
+        guard cached.cost <= cacheCostLimit else { return }
+
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+
+        if let previous = cache[path] {
+            cacheCost -= previous.cost
+            cacheOrder.removeAll { $0 == path }
+        }
+
+        while cacheCost + cached.cost > cacheCostLimit, let evictedPath = cacheOrder.first {
+            cacheOrder.removeFirst()
+            if let evicted = cache.removeValue(forKey: evictedPath) {
+                cacheCost -= evicted.cost
+            }
+        }
+
+        cache[path] = cached
+        cacheOrder.append(path)
+        cacheCost += cached.cost
     }
 
     public func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {

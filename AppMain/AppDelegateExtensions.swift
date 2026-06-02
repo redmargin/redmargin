@@ -88,12 +88,7 @@ extension AppDelegate {
     func openRemoteDocument(connection: SSHConnection, path: String) async throws {
         let host = await connection.getHost()
         let location = RemoteLocation(host: host, path: path)
-
-        // Remote files are opened normally, but Open Recent is folder-only.
-        await MainActor.run {
-            addToRecentRemoteServers(host)
-            recentWorkspaces.add(.remoteFile(location))
-        }
+        await MainActor.run { recordRemoteDocumentRecent(host: host, path: path) }
 
         // Check if already open
         if let existingWindow = remoteDocumentWindows[location] {
@@ -140,12 +135,7 @@ extension AppDelegate {
         let host = await connection.getHost()
         let folderPath = path.hasSuffix("/") ? path : path + "/"
         let location = RemoteLocation(host: host, path: folderPath)
-
-        // Keep folder recents ordered across local and remote folders.
-        await MainActor.run {
-            addToRecentRemoteServers(host)
-            recentWorkspaces.add(.remoteFolder(location))
-        }
+        await MainActor.run { recordRemoteFolderRecent(host: host, path: folderPath) }
 
         // Check if already open
         if let existingWindow = remoteDocumentWindows[location] {
@@ -178,6 +168,16 @@ extension AppDelegate {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
         }
+    }
+
+    func recordRemoteDocumentRecent(host: String, path: String) {
+        addToRecentRemoteServers(host)
+        recentWorkspaces.add(.remoteFile(RemoteLocation(host: host, path: path)))
+    }
+
+    func recordRemoteFolderRecent(host: String, path: String) {
+        addToRecentRemoteServers(host)
+        recentWorkspaces.add(.remoteFolder(RemoteLocation(host: host, path: path)))
     }
 
     /// Opens a remote document from sidebar navigation, reusing the existing connection

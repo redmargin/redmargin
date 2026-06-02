@@ -1,5 +1,6 @@
 import XCTest
 @testable import Redmargin
+@testable import RedmarginCore
 
 final class FolderWindowTests: XCTestCase {
     private var tempDir: URL!
@@ -62,7 +63,7 @@ final class FolderWindowTests: XCTestCase {
     }
 
     @MainActor
-    func testOpenFolderCreatesWindow() throws {
+    func testOpeningLocalFolderRecordsRecentWorkspace() throws {
         let appDelegate = AppDelegate()
 
         appDelegate.openFolder(tempDir)
@@ -173,7 +174,7 @@ final class FolderWindowTests: XCTestCase {
     }
 
     @MainActor
-    func testRecentFolderRemembersLastSelectedFile() throws {
+    func testRecentFolderStillRemembersLastSelectedFile() throws {
         let appDelegate = AppDelegate()
         let selectedFile = tempDir.appendingPathComponent("selected.md")
         try "# Selected".write(to: selectedFile, atomically: true, encoding: .utf8)

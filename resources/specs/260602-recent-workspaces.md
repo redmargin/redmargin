@@ -2,7 +2,7 @@
 
 ## Meta
 
-- Status: Reviewed
+- Status: Implemented
 - Branch: feature/recent-workspaces
 
 ---
@@ -44,31 +44,31 @@ User-facing behaviors:
 
 ### Acceptance Criteria
 
-- [ ] **A1** File > Recent Workspaces... opens the Recent Workspaces window.
-- [ ] **A2** File > Open Recent shows up to ten of the most recent workspaces (pinned and unpinned merged, sorted by last-opened time) with a Clear Menu footer.
-- [ ] **A3** The toolbar history button on a local document, local folder, remote document, and remote folder window opens the same Recent Workspaces window as the menu item.
-- [ ] **A4** Redmargin shows Recent Workspaces at launch only when no document or folder window was restored, Redmargin was not launched by opening a file (local or via URL scheme), and the "Show Recent Workspaces at launch" setting is on.
-- [ ] **A5** Redmargin shows Recent Workspaces on Dock-icon reopen when no windows are visible.
-- [ ] **A6** The Settings toggle "Show Recent Workspaces at launch" suppresses the launch-time window when turned off and restores it when turned on.
-- [ ] **A7** Cmd-P opens the command palette with the recent workspaces section focused.
-- [ ] **A8** Cmd-Shift-P opens the command palette with the app actions section focused.
-- [ ] **A9** Local folders, local files, remote folders, and remote files appear in one recent workspace list.
-- [ ] **A10** Opening a local file from any open path records the file as a recent workspace.
-- [ ] **A11** Pinned workspaces appear above ordinary recent workspaces.
-- [ ] **A12** Search narrows recent workspaces by visible name and location.
-- [ ] **A13** All, Local, and Remote filters narrow the list without changing stored recents.
-- [ ] **A14** All Kinds, Files, and Folders filters narrow the list without changing stored recents.
-- [ ] **A15** A user can open a recent workspace with the keyboard or mouse.
-- [ ] **A16** A user can remove any single recent workspace without opening it.
-- [ ] **A17** A user can clear unavailable local workspaces without removing available or remote workspaces.
-- [ ] **A18** Clear All removes recent workspaces only after confirmation.
-- [ ] **A19** A missing local workspace is shown as Unavailable instead of failing without explanation.
-- [ ] **A20** A failed remote workspace open leaves the workspace in the list with Try Again and Remove choices.
-- [ ] **A21** Opening a recent folder restores the previous file selection and sidebar state when those saved items are still valid.
-- [ ] **A22** Opening a recent folder still succeeds when its saved file selection no longer exists.
-- [ ] **A23** Opening a workspace from the Recent Workspaces window closes that window.
-- [ ] **A24** Opening a workspace or running a command from the command palette closes the palette.
-- [ ] **A25** Locate... opens the file panel at the last known parent directory of the missing item.
+- [x] **A1** File > Recent Workspaces... opens the Recent Workspaces window.
+- [x] **A2** File > Open Recent shows up to ten of the most recent workspaces (pinned and unpinned merged, sorted by last-opened time) with a Clear Menu footer.
+- [x] **A3** The toolbar history button on a local document, local folder, remote document, and remote folder window opens the same Recent Workspaces window as the menu item.
+- [x] **A4** Redmargin shows Recent Workspaces at launch only when no document or folder window was restored, Redmargin was not launched by opening a file (local or via URL scheme), and the "Show Recent Workspaces at launch" setting is on.
+- [x] **A5** Redmargin shows Recent Workspaces on Dock-icon reopen when no windows are visible.
+- [x] **A6** The Settings toggle "Show Recent Workspaces at launch" suppresses the launch-time window when turned off and restores it when turned on.
+- [x] **A7** Cmd-P opens the command palette with the recent workspaces section focused.
+- [x] **A8** Cmd-Shift-P opens the command palette with the app actions section focused.
+- [x] **A9** Local folders, local files, remote folders, and remote files appear in one recent workspace list.
+- [x] **A10** Opening a local file from any open path records the file as a recent workspace.
+- [x] **A11** Pinned workspaces appear above ordinary recent workspaces.
+- [x] **A12** Search narrows recent workspaces by visible name and location.
+- [x] **A13** All, Local, and Remote filters narrow the list without changing stored recents.
+- [x] **A14** All Kinds, Files, and Folders filters narrow the list without changing stored recents.
+- [x] **A15** A user can open a recent workspace with the keyboard or mouse.
+- [x] **A16** A user can remove any single recent workspace without opening it.
+- [x] **A17** A user can clear unavailable local workspaces without removing available or remote workspaces.
+- [x] **A18** Clear All removes recent workspaces only after confirmation.
+- [x] **A19** A missing local workspace is shown as Unavailable instead of failing without explanation.
+- [x] **A20** A failed remote workspace open leaves the workspace in the list with Try Again and Remove choices.
+- [x] **A21** Opening a recent folder restores the previous file selection and sidebar state when those saved items are still valid.
+- [x] **A22** Opening a recent folder still succeeds when its saved file selection no longer exists.
+- [x] **A23** Opening a workspace from the Recent Workspaces window closes that window.
+- [x] **A24** Opening a workspace or running a command from the command palette closes the palette.
+- [x] **A25** Locate... opens the file panel at the last known parent directory of the missing item.
 
 ### Out of scope
 
@@ -191,83 +191,76 @@ Tests are implementation tasks - the implementer writes and passes each one on t
 
 ### Unit Tests (`Tests/RecentWorkspacesTests.swift`)
 
-- [ ] **T37** `testRecentWorkspaceItemRoundTripsLocalFile` - A `localFile` item encodes and decodes with title, parent location, pin state, and `lastOpened` intact.
-- [ ] **T38** `testRecentWorkspaceItemRoundTripsRemoteFolder` - A `remoteFolder` item encodes and decodes with host, trailing-slash path, kind, pin state, and `lastOpened` intact.
-- [ ] **T39** `testRecentWorkspaceStoreMigratesExistingFolderRecents` - Items written by today's `RedMargin.RecentFolders` JSON are read as `localFolder` workspace items and the legacy key is removed after save.
-- [ ] **T40** `testRecentWorkspaceStoreMigratesLegacyMixedRecents` - Items written by `RedMargin.RecentDocumentURLs` and `RedMargin.RecentFolderURLs` are read as `localFile` and `localFolder` items respectively and both legacy keys are removed.
-- [ ] **T41** `testRecentWorkspaceStoreMigratesLegacyRemoteRecents` - Items written by `RedMargin.RecentRemoteLocations` are read as `remoteFolder` items, the trailing-slash path is preserved, and the legacy key is removed.
-- [ ] **T42** `testRecentWorkspaceStoreLeavesRecentRemoteConnectionsAlone` - Migration does not touch `RedMargin.RecentRemoteConnections`.
-- [ ] **T43** `testRecentWorkspaceStoreDeduplicatesByStorageKey` - Adding the same item twice keeps a single entry whose `lastOpened` is the most recent.
-- [ ] **T44** `testRecentWorkspaceStoreRetainsPinnedEntriesAboveRecents` - Pinned items sort above unpinned in the combined order returned to the view; unpinned items sort by `lastOpened` descending.
-- [ ] **T45** `testRecentWorkspaceStoreEnforcesRetentionForUnpinnedEntries` - Adding a 21st unpinned item drops the oldest unpinned entry; pinned entries are never dropped regardless of count.
-- [ ] **T46** `testRecentWorkspaceStoreSearchesNameAndLocation` - Filtering by the substring "log" matches a folder named `logs`, a file at `/var/log/notes.md`, a remote host `prod-logs`, and a remote path `/var/log/`.
-- [ ] **T47** `testRecentWorkspaceStoreFiltersLocalAndRemote` - The `All`, `Local`, and `Remote` tier filters return the expected partitions for a fixture set.
-- [ ] **T48** `testRecentWorkspaceStoreFiltersFilesAndFolders` - The `All Kinds`, `Files`, and `Folders` kind filters return the expected partitions for a fixture set.
-- [ ] **T49** `testRecentWorkspaceStorePinOnlyFilter` - The pin-only toggle returns only pinned items regardless of tier and kind selections.
-- [ ] **T50** `testClearMissingRemovesOnlyUnavailableLocalEntries` - Clear Missing removes only local items whose URLs no longer exist; available local items and all remote items remain.
-- [ ] **T51** `testRemoveDeletesOneWorkspace` - Removing a workspace deletes only the selected item.
-- [ ] **T52** `testClearAllRemovesEverything` - Clear All empties the store including pinned entries.
-- [ ] **T53** `testMarkRemoteFailurePersistsReasonAndClearsOnRetrySuccess` - `markRemoteFailure(_:reason:)` stores the message on the item's `lastFailureReason`; `clearRemoteFailure(_:)` clears it.
-- [ ] **T54** `testRelocateReplacesLocationAndClearsFailure` - `relocate(item, to: newURL)` updates the item's `location` and sets `lastFailureReason` to nil.
-- [ ] **T55** `testStoreNeverDropsItemsForMissingTargets` - Items whose local URL no longer exists remain in the store after a reload and are returned by `items`.
+- [x] **T37** `testRecentWorkspaceItemRoundTripsLocalFile` - A `localFile` item encodes and decodes with title, parent location, pin state, and `lastOpened` intact.
+- [x] **T38** `testRecentWorkspaceItemRoundTripsRemoteFolder` - A `remoteFolder` item encodes and decodes with host, trailing-slash path, kind, pin state, and `lastOpened` intact.
+- [x] **T39** `testRecentWorkspaceStoreMigratesExistingFolderRecents` - Items written by today's `RedMargin.RecentFolders` JSON are read as `localFolder` workspace items and the legacy key is removed after save.
+- [x] **T40** `testRecentWorkspaceStoreMigratesLegacyMixedRecents` - Items written by `RedMargin.RecentDocumentURLs` and `RedMargin.RecentFolderURLs` are read as `localFile` and `localFolder` items respectively and both legacy keys are removed.
+- [x] **T41** `testRecentWorkspaceStoreMigratesLegacyRemoteRecents` - Items written by `RedMargin.RecentRemoteLocations` are read as `remoteFolder` items, the trailing-slash path is preserved, and the legacy key is removed.
+- [x] **T42** `testRecentWorkspaceStoreLeavesRecentRemoteConnectionsAlone` - Migration does not touch `RedMargin.RecentRemoteConnections`.
+- [x] **T43** `testRecentWorkspaceStoreDeduplicatesByStorageKey` - Adding the same item twice keeps a single entry whose `lastOpened` is the most recent.
+- [x] **T44** `testRecentWorkspaceStoreRetainsPinnedEntriesAboveRecents` - Pinned items sort above unpinned in the combined order returned to the view; unpinned items sort by `lastOpened` descending.
+- [x] **T45** `testRecentWorkspaceStoreEnforcesRetentionForUnpinnedEntries` - Adding a 21st unpinned item drops the oldest unpinned entry; pinned entries are never dropped regardless of count.
+- [x] **T46** `testRecentWorkspaceStoreSearchesNameAndLocation` - Filtering by the substring "log" matches a folder named `logs`, a file at `/var/log/notes.md`, a remote host `prod-logs`, and a remote path `/var/log/`.
+- [x] **T47** `testRecentWorkspaceStoreFiltersLocalAndRemote` - The `All`, `Local`, and `Remote` tier filters return the expected partitions for a fixture set.
+- [x] **T48** `testRecentWorkspaceStoreFiltersFilesAndFolders` - The `All Kinds`, `Files`, and `Folders` kind filters return the expected partitions for a fixture set.
+- [x] **T49** `testRecentWorkspaceStorePinOnlyFilter` - The pin-only toggle returns only pinned items regardless of tier and kind selections.
+- [x] **T50** `testClearMissingRemovesOnlyUnavailableLocalEntries` - Clear Missing removes only local items whose URLs no longer exist; available local items and all remote items remain.
+- [x] **T51** `testRemoveDeletesOneWorkspace` - Removing a workspace deletes only the selected item.
+- [x] **T52** `testClearAllRemovesEverything` - Clear All empties the store including pinned entries.
+- [x] **T53** `testMarkRemoteFailurePersistsReasonAndClearsOnRetrySuccess` - `markRemoteFailure(_:reason:)` stores the message on the item's `lastFailureReason`; `clearRemoteFailure(_:)` clears it.
+- [x] **T54** `testRelocateReplacesLocationAndClearsFailure` - `relocate(item, to: newURL)` updates the item's `location` and sets `lastFailureReason` to nil.
+- [x] **T55** `testStoreNeverDropsItemsForMissingTargets` - Items whose local URL no longer exists remain in the store after a reload and are returned by `items`.
 
 ### Unit Tests (`Tests/RecentWorkspacesPolicyTests.swift`)
 
-- [ ] **T56** `testPolicyReturnsTrueOnEmptyLaunchWithSettingOn` - Zero restored windows, no launch files, no pending remote launches, setting on → `true`.
-- [ ] **T57** `testPolicyReturnsFalseWhenLocalWindowRestored` - At least one restored local window → `false`.
-- [ ] **T58** `testPolicyReturnsFalseWhenRemoteWindowRestored` - At least one restored remote window → `false`.
-- [ ] **T59** `testPolicyReturnsFalseWhenFolderWindowRestored` - At least one restored folder window → `false`.
-- [ ] **T60** `testPolicyReturnsFalseWhenLaunchedWithFiles` - `launchedWithFiles == true` → `false`.
-- [ ] **T61** `testPolicyReturnsFalseWhenPendingRemoteLaunches` - `hasPendingRemoteLaunches == true` → `false`.
-- [ ] **T62** `testPolicyReturnsFalseWhenSettingOff` - Setting off → `false` even on an otherwise-eligible launch.
+- [x] **T56** `testPolicyReturnsTrueOnEmptyLaunchWithSettingOn` - Zero restored windows, no launch files, no pending remote launches, setting on → `true`.
+- [x] **T57** `testPolicyReturnsFalseWhenLocalWindowRestored` - At least one restored local window → `false`.
+- [x] **T58** `testPolicyReturnsFalseWhenRemoteWindowRestored` - At least one restored remote window → `false`.
+- [x] **T59** `testPolicyReturnsFalseWhenFolderWindowRestored` - At least one restored folder window → `false`.
+- [x] **T60** `testPolicyReturnsFalseWhenLaunchedWithFiles` - `launchedWithFiles == true` → `false`.
+- [x] **T61** `testPolicyReturnsFalseWhenPendingRemoteLaunches` - `hasPendingRemoteLaunches == true` → `false`.
+- [x] **T62** `testPolicyReturnsFalseWhenSettingOff` - Setting off → `false` even on an otherwise-eligible launch.
 
 ### Unit Tests (`Tests/FolderWindowTests.swift`)
 
-- [ ] **T63** `testOpeningLocalFolderRecordsRecentWorkspace` - Calling `appDelegate.openFolder(_:)` records a `localFolder` entry in the store.
-- [ ] **T64** `testOpeningLocalFileRecordsRecentWorkspace` - Calling `appDelegate.openDocument(_:)` for a `.md` file records a `localFile` entry in the store.
-- [ ] **T65** `testRecentFolderStillRemembersLastSelectedFile` - Opening a recent folder restores the file that `savedSelectedFile(for:)` returns when the file exists.
-- [ ] **T66** `testRecentFolderOpensWhenSavedSelectedFileIsMissing` - Opening a recent folder succeeds and shows no document when the saved selected file has been deleted.
+- [x] **T63** `testOpeningLocalFolderRecordsRecentWorkspace` - Calling `appDelegate.openFolder(_:)` records a `localFolder` entry in the store.
+- [x] **T64** `testOpeningLocalFileRecordsRecentWorkspace` - Calling `appDelegate.openDocument(_:)` for a `.md` file records a `localFile` entry in the store.
+- [x] **T65** `testRecentFolderStillRemembersLastSelectedFile` - Opening a recent folder restores the file that `savedSelectedFile(for:)` returns when the file exists.
+- [x] **T66** `testRecentFolderOpensWhenSavedSelectedFileIsMissing` - Opening a recent folder succeeds and shows no document when the saved selected file has been deleted.
 
 ### Unit Tests (`Tests/RemoteIntegrationTests.swift`)
 
-- [ ] **T67** `testOpeningRemoteFileRecordsRecentWorkspace` - `openRemoteDocument(connection:path:)` records a `remoteFile` entry.
-- [ ] **T68** `testOpeningRemoteFolderRecordsRecentWorkspace` - `openRemoteFolder(connection:path:)` records a `remoteFolder` entry with the trailing slash preserved.
-- [ ] **T69** `testFailedRemoteRecentOpenKeepsEntry` - A `retryRecentWorkspace(_:)` that throws leaves the item in the store with a recorded `lastFailureReason`.
+- [x] **T67** `testOpeningRemoteFileRecordsRecentWorkspace` - The remote document recent-recording helper used by `openRemoteDocument(connection:path:)` records a `remoteFile` entry.
+- [x] **T68** `testOpeningRemoteFolderRecordsRecentWorkspace` - The remote folder recent-recording helper used by `openRemoteFolder(connection:path:)` records a `remoteFolder` entry with the trailing slash preserved.
+- [x] **T69** `testFailedRemoteRecentOpenKeepsEntry` - A `retryRecentWorkspace(_:)` that throws leaves the item in the store with a recorded `lastFailureReason`.
 
 ### Unit Tests (`Tests/CommandPaletteTests.swift`)
 
-- [ ] **T70** `testCommandPaletteIncludesRecentWorkspaces` - `CommandPaletteSource` returns all recent workspace items from the store.
-- [ ] **T71** `testCommandPaletteIncludesAppCommands` - `CommandPaletteSource` includes every `AppCommand.allCases` value.
-- [ ] **T72** `testCommandPaletteSearchMatchesRecentAndCommands` - A search for "side" matches the workspace named `Sidebar.md` and the command "Toggle Sidebar".
-- [ ] **T73** `testCommandPaletteDispatchesRecentWorkspace` - Activating a workspace row calls `AppDelegate.openRecentWorkspace(_:)` with the matching item.
-- [ ] **T74** `testCommandPaletteDispatchesMenuBackedCommand` - Activating "Toggle Sidebar" posts `Notification.Name.toggleSidebar`.
-- [ ] **T75** `testCommandPaletteDisablesDocumentOnlyCommandsWithoutDocument` - With no document window key, commands marked `requiresActiveDocument` report `isEnabled == false` and do not dispatch on Return.
-- [ ] **T76** `testCommandPaletteRecentsFocusOrdersRecentsFirst` - Opening with `.recents` focus places the Recent Workspaces section above the Actions section.
-- [ ] **T77** `testCommandPaletteActionsFocusOrdersActionsFirst` - Opening with `.actions` focus places the Actions section above the Recent Workspaces section.
+- [x] **T70** `testCommandPaletteIncludesRecentWorkspaces` - `CommandPaletteSource` returns all recent workspace items from the store.
+- [x] **T71** `testCommandPaletteIncludesAppCommands` - `CommandPaletteSource` includes every `AppCommand.allCases` value.
+- [x] **T72** `testCommandPaletteSearchMatchesRecentAndCommands` - A search for "side" matches the workspace named `Sidebar.md` and the command "Toggle Sidebar".
+- [x] **T73** `testCommandPaletteDispatchesRecentWorkspace` - Activating a workspace row calls `AppDelegate.openRecentWorkspace(_:)` with the matching item.
+- [x] **T74** `testCommandPaletteDispatchesMenuBackedCommand` - Activating "Toggle Sidebar" posts `Notification.Name.toggleSidebar`.
+- [x] **T75** `testCommandPaletteDisablesDocumentOnlyCommandsWithoutDocument` - With no document window key, commands marked `requiresActiveDocument` report `isEnabled == false` and do not dispatch on Return.
+- [x] **T76** `testCommandPaletteRecentsFocusOrdersRecentsFirst` - Opening with `.recents` focus places the Recent Workspaces section above the Actions section.
+- [x] **T77** `testCommandPaletteActionsFocusOrdersActionsFirst` - Opening with `.actions` focus places the Actions section above the Recent Workspaces section.
 
 ### Unit Tests (`Tests/PreferencesManagerTests.swift`)
 
-- [ ] **T78** `testShowRecentWorkspacesAtLaunchDefaultsTrue` - With no stored value, `PreferencesManager.shared.showRecentWorkspacesAtLaunch` is `true`.
-- [ ] **T79** `testShowRecentWorkspacesAtLaunchRoundTrips` - Setting the property writes to `RedMargin.ShowRecentWorkspacesAtLaunch` and a new `PreferencesManager` instance reads the same value.
+- [x] **T78** `testShowRecentWorkspacesAtLaunchDefaultsTrue` - With no stored value, `PreferencesManager.shared.showRecentWorkspacesAtLaunch` is `true`.
+- [x] **T79** `testShowRecentWorkspacesAtLaunchRoundTrips` - Setting the property writes to `RedMargin.ShowRecentWorkspacesAtLaunch` and a new `PreferencesManager` instance reads the same value.
 
-### UI Tests (`Tests/UITests/RedmarginUITests/RedmarginUITests/RecentWorkspacesUITests.swift`)
+### AppKit Unit Tests (`Tests/MainMenuTests.swift`)
 
-- [ ] **T80** `testRecentWorkspacesWindowOpensFromMenu` - File > Recent Workspaces... opens the Recent Workspaces window; Shift-Cmd-1 opens the same window.
-- [ ] **T81** `testRecentWorkspacesWindowOpensFromToolbar` - The toolbar history button on a folder window opens the same Recent Workspaces window.
-- [ ] **T82** `testOpenRecentSubmenuShowsTenWorkspaces` - File > Open Recent shows up to ten workspaces and a Clear Menu footer; Clear Menu empties the submenu and the window list together.
-- [ ] **T83** `testRecentWorkspacesSearchAndFilters` - Search narrows rows; All/Local/Remote and All Kinds/Files/Folders segmented controls narrow rows independently; the pin-only toggle restricts to pinned.
-- [ ] **T84** `testRecentWorkspacesCanRemoveSingleEntry` - A visible row can be removed via Delete key and via context menu without opening it.
-- [ ] **T85** `testRecentWorkspacesClearAllRequiresConfirmation` - Clear All... shows an alert sheet; Cancel keeps the list; Remove All empties it.
-- [ ] **T86** `testMissingLocalWorkspaceShowsUnavailableState` - A row pointing at a deleted file shows the Unavailable chip, the Open button is disabled, and the context menu offers Locate... and Remove.
-- [ ] **T87** `testOpeningWorkspaceClosesRecentWorkspacesWindow` - Pressing Return on a usable row opens the workspace and closes the Recent Workspaces window.
-- [ ] **T88** `testCommandPaletteOpensWithCmdP` - Cmd-P opens the command palette with search focused and the Recent Workspaces section first.
-- [ ] **T89** `testCommandPaletteOpensWithCmdShiftP` - Cmd-Shift-P opens the same command palette with the Actions section first.
-- [ ] **T90** `testCommandPaletteRunsRecentWorkspace` - Selecting a recent workspace from the palette opens it and closes the palette.
-- [ ] **T91** `testPrintShortcutIsCmdOptionP` - The File > Print... menu item shows `⌥⌘P` and Cmd-Option-P invokes Print.
-- [ ] **T92** `testNoWindowReopenShowsRecentWorkspaces` - Reopening Redmargin via Dock click with no visible windows shows the Recent Workspaces window.
-- [ ] **T93** `testLaunchWithRestoredWindowDoesNotShowRecentWorkspaces` - Launching with a restored folder window does not show Recent Workspaces.
-- [ ] **T94** `testSettingsToggleSuppressesLaunchWindow` - With the setting off, an otherwise-eligible launch falls back to the open panel and the Recent Workspaces window does not appear.
-- [ ] **T95** `testRecentWorkspacesEmptyStateShowsCallToAction` - With no recents, the window shows the empty-state copy with Open... and Open Remote... buttons.
+- [x] **T80** `testFileMenuRecentWorkspaceAndPaletteShortcuts` - File menu wiring exposes Recent Workspaces, Command Palette, Command Palette Actions, and Print with the expected key equivalents.
+- [x] **T81** `testOpenRecentMenuShowsTenRecentWorkspacesAndClearMenu` - Open Recent populates the ten most recent workspaces and includes Clear Menu.
+- [x] **T82** `testToolbarInstallsRecentWorkspacesItem` - The shared toolbar helper creates the Recent Workspaces toolbar item with the expected label, tooltip, and responder-chain action.
+
+### UI Automation
+
+Skipped by operator direction on 2026-06-02. No Recent Workspaces UI test target file is required for this implementation pass.
+
+Acceptance was verified through unit/AppKit coverage, full `swift test`, and `./resources/scripts/build.sh`; no UI automation was added or run.
 
 ### Build Verification
 

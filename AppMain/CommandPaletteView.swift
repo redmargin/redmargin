@@ -156,7 +156,7 @@ struct CommandPaletteView: View {
             if !keepsOpen {
                 controller.closeAfterDispatch()
             }
-            appDelegate.openRecentWorkspace(item)
+            CommandPaletteDispatcher.dispatchRecentWorkspace(item, opener: appDelegate)
         case .command(let command, let isEnabled):
             guard isEnabled else {
                 NSSound.beep()

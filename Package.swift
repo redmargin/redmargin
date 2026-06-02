@@ -33,7 +33,7 @@ targets += [
         name: "RedmarginTests",
         dependencies: ["Redmargin", "RedmarginLib", "RedmarginCore"],
         path: "Tests",
-        exclude: ["Fixtures", "Scripts", "TEST_LOG.md", "Linux"]
+        exclude: ["Fixtures", "Scripts", "TEST_LOG.md", "Linux", "UITests"]
     )
 ]
 #endif

@@ -43,6 +43,15 @@ final class CommandPaletteTests: XCTestCase {
         })
     }
 
+    func testCommandPaletteDispatchesRecentWorkspace() {
+        let workspace = RecentWorkspaceItem.localFile(URL(fileURLWithPath: "/tmp/Sidebar.md"))
+        let opener = RecordingRecentWorkspaceOpener()
+
+        CommandPaletteDispatcher.dispatchRecentWorkspace(workspace, opener: opener)
+
+        XCTAssertEqual(opener.openedWorkspace?.storageKey, workspace.storageKey)
+    }
+
     func testCommandPaletteDispatchesMenuBackedCommand() {
         let appDelegate = AppDelegate()
         let expectation = expectation(description: "toggleSidebar notification")
@@ -101,5 +110,13 @@ final class CommandPaletteTests: XCTestCase {
             focus: focus,
             hasActiveDocument: hasActiveDocument
         )
+    }
+}
+
+private final class RecordingRecentWorkspaceOpener: CommandPaletteRecentWorkspaceOpening {
+    private(set) var openedWorkspace: RecentWorkspaceItem?
+
+    func openRecentWorkspace(_ item: RecentWorkspaceItem) {
+        openedWorkspace = item
     }
 }

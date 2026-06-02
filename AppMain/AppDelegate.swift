@@ -402,7 +402,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     func savedSelectedFile(for folderURL: URL) -> URL? {
         let standardized = folderURL.standardizedFileURL
         if let fileURL = folderSelectedFiles[standardized] {
-            return fileURL
+            let standardizedFile = fileURL.standardizedFileURL
+            guard FileManager.default.fileExists(atPath: standardizedFile.path) else { return nil }
+            return standardizedFile
         }
         guard let path = savedFolderSelectedFiles()[standardized.path] else { return nil }
         let url = URL(fileURLWithPath: path).standardizedFileURL

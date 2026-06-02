@@ -7,7 +7,7 @@ enum CommandPaletteFocus {
     case actions
 }
 
-enum AppCommand: Hashable, Identifiable {
+enum AppCommand: CaseIterable, Hashable, Identifiable {
     case openFile
     case openRemote
     case recentWorkspaces
@@ -239,6 +239,21 @@ enum CommandPaletteEntry: Identifiable, Hashable {
         case .workspace: return true
         case .command(_, let enabled): return enabled
         }
+    }
+}
+
+protocol CommandPaletteRecentWorkspaceOpening: AnyObject {
+    func openRecentWorkspace(_ item: RecentWorkspaceItem)
+}
+
+extension AppDelegate: CommandPaletteRecentWorkspaceOpening {}
+
+enum CommandPaletteDispatcher {
+    static func dispatchRecentWorkspace(
+        _ item: RecentWorkspaceItem,
+        opener: CommandPaletteRecentWorkspaceOpening
+    ) {
+        opener.openRecentWorkspace(item)
     }
 }
 
