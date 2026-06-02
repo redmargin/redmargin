@@ -356,7 +356,7 @@ public actor SSHConnection {
 
         // Handshake with specific timeout
         print("[SSHConnection] Sending Hello handshake...")
-        let hello = HelloPayload(clientVersion: "1.0.0", protocolVersion: 1)
+        let hello = HelloPayload(clientVersion: AppVersion.current, protocolVersion: 1)
 
         let responseData: Data
         do {

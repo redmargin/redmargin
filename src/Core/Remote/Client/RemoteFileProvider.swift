@@ -45,7 +45,7 @@ public actor RemoteFileProvider: FileProvider {
     /// Quick ping to check if the connection is responsive
     public func ping(timeout: TimeInterval = 3) async -> Bool {
         do {
-            let hello = HelloPayload(clientVersion: "1.0.0", protocolVersion: 1)
+            let hello = HelloPayload(clientVersion: AppVersion.current, protocolVersion: 1)
             _ = try await connection.send(
                 type: RPCMessageType.hello.rawValue, payload: hello, timeout: timeout
             )
