@@ -35,8 +35,6 @@ Redmargin now has configurable content-width preferences, front matter renders a
 
 Search, sidebar selection, refresh behavior, settings navigation, gutter alignment, and line-number handling have all been tightened up across local and remote windows.
 
----
-
 ## v1.4.0 (2026-05-28)
 
 ### New Features
