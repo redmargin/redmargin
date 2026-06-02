@@ -1,12 +1,32 @@
 # Changelog
 <!-- markdownlint-disable MD022 MD032 -->
 
+## v1.5.0 (2026-06-02)
+
+### New Features
+
+- Recent Workspaces window and command palette surfaces for local files, local folders, remote files, and remote folders
+- Recent Workspaces supports search, type filtering, pinning, removing entries, missing-local-file handling, and persisted window size and position
+- App launch and restore now show centered progress while previously opened remote windows are restored
+
+### Improvements
+
+- Remote document titles now include the SSH host so similarly named remote files are distinguishable
+- Remote restore progress text is sized to avoid truncation
+- Remote client and deployer version metadata now read from the app bundle version instead of duplicated literals
+
+### Bug Fixes
+
+- App relaunch no longer terminates inactive helper processes while restoring windows
+- Command palette and menu shortcuts now route Recent Workspaces and Print commands consistently
+
+---
+
 ## v1.4.0 (2026-05-28)
 
 ### New Features
 
 - Installed `redmargin` command opens local files/folders and remote SSH paths in the running app without replacing existing windows
-- Recent Workspaces window and command palette; Print shortcut moved to Cmd-Option-P
 - Mermaid fenced code blocks now render as diagrams in the preview, with copy-source buttons and source-mapped gutter/line-number support
 - Mermaid diagrams rerender for light/dark theme changes and are preserved in print preview and PDF export
 - Print and PDF export now share configurable top, right, bottom, and left margins plus a base font size in Preferences > Print & Export
