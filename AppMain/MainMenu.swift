@@ -3,7 +3,7 @@ import SwiftUI
 import RedmarginLib
 import RedmarginCore
 
-private var recentMenuDelegate: RecentFoldersMenuDelegate?
+private var recentMenuDelegate: OpenRecentMenuDelegate?
 
 @MainActor
 func setupMainMenu(target: AppDelegate) {
@@ -61,7 +61,7 @@ private func createFileMenu(target: AppDelegate) -> NSMenuItem {
     let recentMenu = NSMenu(title: "Open Recent")
     let recentMenuItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
     recentMenuItem.submenu = recentMenu
-    recentMenuDelegate = RecentFoldersMenuDelegate(appDelegate: target)
+    recentMenuDelegate = OpenRecentMenuDelegate(appDelegate: target)
     recentMenu.delegate = recentMenuDelegate
     fileMenu.addItem(recentMenuItem)
 
@@ -443,9 +443,9 @@ private func createHelpMenu() -> NSMenuItem {
     return helpMenuItem
 }
 
-// MARK: - Recent Folders Menu Delegate
+// MARK: - Open Recent Menu Delegate
 
-final class RecentFoldersMenuDelegate: NSObject, NSMenuDelegate {
+final class OpenRecentMenuDelegate: NSObject, NSMenuDelegate {
     private weak var appDelegate: AppDelegate?
 
     init(appDelegate: AppDelegate) {
@@ -457,87 +457,44 @@ final class RecentFoldersMenuDelegate: NSObject, NSMenuDelegate {
         menu.removeAllItems()
 
         guard let appDelegate = appDelegate else { return }
+        let items = Array(appDelegate.recentWorkspaces.menuItems.prefix(10))
 
-        addRecentFolders(menu, folders: appDelegate.recentFolderItems)
+        for item in items {
+            addRecentWorkspaceMenuItem(to: menu, item: item)
+        }
 
-        if !appDelegate.recentFolderItems.isEmpty {
+        if !items.isEmpty {
             menu.addItem(NSMenuItem.separator())
             let clearItem = NSMenuItem(
-                title: "Clear Menu", action: #selector(clearRecentFolders(_:)), keyEquivalent: "")
+                title: "Clear Menu", action: #selector(clearRecentWorkspaces(_:)), keyEquivalent: "")
             clearItem.target = self
             menu.addItem(clearItem)
         }
     }
 
-    private func addRecentFolders(_ menu: NSMenu, folders: [RecentFolderItem]) {
-        for folder in folders {
-            if let url = folder.localURL {
-                addRecentFolderMenuItem(
-                    to: menu,
-                    title: url.displayPath,
-                    representedObject: url,
-                    action: #selector(openRecentFolder(_:))
-                )
-            } else if let location = folder.remoteLocation {
-                addRecentFolderMenuItem(
-                    to: menu,
-                    title: location.displayString,
-                    representedObject: location,
-                    action: #selector(openRecentRemoteLocation(_:))
-                )
-            }
-        }
-    }
-
-    private func addRecentFolderMenuItem(
+    private func addRecentWorkspaceMenuItem(
         to menu: NSMenu,
-        title: String,
-        representedObject: Any,
-        action: Selector
+        item workspace: RecentWorkspaceItem
     ) {
         let item = NSMenuItem(
-            title: title,
-            action: action,
+            title: workspace.displayTitle,
+            action: #selector(openRecentWorkspace(_:)),
             keyEquivalent: "")
         item.target = self
-        item.representedObject = representedObject
-        item.image = NSImage(systemSymbolName: "folder.fill", accessibilityDescription: "Folder")
+        item.representedObject = workspace
+        item.toolTip = workspace.locationText
+        let symbolName = workspace.kind.isFile ? "doc.text" : "folder"
+        item.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: workspace.kindLabel)
         item.image?.size = NSSize(width: 16, height: 16)
         menu.addItem(item)
     }
 
-    @objc private func openRecentFolder(_ sender: NSMenuItem) {
-        guard let url = sender.representedObject as? URL,
-              let appDelegate = appDelegate else { return }
-
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
-              isDir.boolValue else {
-            appDelegate.removeRecentFolder(url)
-
-            let alert = NSAlert()
-            alert.messageText = "Folder Not Found"
-            alert.informativeText = """
-                The folder no longer exists at:
-                \(url.path)
-
-                It has been removed from Recent Folders.
-                """
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-            return
-        }
-
-        appDelegate.openFolder(url, selectedFile: appDelegate.savedSelectedFile(for: url))
+    @objc private func openRecentWorkspace(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? RecentWorkspaceItem else { return }
+        appDelegate?.openRecentWorkspace(item)
     }
 
-    @objc private func openRecentRemoteLocation(_ sender: NSMenuItem) {
-        guard let location = sender.representedObject as? RemoteLocation else { return }
-        appDelegate?.openRecentRemoteLocation(location)
-    }
-
-    @objc private func clearRecentFolders(_ sender: NSMenuItem) {
-        appDelegate?.clearRecentFolders()
+    @objc private func clearRecentWorkspaces(_ sender: NSMenuItem) {
+        appDelegate?.recentWorkspaces.clearAll()
     }
 }

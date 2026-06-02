@@ -92,6 +92,7 @@ extension AppDelegate {
         // Remote files are opened normally, but Open Recent is folder-only.
         await MainActor.run {
             addToRecentRemoteServers(host)
+            recentWorkspaces.add(.remoteFile(location))
         }
 
         // Check if already open
@@ -143,7 +144,7 @@ extension AppDelegate {
         // Keep folder recents ordered across local and remote folders.
         await MainActor.run {
             addToRecentRemoteServers(host)
-            addToRecentRemoteFolder(location)
+            recentWorkspaces.add(.remoteFolder(location))
         }
 
         // Check if already open
@@ -261,56 +262,157 @@ extension AppDelegate {
         UserDefaults.standard.removeObject(forKey: recentRemoteKey)
     }
 
+    func openRecentWorkspace(_ item: RecentWorkspaceItem) {
+        switch item.kind {
+        case .localFile:
+            guard let url = item.localURL else { return }
+            openDocument(url)
+        case .localFolder:
+            guard let url = item.localURL else { return }
+            openFolder(url, selectedFile: savedSelectedFile(for: url))
+        case .remoteFile:
+            guard let location = item.remoteLocation else { return }
+            openRecentRemoteFile(location, item: item)
+        case .remoteFolder:
+            guard let location = item.remoteLocation else { return }
+            openRecentRemoteLocation(location, item: item)
+        }
+    }
+
+    @discardableResult
+    func retryRecentWorkspace(_ item: RecentWorkspaceItem) async -> Bool {
+        switch item.kind {
+        case .localFile, .localFolder:
+            await MainActor.run {
+                openRecentWorkspace(item)
+            }
+            return true
+        case .remoteFile:
+            guard let location = item.remoteLocation else { return false }
+            return await performRecentRemoteFileOpen(location, item: item, showsAlert: false)
+        case .remoteFolder:
+            guard let location = item.remoteLocation else { return false }
+            return await performRecentRemoteFolderOpen(location, item: item, showsAlert: false)
+        }
+    }
+
+    func locateRecentWorkspace(_ item: RecentWorkspaceItem) {
+        guard item.localURL != nil else { return }
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = item.kind == .localFolder
+        panel.canChooseFiles = item.kind == .localFile
+        if item.kind == .localFile {
+            panel.allowedContentTypes = [Self.markdownType, .plainText]
+        }
+        panel.directoryURL = item.localURL?.deletingLastPathComponent()
+
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.recentWorkspaces.relocate(item, to: url)
+        }
+    }
+
     /// Opens a recent remote folder by establishing a new connection
     func openRecentRemoteLocation(_ location: RemoteLocation) {
+        openRecentRemoteLocation(location, item: .remoteFolder(location))
+    }
+
+    @discardableResult
+    func openRecentRemoteLocation(
+        _ location: RemoteLocation,
+        item: RecentWorkspaceItem,
+        showsAlert: Bool = true
+    ) -> Task<Void, Never> {
         Task {
-            do {
-                // Open Recent is folder-only; remove entries that are gone or no longer directories.
-                let sshArgs = [
-                    "-o", "BatchMode=yes",
-                    "-o", "ConnectTimeout=5",
-                    location.host,
-                    "test -d '\(location.path)'"
-                ]
-                let checkResult = try await ProcessRunner.run(
-                    executable: "/usr/bin/ssh",
-                    arguments: sshArgs,
-                    timeout: 10
-                )
-                if checkResult.exitCode != 0 {
-                    throw RemoteFileError(message: "Folder does not exist", code: .fileNotFound)
-                }
-
-                let connection = try await SSHConnectionManager.shared.connection(for: location.host)
-                try await openRemoteFolder(connection: connection, path: location.path)
-            } catch {
+            let succeeded = await performRecentRemoteFolderOpen(location, item: item, showsAlert: showsAlert)
+            if succeeded {
                 await MainActor.run {
-                    let isFolderNotFound = (error as? RemoteFileError)?.isFileNotFound == true
-
-                    let alert = NSAlert()
-
-                    if isFolderNotFound {
-                        // Remove from recents since the folder no longer exists.
-                        removeRecentRemoteFolder(location)
-
-                        alert.messageText = "Folder Not Found"
-                        let remotePath = "\(location.host):\(location.path)"
-                        alert.informativeText = """
-                            The folder no longer exists at:
-                            \(remotePath)
-
-                            It has been removed from Open Recent.
-                            """
-                    } else {
-                        alert.messageText = "Failed to open remote folder"
-                        alert.informativeText = error.localizedDescription
-                    }
-
-                    alert.alertStyle = .warning
-                    alert.addButton(withTitle: "OK")
-                    alert.runModal()
+                    recentWorkspaces.clearRemoteFailure(item)
                 }
             }
         }
+    }
+
+    @discardableResult
+    private func performRecentRemoteFolderOpen(
+        _ location: RemoteLocation,
+        item: RecentWorkspaceItem,
+        showsAlert: Bool
+    ) async -> Bool {
+        do {
+                // Open Recent is folder-only; remove entries that are gone or no longer directories.
+            let sshArgs = [
+                "-o", "BatchMode=yes",
+                "-o", "ConnectTimeout=5",
+                location.host,
+                "test -d '\(location.path)'"
+            ]
+            let checkResult = try await ProcessRunner.run(
+                executable: "/usr/bin/ssh",
+                arguments: sshArgs,
+                timeout: 10
+            )
+            if checkResult.exitCode != 0 {
+                throw RemoteFileError(message: "Folder does not exist", code: .fileNotFound)
+            }
+
+            let connection = try await SSHConnectionManager.shared.connection(for: location.host)
+            try await openRemoteFolder(connection: connection, path: location.path)
+            return true
+        } catch {
+            await handleRecentRemoteFailure(error, item: item, messageText: "Failed to open remote folder", showsAlert: showsAlert)
+            return false
+        }
+    }
+
+    @discardableResult
+    private func openRecentRemoteFile(
+        _ location: RemoteLocation,
+        item: RecentWorkspaceItem,
+        showsAlert: Bool = true
+    ) -> Task<Void, Never> {
+        Task {
+            let succeeded = await performRecentRemoteFileOpen(location, item: item, showsAlert: showsAlert)
+            if succeeded {
+                await MainActor.run {
+                    recentWorkspaces.clearRemoteFailure(item)
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    private func performRecentRemoteFileOpen(
+        _ location: RemoteLocation,
+        item: RecentWorkspaceItem,
+        showsAlert: Bool
+    ) async -> Bool {
+        do {
+            let connection = try await SSHConnectionManager.shared.connection(for: location.host)
+            try await openRemoteDocument(connection: connection, path: location.path)
+            return true
+        } catch {
+            await handleRecentRemoteFailure(error, item: item, messageText: "Failed to open remote file", showsAlert: showsAlert)
+            return false
+        }
+    }
+
+    @MainActor
+    private func handleRecentRemoteFailure(
+        _ error: Error,
+        item: RecentWorkspaceItem,
+        messageText: String,
+        showsAlert: Bool
+    ) {
+        recentWorkspaces.markRemoteFailure(item, reason: error.localizedDescription)
+        guard showsAlert else { return }
+
+        let alert = NSAlert()
+        alert.messageText = messageText
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 }
