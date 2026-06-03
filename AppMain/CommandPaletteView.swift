@@ -21,7 +21,7 @@ struct CommandPaletteView: View {
             Divider()
             list
         }
-        .frame(width: 640, height: 420)
+        .frame(minWidth: 520, maxWidth: .infinity, minHeight: 320, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             searchFocused = true

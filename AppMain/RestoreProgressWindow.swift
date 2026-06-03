@@ -2,6 +2,9 @@ import AppKit
 import SwiftUI
 
 final class RestoreProgressWindowController: NSWindowController {
+    static let frameAutosaveName = "RestoreProgress"
+    static let frameDefaultsKey = "RedMargin.RestoreProgressWindowFrame"
+
     init(message: String) {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 440, height: 132),
@@ -15,8 +18,9 @@ final class RestoreProgressWindowController: NSWindowController {
         panel.level = .floating
         panel.collectionBehavior = [.transient]
         panel.contentViewController = NSHostingController(rootView: RestoreProgressView(message: message))
-        Self.centerOnVisibleScreen(panel)
+        Self.configureFramePersistence(on: panel)
         super.init(window: panel)
+        panel.delegate = self
     }
 
     required init?(coder: NSCoder) {
@@ -25,9 +29,23 @@ final class RestoreProgressWindowController: NSWindowController {
 
     func update(message: String) {
         window?.contentViewController = NSHostingController(rootView: RestoreProgressView(message: message))
-        if let window {
-            Self.centerOnVisibleScreen(window)
+    }
+
+    static func configureFramePersistence(on window: NSWindow) {
+        window.setFrameAutosaveName(frameAutosaveName)
+        if let frameString = UserDefaults.standard.string(forKey: frameDefaultsKey) {
+            let frame = NSRectFromString(frameString)
+            if !frame.isEmpty {
+                window.setFrame(frame, display: false)
+                return
+            }
         }
+
+        centerOnVisibleScreen(window)
+    }
+
+    static func saveFrame(of window: NSWindow) {
+        UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: frameDefaultsKey)
     }
 
     static func centerOnVisibleScreen(_ window: NSWindow, screen: NSScreen? = NSScreen.main) {
@@ -41,6 +59,20 @@ final class RestoreProgressWindowController: NSWindowController {
             x: visibleFrame.midX - frame.width / 2,
             y: visibleFrame.midY - frame.height / 2
         ))
+    }
+}
+
+extension RestoreProgressWindowController: NSWindowDelegate {
+    func windowDidMove(_ notification: Notification) {
+        if let window = notification.object as? NSWindow {
+            Self.saveFrame(of: window)
+        }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if let window = notification.object as? NSWindow {
+            Self.saveFrame(of: window)
+        }
     }
 }
 

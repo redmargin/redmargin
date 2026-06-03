@@ -2,6 +2,11 @@ import AppKit
 import SwiftUI
 
 final class CommandPaletteWindowController: NSWindowController {
+    static let frameAutosaveName = "CommandPalette"
+    static let frameDefaultsKey = "RedMargin.CommandPaletteWindowFrame"
+
+    private static let defaultSize = NSSize(width: 640, height: 420)
+
     private static weak var current: CommandPaletteWindowController?
 
     private let store: RecentWorkspaceStore
@@ -32,16 +37,16 @@ final class CommandPaletteWindowController: NSWindowController {
         let panel = NSPanel()
         super.init(window: panel)
 
-        panel.styleMask = [.titled, .fullSizeContentView, .nonactivatingPanel]
+        panel.styleMask = [.titled, .fullSizeContentView, .nonactivatingPanel, .resizable]
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = false
         panel.hidesOnDeactivate = true
-        panel.setFrameAutosaveName("CommandPalette")
-        panel.setContentSize(NSSize(width: 640, height: 420))
-        positionIfNeeded()
+        panel.minSize = NSSize(width: 520, height: 320)
         installRootView(focus: focus)
+        Self.configureFramePersistence(on: panel)
+        panel.delegate = self
     }
 
     required init?(coder: NSCoder) {
@@ -49,6 +54,9 @@ final class CommandPaletteWindowController: NSWindowController {
     }
 
     func closeAfterDispatch() {
+        if let window {
+            Self.saveFrame(of: window)
+        }
         window?.orderOut(nil)
     }
 
@@ -66,19 +74,76 @@ final class CommandPaletteWindowController: NSWindowController {
                 initialFocus: focus
             )
         )
+        restoreFrameAfterContentInstall()
     }
 
     private func positionIfNeeded() {
         guard let window else { return }
-        let hasSavedFrame = UserDefaults.standard.string(forKey: "NSWindow Frame CommandPalette") != nil
+        let hasSavedFrame = UserDefaults.standard.string(forKey: Self.frameDefaultsKey) != nil
         guard !hasSavedFrame else { return }
 
+        Self.positionDefaultFrame(on: window)
+    }
+
+    static func configureFramePersistence(on window: NSWindow) {
+        window.setFrameAutosaveName(frameAutosaveName)
+        guard !restoreSavedFrame(on: window) else { return }
+
+        positionDefaultFrame(on: window)
+    }
+
+    static func saveFrame(of window: NSWindow) {
+        UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: frameDefaultsKey)
+    }
+
+    @discardableResult
+    static func restoreSavedFrame(on window: NSWindow) -> Bool {
+        guard let frameString = UserDefaults.standard.string(forKey: frameDefaultsKey) else {
+            return false
+        }
+        let frame = NSRectFromString(frameString)
+        guard !frame.isEmpty else {
+            return false
+        }
+        window.setFrame(frame, display: false)
+        return true
+    }
+
+    private func restoreFrameAfterContentInstall() {
+        guard let window else { return }
+        Self.restoreSavedFrame(on: window)
+        DispatchQueue.main.async { [weak self] in
+            guard let window = self?.window else { return }
+            Self.restoreSavedFrame(on: window)
+        }
+    }
+
+    private static func positionDefaultFrame(on window: NSWindow) {
         let screenFrame = (NSApp.keyWindow?.screen ?? NSScreen.main)?.visibleFrame ?? .zero
-        let size = NSSize(width: 640, height: 420)
         let origin = NSPoint(
-            x: screenFrame.midX - size.width / 2,
-            y: screenFrame.maxY - screenFrame.height * 0.22 - size.height
+            x: screenFrame.midX - defaultSize.width / 2,
+            y: screenFrame.maxY - screenFrame.height * 0.22 - defaultSize.height
         )
-        window.setFrame(NSRect(origin: origin, size: size), display: false)
+        window.setFrame(NSRect(origin: origin, size: defaultSize), display: false)
+    }
+}
+
+extension CommandPaletteWindowController: NSWindowDelegate {
+    func windowDidMove(_ notification: Notification) {
+        if let window = notification.object as? NSWindow {
+            Self.saveFrame(of: window)
+        }
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        if let window = notification.object as? NSWindow {
+            Self.saveFrame(of: window)
+        }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if let window = notification.object as? NSWindow {
+            Self.saveFrame(of: window)
+        }
     }
 }

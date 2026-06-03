@@ -35,6 +35,8 @@ Redmargin now has configurable content-width preferences, front matter renders a
 
 Search, sidebar selection, refresh behavior, settings navigation, gutter alignment, and line-number handling have all been tightened up across local and remote windows.
 
+The command palette and remote-window restore progress panel now remember user-adjusted placement, with the command palette preserving its resized dimensions too.
+
 ## v1.4.0 (2026-05-28)
 
 ### New Features
