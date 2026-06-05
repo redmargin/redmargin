@@ -200,7 +200,7 @@ private func hardRestartAndRunRemoteOperation<T>(
 private func shouldRecoverRemoteOperation(from error: SSHConnectionError) -> Bool {
     switch error {
     case .operationTimeout, .unexpectedDisconnect, .serverNotResponding,
-         .connectionTimeout, .handshakeTimeout:
+         .connectionTimeout, .helperStartupTimeout, .handshakeTimeout:
         return true
     case .sshProcessFailed, .authenticationFailed, .hostUnreachable, .connectionRefused:
         return false

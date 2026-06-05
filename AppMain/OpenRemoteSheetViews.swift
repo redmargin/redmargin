@@ -288,6 +288,7 @@ extension OpenRemoteSheet {
             Text(error)
                 .font(.callout)
                 .foregroundColor(.red)
+                .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(12)

@@ -1,6 +1,14 @@
 # Changelog
 <!-- markdownlint-disable MD022 MD032 -->
 
+## Unreleased
+
+### Bug Fixes
+
+- Fixed Open Remote connections to Intel Macs by bundling and deploying the x86_64 macOS remote helper.
+- Fixed macOS remote helper startup so it no longer depends on Linux-only `setsid`.
+- Made Open Remote error messages selectable so connection details can be copied.
+
 ## v1.5.0 (2026-06-02)
 
 This release catches the public build up with several months of Redmargin work: folder browsing, stronger remote SSH recovery, Mermaid diagrams, richer export controls, Git-aware sidebars, and a new Recent Workspaces flow.

@@ -190,7 +190,7 @@ public actor SSHConnection {
         } catch let error as SSHConnectionError {
             // Only retry on handshake/timing issues
             switch error {
-            case .handshakeTimeout, .serverNotResponding, .connectionTimeout:
+            case .handshakeTimeout, .serverNotResponding, .connectionTimeout, .helperStartupTimeout:
                 print("[SSHConnection] First attempt failed (\(error)), will retry...")
             default:
                 state = .disconnected
@@ -259,8 +259,8 @@ public actor SSHConnection {
             }
 
             group.addTask {
-                try await Task.sleep(nanoseconds: 10_000_000_000) // 10 seconds
-                throw SSHConnectionError.connectionTimeout(host: self.host)
+                try await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
+                throw SSHConnectionError.helperStartupTimeout(host: self.host, stderr: "")
             }
 
             // Wait for first to complete (success or failure)
@@ -407,7 +407,8 @@ public actor SSHConnection {
             if elapsed > timeoutNanos {
                 let preview = await String(data: accumulator.getBuffer().prefix(500), encoding: .utf8) ?? "<binary>"
                 print("[SSHConnection] Sync marker timeout. Buffer: \(preview)")
-                throw SSHConnectionError.handshakeTimeout(host: host)
+                errPipe.fileHandleForReading.readabilityHandler = nil
+                throw SSHConnectionError.helperStartupTimeout(host: host, stderr: stderrCollector.getString())
             }
 
             if !process.isRunning {

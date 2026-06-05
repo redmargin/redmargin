@@ -15,6 +15,7 @@ public enum SSHConnectionState: String, Sendable {
 /// Errors that can occur during SSH connection
 public enum SSHConnectionError: Error, LocalizedError, Sendable {
     case connectionTimeout(host: String)
+    case helperStartupTimeout(host: String, stderr: String)
     case handshakeTimeout(host: String)
     case operationTimeout(operation: String)
     case sshProcessFailed(host: String, stderr: String)
@@ -27,7 +28,13 @@ public enum SSHConnectionError: Error, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .connectionTimeout(let host):
-            return "Connection to \(host) timed out. Check that the host is reachable and SSH is running."
+            return "SSH connection to \(host) timed out before the remote helper started."
+        case .helperStartupTimeout(let host, let stderr):
+            let details = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            if details.isEmpty {
+                return "Redmargin connected to \(host), but the remote helper did not finish starting."
+            }
+            return "Redmargin connected to \(host), but the remote helper did not finish starting: \(details)"
         case .handshakeTimeout(let host):
             return "Server on \(host) did not respond. The remote server may not be running or may have crashed."
         case .operationTimeout(let operation):

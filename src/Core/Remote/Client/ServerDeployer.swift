@@ -131,6 +131,26 @@ public actor ServerDeployer {
     }
 
     private func findLocalBinary(osName: String, arch: String) -> URL? {
+        guard let binaryName = Self.localBinaryName(osName: osName, arch: arch) else {
+            return nil
+        }
+
+        // Look in Bundle Resources/Servers
+        if let url = Bundle.main.url(forResource: binaryName, withExtension: nil, subdirectory: "Servers") {
+            return url
+        }
+
+        // Fallback for development/testing (look in project root resources/servers)
+        let devPath = "resources/servers/\(binaryName)"
+        let devURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(devPath)
+        if FileManager.default.fileExists(atPath: devURL.path) {
+            return devURL
+        }
+
+        return nil
+    }
+
+    internal static func localBinaryName(osName: String, arch: String) -> String? {
         let platform: String
         switch osName.lowercased() {
         case "darwin":
@@ -152,21 +172,7 @@ public actor ServerDeployer {
             return nil
         }
 
-        let binaryName = "redmargin-server-\(normalizedArch)-\(platform)"
-
-        // Look in Bundle Resources/Servers
-        if let url = Bundle.main.url(forResource: binaryName, withExtension: nil, subdirectory: "Servers") {
-            return url
-        }
-
-        // Fallback for development/testing (look in project root resources/servers)
-        let devPath = "resources/servers/\(binaryName)"
-        let devURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(devPath)
-        if FileManager.default.fileExists(atPath: devURL.path) {
-            return devURL
-        }
-
-        return nil
+        return "redmargin-server-\(normalizedArch)-\(platform)"
     }
 
     private func cleanupOldVersions(host: String) async {

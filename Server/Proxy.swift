@@ -158,9 +158,10 @@ enum Proxy {
             try? "".write(toFile: stderrLogPath, atomically: true, encoding: .utf8)
         }
 
-        // Use setsid to start daemon in new session (detached from terminal)
-        // This ensures daemon survives when proxy/SSH exits
         let process = Process()
+        #if os(Linux)
+        // Use setsid to start daemon in a new session on Linux. This keeps
+        // the daemon alive when the proxy/SSH process exits.
         process.executableURL = URL(fileURLWithPath: "/usr/bin/setsid")
         process.arguments = [
             "--fork",  // Fork and exit parent immediately
@@ -171,9 +172,22 @@ enum Proxy {
             "--stdout-socket", socketPath,
             "--stderr-socket", stderrLogPath
         ]
+        #else
+        // macOS does not provide /usr/bin/setsid. Launch the daemon directly
+        // with detached stdio; once spawned it will survive proxy exit.
+        process.executableURL = URL(fileURLWithPath: binaryPath)
+        process.arguments = [
+            "run",
+            "--pid-file", pidFile,
+            "--stdin-socket", socketPath,
+            "--stdout-socket", socketPath,
+            "--stderr-socket", stderrLogPath
+        ]
+        #endif
 
         // stdout goes to /dev/null (would corrupt RPC protocol).
         // stderr goes to a log file so daemon panics/errors leave a trace.
+        process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         let stderrFD = open(stderrLogPath, O_WRONLY | O_CREAT | O_APPEND, 0o644)
         if stderrFD >= 0 {
@@ -184,9 +198,8 @@ enum Proxy {
 
         do {
             try process.run()
-            // setsid --fork exits immediately after forking
-            // Don't use waitUntilExit() - it can hang with GCD/libdispatch
-            // Just give it a moment to fork
+            // Do not wait for the daemon. Waiting can hang with GCD/libdispatch;
+            // the proxy polls the socket below to confirm startup.
             usleep(100_000) // 100ms
         } catch {
             fputs("Failed to spawn daemon: \(error)\n", stderr)

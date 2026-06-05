@@ -12,6 +12,11 @@ APP_NAME="Redmargin"
 APP_BUNDLE_ID="com.redmargin.app"
 APP_DIR="build/Redmargin.app"
 
+server_sources_newer_than() {
+    local binary="$1"
+    [ -n "$(find Server src/Core -type f -name '*.swift' -newer "$binary" 2>/dev/null | head -1)" ]
+}
+
 if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
     echo "Redmargin is running; quitting before rebuild..."
     osascript -e "tell application id \"$APP_BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
@@ -33,13 +38,23 @@ if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
     fi
 fi
 
+DARWIN_X86_BINARY="resources/servers/redmargin-server-x86_64-darwin"
+DARWIN_ARM_BINARY="resources/servers/redmargin-server-aarch64-darwin"
+if [ ! -f "$DARWIN_X86_BINARY" ] || [ ! -f "$DARWIN_ARM_BINARY" ]; then
+    echo "macOS server binary missing; building local macOS server binaries..."
+    bash resources/scripts/build-server.sh
+elif server_sources_newer_than "$DARWIN_X86_BINARY" || server_sources_newer_than "$DARWIN_ARM_BINARY"; then
+    echo "Server or Core sources newer than macOS server binaries; rebuilding local macOS server binaries..."
+    bash resources/scripts/build-server.sh
+fi
+
 LINUX_BINARY="resources/servers/redmargin-server-x86_64-linux"
 if [ ! -f "$LINUX_BINARY" ]; then
     echo "Linux server binary missing; building on devtest..."
-    resources/scripts/build-linux.sh
-elif [ -n "$(find Server src/Core -type f -name '*.swift' -newer "$LINUX_BINARY" 2>/dev/null | head -1)" ]; then
+    bash resources/scripts/build-linux.sh
+elif server_sources_newer_than "$LINUX_BINARY"; then
     echo "Server or Core sources newer than Linux binary; rebuilding on devtest..."
-    resources/scripts/build-linux.sh
+    bash resources/scripts/build-linux.sh
 fi
 
 echo "Building Redmargin..."
@@ -79,12 +94,11 @@ cp resources/Redmargin.icns "$RESOURCES_DIR/"
 
 echo "Bundling server binaries..."
 mkdir -p "$RESOURCES_DIR/Servers"
-if [ -f "resources/servers/redmargin-server-x86_64-darwin" ]; then
-    cp resources/servers/redmargin-server-x86_64-darwin "$RESOURCES_DIR/Servers/"
-fi
-if [ -f "resources/servers/redmargin-server-x86_64-linux" ]; then
-    cp resources/servers/redmargin-server-x86_64-linux "$RESOURCES_DIR/Servers/"
-fi
+for SERVER_BINARY in resources/servers/redmargin-server-*-darwin resources/servers/redmargin-server-*-linux; do
+    if [ -f "$SERVER_BINARY" ]; then
+        cp "$SERVER_BINARY" "$RESOURCES_DIR/Servers/"
+    fi
+done
 
 /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" "build/Redmargin.app/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string Redmargin" "build/Redmargin.app/Contents/Info.plist"

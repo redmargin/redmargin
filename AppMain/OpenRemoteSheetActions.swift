@@ -298,6 +298,10 @@ extension OpenRemoteSheet {
             return "Connection stalled while loading the remote directory. Try again."
         }
 
+        if error is SSHConnectionError {
+            return error.localizedDescription
+        }
+
         let message = error.localizedDescription
 
         if message.contains("Permission denied") || message.contains("publickey") {
