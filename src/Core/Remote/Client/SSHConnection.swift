@@ -163,7 +163,7 @@ public actor SSHConnection {
         // Get home directory via SSH before proxy connection
         let result = try await ProcessRunner.run(
             executable: "ssh",
-            arguments: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, "echo $HOME"],
+            arguments: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, "echo $HOME"],
             timeout: 15
         )
         if result.exitCode != 0 {

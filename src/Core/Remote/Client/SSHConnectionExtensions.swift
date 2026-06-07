@@ -107,7 +107,7 @@ extension SSHConnection {
                 #endif
                 _ = try? await ProcessRunner.run(
                     executable: "ssh",
-                    arguments: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host,
+                    arguments: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host,
                                 "pkill -f redmargin-server 2>/dev/null || true"],
                     timeout: 15
                 )
