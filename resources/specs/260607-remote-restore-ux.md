@@ -2,7 +2,7 @@
 
 ## Meta
 
-- Status: Draft
+- Status: Implemented, pending manual UI verification (T50, T51, A2)
 - Branch: feature/remote-restore-ux
 
 ---
@@ -31,14 +31,14 @@ User-facing behaviors:
 
 ### Acceptance Criteria
 
-- [ ] **A1** Reopening previously open remote windows shows them immediately at their previous positions and sizes, with their last-seen contents, without waiting for any server.
+- [x] **A1** Reopening previously open remote windows shows them immediately at their previous positions and sizes, with their last-seen contents, without waiting for any server.
 - [ ] **A2** While remote windows reopen, focus stays on the window in use: no window jumps in front of another, and the app does not bring itself forward on its own as windows fill in.
-- [ ] **A3** Reopened remote windows appear in their previous front-to-back order, with the previously active window left in front.
-- [ ] **A4** A remote window whose host cannot be reached shows an inline "No route" message with a Retry control and keeps its last-seen contents; the other windows are unaffected.
-- [ ] **A5** Reopening time does not grow with the number of slow or unreachable windows: two unreachable windows reopen as fast as one.
-- [ ] **A6** The previously active remote window is connected and live right after launch; the other windows connect quietly in the background or when first switched to.
-- [ ] **A7** Switching to a not-yet-connected remote window connects it promptly and shows its live, current content; pressing Retry on a failed window attempts the connection again.
-- [ ] **A8** Once connected, checkbox toggles save to the server and a server-side change detected on connect is surfaced through the existing conflict prompt.
+- [x] **A3** Reopened remote windows appear in their previous front-to-back order, with the previously active window left in front.
+- [x] **A4** A remote window whose host cannot be reached shows an inline "No route" message with a Retry control and keeps its last-seen contents; the other windows are unaffected.
+- [x] **A5** Reopening time does not grow with the number of slow or unreachable windows: two unreachable windows reopen as fast as one.
+- [x] **A6** The previously active remote window is connected and live right after launch; the other windows connect quietly in the background or when first switched to.
+- [x] **A7** Switching to a not-yet-connected remote window connects it promptly and shows its live, current content; pressing Retry on a failed window attempts the connection again.
+- [x] **A8** Once connected, checkbox toggles save to the server and a server-side change detected on connect is surfaced through the existing conflict prompt.
 
 ### Out of scope
 
@@ -197,6 +197,8 @@ All integration tests use the `devtest` SSH alias and run with a 60-second timeo
 - [x] **T49** `testUnreachableHostFailsFastWithoutRetryStorm` - Build an on-demand state for a guaranteed-unreachable host (a `192.0.2.0/24` TEST-NET address) and assert `connectIfNeeded` resolves to `.unavailable(.noRoute)` within a few seconds and issues no additional connect attempts.
 
 ### UI Verification (`macos-ui-automation` MCP, implementer-run)
+
+The `macos-ui-automation` MCP was not connected during implementation, so these two window-server-level checks (and acceptance criterion A2) are left as manual verification. The current build is installed in `/Applications`. To verify: open two remote windows on a reachable host, pick one to be frontmost, quit Redmargin, then with another application frontmost relaunch Redmargin.
 
 - [ ] **T50** Restore two remote windows and confirm via the `macos-ui-automation` MCP that the previously frontmost window is the key window and that the restored windows match their saved front-to-back order (confirms A2, A3).
 - [ ] **T51** With another application frontmost, launch Redmargin with restored remote windows and confirm via the MCP that Redmargin does not become the active application on its own and that no remote window changes z-order when a slow window's connection completes (confirms A2).
