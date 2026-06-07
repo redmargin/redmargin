@@ -34,6 +34,7 @@ public class RemoteFileTreeProvider: ObservableObject {
     private var gitWatchToken: WatchToken?
     private var reconnectHost: String?
     private var reconnectObserver: NSObjectProtocol?
+    private var connectObserver: NSObjectProtocol?
     private var restoreExpandedFoldersTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private var gitStatusTask: Task<Void, Never>?
@@ -85,6 +86,7 @@ public class RemoteFileTreeProvider: ObservableObject {
         reconnectHost: String? = nil,
         expandedFolders: Set<String> = [],
         isDirectory: Bool = false,
+        connectsOnDemand: Bool = false,
         expandedFoldersLoader: ((String) -> Set<String>)? = nil
     ) {
         self.currentFilePath = currentFilePath
@@ -93,8 +95,12 @@ public class RemoteFileTreeProvider: ObservableObject {
         self.expandedFolders = expandedFolders
         self.expandedFoldersLoader = expandedFoldersLoader
         self.reconnectHost = reconnectHost
-        Task {
-            await loadFiles()
+        if connectsOnDemand {
+            observeConnectNotification()
+        } else {
+            Task {
+                await loadFiles()
+            }
         }
         if reconnectHost != nil {
             observeReconnectNotification()
@@ -107,6 +113,7 @@ public class RemoteFileTreeProvider: ObservableObject {
         reconnectHost: String? = nil,
         expandedFolders: Set<String> = [],
         isDirectory: Bool = false,
+        connectsOnDemand: Bool = false,
         expandedFoldersLoader: ((String) -> Set<String>)? = nil
     ) {
         self.currentFilePath = currentFilePath
@@ -115,11 +122,33 @@ public class RemoteFileTreeProvider: ObservableObject {
         self.expandedFolders = expandedFolders
         self.expandedFoldersLoader = expandedFoldersLoader
         self.reconnectHost = reconnectHost
-        Task {
-            await loadFiles()
+        if connectsOnDemand {
+            observeConnectNotification()
+        } else {
+            Task {
+                await loadFiles()
+            }
         }
         if reconnectHost != nil {
             observeReconnectNotification()
+        }
+    }
+
+    /// Observes the first connect of an on-demand window so a deferred tree loads
+    /// once the connection is live. Filtered to this window's location.
+    private func observeConnectNotification() {
+        guard let host = reconnectHost else { return }
+        let expectedKey = "\(host):\(currentFilePath)"
+        connectObserver = NotificationCenter.default.addObserver(
+            forName: .remoteWindowDidConnect,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  (notification.object as? String) == expectedKey else { return }
+            Task { @MainActor in
+                await self.loadFiles()
+            }
         }
     }
 
@@ -141,6 +170,9 @@ public class RemoteFileTreeProvider: ObservableObject {
 
     deinit {
         if let observer = reconnectObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = connectObserver {
             NotificationCenter.default.removeObserver(observer)
         }
         refreshTask?.cancel()

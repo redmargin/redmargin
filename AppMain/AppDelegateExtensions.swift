@@ -218,6 +218,46 @@ extension AppDelegate {
         }
     }
 
+    /// Builds a remote window from cached content without connecting. The host's
+    /// connection is preregistered (created but not yet connected) so the window and
+    /// its file provider exist before any network work; the window starts in the
+    /// `.onDemand` phase and connects lazily via `connectIfNeeded`. Folder locations
+    /// (trailing slash) build a folder window whose tree loads once connected.
+    /// The window is registered but returned unordered, so the caller places it.
+    @MainActor
+    func makeOnDemandRemoteWindow(location: RemoteLocation, cachedContent: String) async -> NSWindow {
+        let connection = await SSHConnectionManager.shared.preregisterConnection(for: location.host)
+        let fileProvider = RemoteFileProvider(connection: connection)
+
+        let rootView: RemoteDocumentWindowContent
+        if location.path.hasSuffix("/") {
+            rootView = RemoteDocumentWindowContent(
+                folderPath: location.path,
+                host: location.host,
+                fileProvider: fileProvider,
+                showSidebar: true,
+                sidebarWidth: settings.loadSidebarWidth(for: location),
+                connectsOnDemand: true,
+                appDelegate: self
+            )
+        } else {
+            rootView = RemoteDocumentWindowContent(
+                content: cachedContent,
+                location: location,
+                fileProvider: fileProvider,
+                showSidebar: settings.loadSidebarVisible(for: location),
+                sidebarWidth: settings.loadSidebarWidth(for: location),
+                connectsOnDemand: true,
+                appDelegate: self
+            )
+        }
+
+        let window = createRemoteWindow(for: location, rootView: rootView)
+        remoteDocumentWindows[location] = window
+        window.delegate = self
+        return window
+    }
+
     func createRemoteWindow(for location: RemoteLocation, rootView: RemoteDocumentWindowContent) -> NSWindow {
         let window = NSWindow(contentViewController: NSHostingController(rootView: rootView))
         window.title = location.displayTitle

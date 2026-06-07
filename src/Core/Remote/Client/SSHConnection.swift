@@ -188,7 +188,9 @@ public actor SSHConnection {
             try await connectInternal(onProgress: onProgress, isRetry: false)
             return
         } catch let error as SSHConnectionError {
-            // Only retry on handshake/timing issues
+            // Only the quick-retry-and-redeploy cascade below runs for transient
+            // handshake/timing issues. Hard-unreachable, refused, and auth failures
+            // hit `default` and throw immediately with no retry and no redeploy (T23).
             switch error {
             case .handshakeTimeout, .serverNotResponding, .connectionTimeout, .helperStartupTimeout:
                 print("[SSHConnection] First attempt failed (\(error)), will retry...")
@@ -293,7 +295,7 @@ public actor SSHConnection {
         let args = [
             "-T",
             "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=10",
+            "-o", "ConnectTimeout=5",
             "-o", "ServerAliveInterval=15",
             "-o", "ServerAliveCountMax=3",
             host,

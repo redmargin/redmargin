@@ -2,6 +2,14 @@ import Foundation
 
 extension Notification.Name {
     public static let sshConnectionReconnected = Notification.Name("RedMargin.sshConnectionReconnected")
+
+    /// Posted to ask a specific on-demand remote window to connect. The notification
+    /// `object` is the target window's `RemoteLocation.storageKey` string.
+    public static let remoteWindowConnectRequest = Notification.Name("RedMargin.remoteWindowConnectRequest")
+
+    /// Posted after an on-demand remote window first connects, so its deferred file
+    /// tree can load. The `object` is the window's `RemoteLocation.storageKey` string.
+    public static let remoteWindowDidConnect = Notification.Name("RedMargin.remoteWindowDidConnect")
 }
 
 /// Connection state for SSH sessions

@@ -14,6 +14,37 @@ struct PendingCheckboxToggle {
     let contentAfterToggle: String
 }
 
+/// Presentation phase for a remote window, independent of the live transport state.
+/// Drives the inline status overlay and gates file-watch/git startup until the
+/// connection is live. A restored, not-yet-connected window starts in `.onDemand`.
+enum RemoteConnectionPhase: Equatable {
+    case onDemand
+    case connecting
+    case connected
+    case unavailable(RemoteUnavailableReason)
+}
+
+/// Why a remote window could not be connected. Drives the inline message and
+/// whether a Retry control is offered.
+enum RemoteUnavailableReason: Equatable {
+    case noRoute
+    case refused
+    case authFailed
+    case fileNotFound
+    case serverError
+
+    /// Pure mapping from a terminal connect error to its inline reason. Hard
+    /// failures get their specific reason; everything else is a generic server error.
+    static func forConnectError(_ error: SSHConnectionError) -> RemoteUnavailableReason {
+        switch error {
+        case .hostUnreachable: return .noRoute
+        case .connectionRefused: return .refused
+        case .authenticationFailed: return .authFailed
+        default: return .serverError
+        }
+    }
+}
+
 @MainActor
 @Observable
 class RemoteDocumentState {
@@ -23,11 +54,24 @@ class RemoteDocumentState {
     var refreshToken: Int = 0  // Sole purpose: bust image cache in MarkdownWebView
     var connectionState: SSHConnectionState = .connected
 
+    /// Presentation phase that drives the inline status overlay. Distinct from
+    /// `connectionState` (live transport): the overlay reads `connectionPhase`.
+    var connectionPhase: RemoteConnectionPhase = .connected
+
     /// When true, shows conflict resolution dialog
     var showConflictDialog: Bool = false
 
     private(set) var location: RemoteLocation
     @ObservationIgnored let fileProvider: RemoteFileProvider
+    @ObservationIgnored let contentCache: RemoteContentCache
+
+    /// Guards the single transition out of `.onDemand`/`.unavailable` into a connect.
+    @ObservationIgnored var isConnecting = false
+
+    /// True once the App Nap activity token has been taken (i.e. the window went
+    /// live). An on-demand window that never connects must not release a token it
+    /// never acquired, so `deinit` checks this before ending the activity.
+    @ObservationIgnored var didBeginActivity = false
 
     @ObservationIgnored private var fileWatchToken: WatchToken?
     @ObservationIgnored private var gitWatchToken: WatchToken?
@@ -38,19 +82,35 @@ class RemoteDocumentState {
     @ObservationIgnored private var stateObserverTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
     @ObservationIgnored private var reconnectObserver: Any?
+    @ObservationIgnored private var connectRequestObserver: Any?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
 
     /// Last content that was confirmed on the server (read or successfully written)
-    @ObservationIgnored private var lastKnownServerContent: String
+    @ObservationIgnored var lastKnownServerContent: String
 
     /// Pending checkbox toggle that failed due to disconnect
     @ObservationIgnored private var pendingToggle: PendingCheckboxToggle?
 
-    init(content: String, location: RemoteLocation, fileProvider: RemoteFileProvider) {
+    /// - Parameters:
+    ///   - connectsOnDemand: When true, the window is restored from cache and does
+    ///     no network work (no App Nap token, file watcher, git detection, or
+    ///     connection-state observation) until `connectIfNeeded` is called; it
+    ///     starts in `.onDemand`. When false (current callers), behavior is
+    ///     unchanged and the window starts `.connected`.
+    ///   - contentCache: Local last-seen-content cache; injectable for tests.
+    init(
+        content: String,
+        location: RemoteLocation,
+        fileProvider: RemoteFileProvider,
+        connectsOnDemand: Bool = false,
+        contentCache: RemoteContentCache = .shared
+    ) {
         self.content = content
         self.lastKnownServerContent = content
         self.location = location
         self.fileProvider = fileProvider
+        self.contentCache = contentCache
+        self.connectionPhase = connectsOnDemand ? .onDemand : .connected
 
         // Observe reconnection via NotificationCenter (reliable, unlike AsyncStream).
         // Filter by host to prevent cross-host cascading reconnection loops.
@@ -68,17 +128,36 @@ class RemoteDocumentState {
             }
         }
 
-        Task {
-            await SSHConnectionManager.shared.beginRemoteDocumentActivity()
-            async let watcher: Void = setupFileWatcher()
-            async let git: Void = detectGitChanges()
-            _ = await (watcher, git)
-            await startObservingConnectionState()
+        // Observe explicit connect requests for this window's location (T9). Lets
+        // the frontmost-connect, background warm, and focus paths drive a connect
+        // without holding a reference to this state object.
+        let requestKey = location.storageKey
+        connectRequestObserver = NotificationCenter.default.addObserver(
+            forName: .remoteWindowConnectRequest,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self,
+                  (notification.object as? String) == requestKey else { return }
+            Task { @MainActor in
+                await self.connectIfNeeded()
+            }
+        }
+
+        if connectsOnDemand {
+            // Stay passive until connectIfNeeded — no network work.
+        } else {
+            // Content was just read from the server, so it is confirmed: cache it.
+            cacheContent(content)
+            Task { await startLiveConnectionWork() }
         }
     }
 
     deinit {
         if let observer = reconnectObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = connectRequestObserver {
             NotificationCenter.default.removeObserver(observer)
         }
         let provider = fileProvider
@@ -88,14 +167,15 @@ class RemoteDocumentState {
         reloadTask?.cancel()
         gitChangeTask?.cancel()
         stateObserverTask?.cancel()
+        let began = didBeginActivity
         Task {
             if let token = fToken { await provider.unwatch(token) }
             if let token = gToken { await provider.unwatch(token) }
-            await SSHConnectionManager.shared.endRemoteDocumentActivity()
+            if began { await SSHConnectionManager.shared.endRemoteDocumentActivity() }
         }
     }
 
-    private func startObservingConnectionState() async {
+    func startObservingConnectionState() async {
         let stateStream = fileProvider.stateChanges
         stateObserverTask = Task { [weak self] in
             for await newState in stateStream {
@@ -116,14 +196,62 @@ class RemoteDocumentState {
         refreshLog.info("connectionState: \(old, privacy: .public) -> \(new, privacy: .public)")
         // Note: handleReconnection() is triggered by the NotificationCenter observer,
         // not here. The AsyncStream is used only for UI state (overlay).
+
+        // Mirror live transport into the presentation phase (T8) once the window
+        // is live. An .onDemand or .unavailable window has no observer running yet,
+        // so its phase is owned by connectIfNeeded and left untouched here.
+        switch connectionPhase {
+        case .connecting, .connected:
+            switch newState {
+            case .connected:
+                connectionPhase = .connected
+            case .connecting, .reconnecting, .disconnected:
+                connectionPhase = .connecting
+            }
+        case .onDemand, .unavailable:
+            break
+        }
     }
 
     @discardableResult
-    private func applyServerContent(_ newContent: String, for expectedPath: String) -> Bool {
+    func applyServerContent(_ newContent: String, for expectedPath: String) -> Bool {
         guard location.path == expectedPath else { return false }
         content = newContent
         lastKnownServerContent = newContent
+        cacheContent(newContent)
         return true
+    }
+
+    /// Reconcile a freshly-read server content during connect revalidation,
+    /// honoring a pending checkbox toggle exactly like reconnection does: a server
+    /// change under a pending toggle raises the existing conflict prompt; otherwise
+    /// the pending toggle is applied or the server change is taken (A8).
+    func revalidateWithServerContent(_ serverContent: String, for path: String) {
+        guard location.path == path else { return }
+        let serverChanged = serverContent != lastKnownServerContent
+
+        if let pending = pendingToggle {
+            if serverChanged {
+                refreshLog.info("Conflict on connect — server changed with pending toggle")
+                showConflictDialog = true
+            } else {
+                applyPendingToggle(pending)
+            }
+        } else if serverChanged {
+            applyServerContent(serverContent, for: path)
+            Task { await detectGitChanges() }
+        }
+    }
+
+    /// Persist confirmed server content to the local cache, fire-and-forget so it
+    /// never blocks the UI. Empty content (folder windows) is not cached.
+    func cacheContent(_ content: String) {
+        guard !content.isEmpty else { return }
+        let location = self.location
+        let cache = contentCache
+        Task.detached(priority: .utility) {
+            await cache.save(content, for: location)
+        }
     }
 
     private func handleReconnection() {
@@ -255,7 +383,7 @@ class RemoteDocumentState {
         }
     }
 
-    private func setupFileWatcher() async {
+    func setupFileWatcher() async {
         if let token = fileWatchToken { await fileProvider.unwatch(token) }
 
         fileWatchToken = await fileProvider.watchFile(at: location.path) { [weak self] in
@@ -392,7 +520,7 @@ class RemoteDocumentState {
         await detectGitChanges()
     }
 
-    private func detectGitChanges() async {
+    func detectGitChanges() async {
         print("[RemoteGutter] detectGitChanges called for \(location.displayString)")
 
         gitChangeTask?.cancel()
@@ -486,6 +614,7 @@ class RemoteDocumentState {
                 await MainActor.run {
                     lastKnownServerContent = newContent
                     pendingToggle = nil
+                    cacheContent(newContent)
                 }
             } catch {
                 print("[RemoteDocumentState] Failed to save checkbox toggle: \(error)")

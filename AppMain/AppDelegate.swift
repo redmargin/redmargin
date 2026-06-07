@@ -38,7 +38,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     private let savedFolderURLsKey = "RedMargin.OpenFolderURLs"
     private let folderSelectedFilesKey = "RedMargin.FolderSelectedFiles"
     private let windowOrderKey = "RedMargin.WindowOrder"
-    private let frontmostWindowKey = "RedMargin.FrontmostWindow"
+    let remoteWindowOrderKey = "RedMargin.RemoteWindowOrder"
+    let frontmostWindowKey = "RedMargin.FrontmostWindow"
     let maxRecentItems = RecentWorkspaceStore.defaultMaxUnpinnedItems
     let settings = DocumentSettingsStorage.shared
     let recentWorkspaces: RecentWorkspaceStore
@@ -93,12 +94,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
             openFolder(url, selectedFile: selectedFile)
         }
 
-        // Restore remote documents
-        if !savedRemoteLocations.isEmpty {
-            restoreRemoteDocuments(savedRemoteLocations)
-        } else {
-            restoreFrontmostWindow()
-        }
+        // Restore remote windows instantly and passively from cache, then connect
+        // lazily. This also makes the saved frontmost window key — the single
+        // key-window decision for the whole launch — after all windows exist.
+        restoreRemoteDocuments(savedRemoteLocations)
 
         if RecentWorkspacesPolicy.shouldShowAtLaunch(
             restoredLocalCount: savedURLs.count,
@@ -139,6 +138,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
                 documentWindows.first { $0.value === window }?.key
             }
         UserDefaults.standard.set(orderedURLs.map { $0.path }, forKey: windowOrderKey)
+
+        // Save remote window back-to-front order so restore can rebuild z-order (T13).
+        let remoteOrderBackToFront = NSApp.orderedWindows
+            .compactMap { window -> RemoteLocation? in
+                remoteDocumentWindows.first { $0.value === window }?.key
+            }
+            .reversed()
+            .map { "remote:\($0.host):\($0.path)" }
+        UserDefaults.standard.set(Array(remoteOrderBackToFront), forKey: remoteWindowOrderKey)
 
         // Save frontmost window (local, remote, or folder)
         if let frontWindow = NSApp.orderedWindows.first {
@@ -596,6 +604,57 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         documentWindows = documentWindows.filter { $0.value !== window }
         remoteDocumentWindows = remoteDocumentWindows.filter { $0.value !== window }
         folderWindows = folderWindows.filter { $0.value !== window }
+    }
+
+    /// Focusing a not-yet-connected remote window connects it promptly (T19).
+    func windowDidBecomeKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              let location = remoteDocumentWindows.first(where: { $0.value === window })?.key
+        else { return }
+        NotificationCenter.default.post(
+            name: .remoteWindowConnectRequest, object: location.storageKey
+        )
+    }
+
+    // MARK: - Background remote connection warm-up
+
+    /// Connects the non-frontmost restored remote windows quietly in the background
+    /// at low priority and bounded concurrency (at most three in flight). Each window
+    /// connects through its own `connectIfNeeded` (via the connect-request
+    /// notification), so `SSHConnectionManager.ensureConnected` dedupes per host and
+    /// unreachable hosts fast-fail into each window's inline `unavailable` state with
+    /// no retry storm. Reopening time no longer grows with the number of dead hosts.
+    @MainActor
+    func startBackgroundRemoteWarm(skipping frontmost: RemoteLocation?) {
+        let locations = Array(remoteDocumentWindows.keys.filter { $0 != frontmost })
+        guard !locations.isEmpty else { return }
+
+        Task(priority: .utility) {
+            await withTaskGroup(of: Void.self) { group in
+                let maxInFlight = 3
+                var index = 0
+                var inFlight = 0
+                while index < locations.count || inFlight > 0 {
+                    while inFlight < maxInFlight && index < locations.count {
+                        let location = locations[index]
+                        index += 1
+                        inFlight += 1
+                        group.addTask {
+                            await MainActor.run {
+                                NotificationCenter.default.post(
+                                    name: .remoteWindowConnectRequest, object: location.storageKey
+                                )
+                            }
+                            // Await the coalesced connect so concurrency stays bounded;
+                            // unreachable hosts throw at once and free the slot.
+                            _ = try? await SSHConnectionManager.shared.ensureConnected(for: location.host)
+                        }
+                    }
+                    await group.next()
+                    inFlight -= 1
+                }
+            }
+        }
     }
 
 }

@@ -79,99 +79,63 @@ extension AppDelegate {
 // MARK: - Remote Document Restore
 
 extension AppDelegate {
+    /// Restores remote windows instantly and passively: every saved window is built
+    /// from its locally cached last-seen contents with no network round-trip, placed
+    /// in saved back-to-front z-order without stealing focus, then connected lazily
+    /// (the frontmost first, the rest via a background warm pass / on focus).
     func restoreRemoteDocuments(_ savedRemoteLocations: [RemoteLocation]) {
-        print("[AppDelegate] Restoring \(savedRemoteLocations.count) remote documents")
-        Task {
-            await MainActor.run {
-                beginRestoreActivity("Restoring remote windows...")
-            }
-            defer {
-                Task { @MainActor in
-                    self.endRestoreActivity()
-                }
-            }
-            var failedLocations: [RemoteLocation] = []
-            let retryDelays: [UInt64] = [0, 3_000_000_000, 5_000_000_000]  // 0s, 3s, 5s
+        print("[AppDelegate] Restoring \(savedRemoteLocations.count) remote windows (on-demand)")
+        guard !savedRemoteLocations.isEmpty else {
+            restoreFrontmostWindow()
+            return
+        }
 
-            // Group by host to share SSH connections
-            let locationsByHost = Dictionary(grouping: savedRemoteLocations, by: \.host)
+        Task { @MainActor in
+            // Saved back-to-front z-order and frontmost, as storage keys.
+            let savedOrderTokens = UserDefaults.standard.stringArray(forKey: remoteWindowOrderKey) ?? []
+            let savedOrderKeys = savedOrderTokens.compactMap(RemoteRestoreOrdering.storageKey(fromWindowToken:))
+            let frontmostKey = UserDefaults.standard.string(forKey: frontmostWindowKey)
+                .flatMap(RemoteRestoreOrdering.storageKey(fromWindowToken:))
 
-            for (host, locations) in locationsByHost {
-                var connection: SSHConnection?
+            let plan = RemoteRestoreOrdering.plan(
+                locations: savedRemoteLocations,
+                savedOrderKeys: savedOrderKeys,
+                frontmostKey: frontmostKey
+            )
 
-                for (attempt, delay) in retryDelays.enumerated() {
-                    if delay > 0 {
-                        try? await Task.sleep(nanoseconds: delay)
-                    }
-                    do {
-                        connection = try await SSHConnectionManager.shared.connection(for: host)
-                        break
-                    } catch {
-                        let maxAttempts = retryDelays.count
-                        print("[AppDelegate] Connection to \(host) failed " +
-                              "(attempt \(attempt + 1)/\(maxAttempts)): \(error)")
-                    }
-                }
-
-                guard let conn = connection else {
-                    print("[AppDelegate] Giving up on \(host) after \(retryDelays.count) attempts")
-                    failedLocations.append(contentsOf: locations)
-                    continue
-                }
-
-                for location in locations {
-                    do {
-                        // Check if path exists and whether it is a directory
-                        let remoteCheck = "test -e '\(location.path)' && "
-                            + "{ test -d '\(location.path)' && echo dir || echo file; } "
-                            + "|| echo missing"
-                        let existsArgs = [
-                            "-o", "BatchMode=yes",
-                            "-o", "ConnectTimeout=5",
-                            location.host,
-                            remoteCheck
-                        ]
-                        let existsResult = try await ProcessRunner.run(
-                            executable: "/usr/bin/ssh",
-                            arguments: existsArgs,
-                            timeout: 10
-                        )
-                        let kind = existsResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if kind == "missing" {
-                            print("[AppDelegate] Dropping stale restore entry (path gone): \(location.path)")
-                            continue
-                        }
-                        if kind == "dir" {
-                            try await openRemoteFolder(connection: conn, path: location.path)
-                        } else {
-                            try await openRemoteDocument(connection: conn, path: location.path)
-                        }
-                        print("[AppDelegate] Restored: \(location.path)")
-                    } catch let error as RemoteFileError where error.isFileNotFound {
-                        print("[AppDelegate] Dropping stale restore entry (not found): \(location.path)")
-                    } catch {
-                        print("[AppDelegate] Failed to restore \(location): \(error)")
-                        failedLocations.append(location)
-                    }
-                }
+            // Build every window from cache (no network), keyed by location.
+            var windows: [RemoteLocation: NSWindow] = [:]
+            for location in plan.placementOrder {
+                let cached = RemoteContentCache.shared.loadSync(for: location) ?? ""
+                let window = await makeOnDemandRemoteWindow(location: location, cachedContent: cached)
+                windows[location] = window
             }
 
-            // Clear the restore key now that all attempts are done
-            UserDefaults.standard.removeObject(forKey: self.openRemoteLocationsKey)
-
-            // Save failed locations back so they're retried on next launch
-            if !failedLocations.isEmpty {
-                let count = failedLocations.count
-                print("[AppDelegate] \(count) remote documents failed to restore, saving for next launch")
-                if let data = try? JSONEncoder().encode(failedLocations) {
-                    UserDefaults.standard.set(data, forKey: self.openRemoteLocationsKey)
+            // Place passively in back-to-front order: orderFront the first window,
+            // then order(.above:) each subsequent one. Never makeKeyAndOrderFront,
+            // never NSApp.activate — that is what stole focus on restore.
+            var previous: NSWindow?
+            for location in plan.placementOrder {
+                guard let window = windows[location] else { continue }
+                if let previous {
+                    window.order(.above, relativeTo: previous.windowNumber)
+                } else {
+                    window.orderFront(nil)
                 }
+                previous = window
             }
 
-            // Restore frontmost window after all remote docs are loaded
-            await MainActor.run {
-                self.restoreFrontmostWindow()
+            // Single key-window decision for the whole launch stays here.
+            restoreFrontmostWindow()
+
+            // The previously active remote window connects immediately; the rest warm
+            // quietly in the background and on focus.
+            if let frontmost = plan.keyLocation {
+                NotificationCenter.default.post(
+                    name: .remoteWindowConnectRequest, object: frontmost.storageKey
+                )
             }
+            startBackgroundRemoteWarm(skipping: plan.keyLocation)
         }
     }
 }
