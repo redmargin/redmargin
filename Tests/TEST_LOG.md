@@ -4,7 +4,7 @@
 
 - Started: 2026-06-07
 - Command: Remote restore UX suite — pure/offline classes via xcodebuild, devtest integration via `swift test`
-- Status: ALL PASS (28/28 new tests)
+- Status: ALL PASS (28/28 new tests). Fix: off-network host now fast-fails in ~5s (was ~60s) — timed-out connects are terminal, not retried.
 
 ### Remote Restore UX (2026-06-07)
 
@@ -18,7 +18,7 @@
 | RemoteRestoreOrderingTests.testRestoreOrderRebuildsSavedZOrder | PASS | 0.001s | 2026-06-07 15:25 |
 | RemoteRestoreOrderingTests.testRestoreOrderFallsBackToArrayOrderWhenNoSavedOrder | PASS | 0.001s | 2026-06-07 15:25 |
 | RemoteRestoreOrderingTests.testWindowTokenStripsRemotePrefixToStorageKey | PASS | 0.001s | 2026-06-07 15:25 |
-| RemoteConnectRetryPolicyTests.testHardUnreachableIsNotRetryable | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteConnectRetryPolicyTests.testHostNotReachableErrorsAreNotRetryable | PASS | 0.001s | 2026-06-07 16:00 |
 | RemoteConnectRetryPolicyTests.testTransientErrorsAreRetryable | PASS | 0.000s | 2026-06-07 15:25 |
 | RemoteConnectRetryPolicyTests.testBackoffWithJitterStaysWithinBounds | PASS | 0.001s | 2026-06-07 15:25 |
 | RemoteConnectRetryPolicyTests.testRetryLoopCapsAtThreeAttempts | PASS | 0.001s | 2026-06-07 15:25 |
@@ -33,11 +33,11 @@
 | RemoteDocumentStateTests.testHostUnreachableMapsToNoRouteReason | PASS | 0.002s | 2026-06-07 15:25 |
 | RemoteDocumentStateTests.testConnectRequestNotificationTriggersConnect | PASS | 0.317s | 2026-06-07 15:25 |
 | SSHConnectionManagerTests.testPreregisterReturnsSharedConnectionPerHost | PASS | 0.002s | 2026-06-07 15:25 |
-| SSHConnectionManagerTests.testEnsureConnectedCoalescesConcurrentCallers | PASS | 20.6s | 2026-06-07 15:25 |
+| SSHConnectionManagerTests.testEnsureConnectedCoalescesConcurrentCallers | PASS | 5.0s | 2026-06-07 16:00 |
 | RemoteIntegrationTests.testOnDemandWindowShowsCachedContentBeforeConnect | PASS | 1.4s | 2026-06-07 15:31 |
 | RemoteIntegrationTests.testFrontmostConnectsAndOthersWarmInBackground | PASS | 3.1s | 2026-06-07 15:31 |
 | RemoteIntegrationTests.testFocusTriggersConnectForOnDemandWindow | PASS | 2.9s | 2026-06-07 15:31 |
-| RemoteIntegrationTests.testUnreachableHostFailsFastWithoutRetryStorm | PASS | 0.03s | 2026-06-07 15:31 |
+| RemoteIntegrationTests.testUnreachableHostFailsFastWithoutRetryStorm | PASS | 5.0s | 2026-06-07 16:00 |
 
 Notes: pure/offline classes run under `xcodebuild test-without-building`; the four `RemoteIntegrationTests` connect to `devtest` and must run via `swift test --filter` so the working directory is the project root (the server-binary lookup is CWD-relative). `testEnsureConnectedCoalescesConcurrentCallers` and `testUnreachableHostFailsFastWithoutRetryStorm` reach unroutable hosts on purpose.
 

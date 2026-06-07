@@ -551,12 +551,14 @@ final class RemoteIntegrationTests: XCTestCase {
     }
 
     /// T49: an unreachable host fails fast into an inline unavailable state without a
-    /// retry storm, keeping cached content visible. Uses a non-resolvable host so the
-    /// failure is terminal (not retried). The exact no-route classification is covered
+    /// retry storm, keeping cached content visible. Uses a TEST-NET address that
+    /// SYN-times-out (the same failure mode as a saved host that has gone off the
+    /// network) to guard against the connection-timeout retry storm that turned one
+    /// dead host into ~a minute. The exact error classification is covered
     /// deterministically by RemoteConnectRetryPolicyTests.
     @MainActor
     func testUnreachableHostFailsFastWithoutRetryStorm() async throws {
-        let host = "redmargin-unreachable-\(UUID().uuidString).invalid"
+        let host = "192.0.2.\(Int.random(in: 2...250))"
         let location = RemoteLocation(host: host, path: "/tmp/dead.md")
         let (cache, cacheDir) = makeTempCache()
         defer {
@@ -578,7 +580,7 @@ final class RemoteIntegrationTests: XCTestCase {
         if case .unavailable = state.connectionPhase {} else {
             XCTFail("Unreachable host should resolve to an unavailable state, got \(state.connectionPhase)")
         }
-        XCTAssertLessThan(elapsed, 20, "Should fail fast, not storm with retries")
+        XCTAssertLessThan(elapsed, 15, "A timed-out host must fail in seconds, not storm with retries")
         XCTAssertEqual(state.content, "# Cached\n", "Cached content stays visible")
     }
 

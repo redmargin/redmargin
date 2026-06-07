@@ -3,17 +3,19 @@ import Foundation
 @testable import RedmarginCore
 
 final class RemoteConnectRetryPolicyTests: XCTestCase {
-    func testHardUnreachableIsNotRetryable() {
+    func testHostNotReachableErrorsAreNotRetryable() {
         XCTAssertFalse(RemoteConnectRetry.isRetryable(.hostUnreachable(host: "h")))
         XCTAssertFalse(RemoteConnectRetry.isRetryable(.connectionRefused(host: "h")))
         XCTAssertFalse(RemoteConnectRetry.isRetryable(.authenticationFailed(host: "h")))
+        // A connection timeout means SSH could not reach the host; retrying just
+        // burns more timeouts, so it is terminal too (fast-fail on a dead host).
+        XCTAssertFalse(RemoteConnectRetry.isRetryable(.connectionTimeout(host: "h")))
     }
 
     func testTransientErrorsAreRetryable() {
         XCTAssertTrue(RemoteConnectRetry.isRetryable(.operationTimeout(operation: "read")))
         XCTAssertTrue(RemoteConnectRetry.isRetryable(.handshakeTimeout(host: "h")))
         XCTAssertTrue(RemoteConnectRetry.isRetryable(.serverNotResponding(host: "h")))
-        XCTAssertTrue(RemoteConnectRetry.isRetryable(.connectionTimeout(host: "h")))
         XCTAssertTrue(RemoteConnectRetry.isRetryable(.helperStartupTimeout(host: "h", stderr: "")))
         XCTAssertTrue(RemoteConnectRetry.isRetryable(.unexpectedDisconnect))
     }
@@ -38,7 +40,7 @@ final class RemoteConnectRetryPolicyTests: XCTestCase {
         do {
             try await RemoteConnectRetry.run(randomFraction: { 0 }, sleep: { _ in }) {
                 attempts += 1
-                throw SSHConnectionError.connectionTimeout(host: "h")  // always transient
+                throw SSHConnectionError.serverNotResponding(host: "h")  // always retryable
             }
             XCTFail("Should have thrown after exhausting retries")
         } catch {

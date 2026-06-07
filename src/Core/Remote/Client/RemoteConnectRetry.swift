@@ -14,14 +14,19 @@ public enum RemoteConnectRetry {
     /// Upper bound on a single backoff delay, in seconds (2^3).
     public static let maxBackoffDelay: TimeInterval = 8
 
-    /// Whether a connect failure is worth retrying. Hard-unreachable and auth
-    /// errors are terminal; transient transport errors are retryable.
+    /// Whether a connect failure is worth retrying. Errors that mean the host is
+    /// not reachable right now are terminal (fast-fail so a dead host does not stall
+    /// reopening); only errors that occur after SSH has reached the host — a wedged
+    /// helper or a transient mid-session drop — are retryable. A `.connectionTimeout`
+    /// (could not even establish SSH) is terminal: retrying just burns more 5s
+    /// timeouts on an unreachable host.
     public static func isRetryable(_ error: SSHConnectionError) -> Bool {
         switch error {
         case .operationTimeout, .handshakeTimeout, .serverNotResponding,
-             .connectionTimeout, .helperStartupTimeout, .unexpectedDisconnect:
+             .helperStartupTimeout, .unexpectedDisconnect:
             return true
-        case .hostUnreachable, .connectionRefused, .authenticationFailed, .sshProcessFailed:
+        case .hostUnreachable, .connectionRefused, .authenticationFailed,
+             .connectionTimeout, .sshProcessFailed:
             return false
         }
     }

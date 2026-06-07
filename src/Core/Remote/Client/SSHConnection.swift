@@ -188,11 +188,14 @@ public actor SSHConnection {
             try await connectInternal(onProgress: onProgress, isRetry: false)
             return
         } catch let error as SSHConnectionError {
-            // Only the quick-retry-and-redeploy cascade below runs for transient
-            // handshake/timing issues. Hard-unreachable, refused, and auth failures
-            // hit `default` and throw immediately with no retry and no redeploy (T23).
+            // The quick-retry-and-redeploy cascade below runs only when SSH reached
+            // the host but the helper/handshake misbehaved. A `.connectionTimeout`
+            // means we could not even establish SSH (the host is unreachable now), so
+            // redeploying is pointless — it joins hard-unreachable, refused, and auth
+            // failures in `default` and throws immediately with no retry and no
+            // redeploy, so a dead host fails in seconds instead of a minute (T23).
             switch error {
-            case .handshakeTimeout, .serverNotResponding, .connectionTimeout, .helperStartupTimeout:
+            case .handshakeTimeout, .serverNotResponding, .helperStartupTimeout:
                 print("[SSHConnection] First attempt failed (\(error)), will retry...")
             default:
                 state = .disconnected
