@@ -401,6 +401,187 @@ final class RemoteIntegrationTests: XCTestCase {
         print("[Test] ReadAsset test passed!")
     }
 
+    // MARK: - On-demand restore (remote window restore UX)
+
+    private func makeTempCache() -> (RemoteContentCache, URL) {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RemoteRestoreCache-\(UUID().uuidString)")
+        return (RemoteContentCache(baseDirectory: dir), dir)
+    }
+
+    @MainActor
+    private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        return condition()
+    }
+
+    /// T46/T40: a pre-seeded cache shows immediately before connect; connecting
+    /// revalidates against the (changed) server content and refreshes the cache.
+    @MainActor
+    func testOnDemandWindowShowsCachedContentBeforeConnect() async throws {
+        let path = "/tmp/redmargin-ondemand-\(UUID().uuidString).md"
+        let location = RemoteLocation(host: "devtest", path: path)
+        let (cache, cacheDir) = makeTempCache()
+        defer {
+            try? FileManager.default.removeItem(at: cacheDir)
+            Task {
+                _ = try? await ProcessRunner.run(
+                    executable: "ssh", arguments: ["devtest", "rm -f \(path)"], timeout: 15
+                )
+            }
+        }
+
+        // Cache holds stale content; the server holds different, live content.
+        await cache.save("# Cached\n", for: location)
+        _ = try await ProcessRunner.run(
+            executable: "ssh", arguments: ["devtest", "printf '# Live\\n' > \(path)"], timeout: 15
+        )
+
+        let connection = await SSHConnectionManager.shared.preregisterConnection(for: "devtest")
+        let provider = RemoteFileProvider(connection: connection)
+        let state = RemoteDocumentState(
+            content: cache.loadSync(for: location) ?? "",
+            location: location,
+            fileProvider: provider,
+            connectsOnDemand: true,
+            contentCache: cache
+        )
+
+        XCTAssertEqual(state.content, "# Cached\n", "Cached content shows immediately")
+        XCTAssertEqual(state.connectionPhase, .onDemand)
+        let aliveBefore = await connection.isAlive()
+        XCTAssertFalse(aliveBefore, "No connection before connectIfNeeded")
+
+        await state.connectIfNeeded()
+
+        XCTAssertEqual(state.connectionPhase, .connected)
+        XCTAssertEqual(state.content, "# Live\n", "Revalidated to live server content")
+        let cacheRefreshed = await waitUntil(timeout: 5) { cache.loadSync(for: location) == "# Live\n" }
+        XCTAssertTrue(cacheRefreshed, "Cache is refreshed with the revalidated content")
+    }
+
+    /// T47: the frontmost window connects immediately; the rest warm in the
+    /// background and reach connected without an explicit focus.
+    @MainActor
+    func testFrontmostConnectsAndOthersWarmInBackground() async throws {
+        let path1 = "/tmp/redmargin-warm1-\(UUID().uuidString).md"
+        let path2 = "/tmp/redmargin-warm2-\(UUID().uuidString).md"
+        let loc1 = RemoteLocation(host: "devtest", path: path1)
+        let loc2 = RemoteLocation(host: "devtest", path: path2)
+        let (cache, cacheDir) = makeTempCache()
+        defer {
+            try? FileManager.default.removeItem(at: cacheDir)
+            Task {
+                _ = try? await ProcessRunner.run(
+                    executable: "ssh", arguments: ["devtest", "rm -f \(path1) \(path2)"], timeout: 15
+                )
+            }
+        }
+        _ = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: ["devtest", "printf '# One\\n' > \(path1); printf '# Two\\n' > \(path2)"],
+            timeout: 15
+        )
+
+        let connection = await SSHConnectionManager.shared.preregisterConnection(for: "devtest")
+        let state1 = RemoteDocumentState(
+            content: "", location: loc1, fileProvider: RemoteFileProvider(connection: connection),
+            connectsOnDemand: true, contentCache: cache
+        )
+        let state2 = RemoteDocumentState(
+            content: "", location: loc2, fileProvider: RemoteFileProvider(connection: connection),
+            connectsOnDemand: true, contentCache: cache
+        )
+
+        let appDelegate = AppDelegate()
+        appDelegate.remoteDocumentWindows[loc1] = NSWindow()
+        appDelegate.remoteDocumentWindows[loc2] = NSWindow()
+
+        // Frontmost connects immediately; the rest warm quietly in the background.
+        NotificationCenter.default.post(name: .remoteWindowConnectRequest, object: loc1.storageKey)
+        appDelegate.startBackgroundRemoteWarm(skipping: loc1)
+
+        let frontUp = await waitUntil(timeout: 30) { state1.connectionPhase == .connected }
+        XCTAssertTrue(frontUp, "Frontmost window connects")
+        let secondUp = await waitUntil(timeout: 30) { state2.connectionPhase == .connected }
+        XCTAssertTrue(secondUp, "Background warm connects the second window without explicit focus")
+    }
+
+    /// T48: with background warm disabled, focusing a not-yet-connected window
+    /// (windowDidBecomeKey) drives it to connected.
+    @MainActor
+    func testFocusTriggersConnectForOnDemandWindow() async throws {
+        let path = "/tmp/redmargin-focus-\(UUID().uuidString).md"
+        let location = RemoteLocation(host: "devtest", path: path)
+        let (cache, cacheDir) = makeTempCache()
+        defer {
+            try? FileManager.default.removeItem(at: cacheDir)
+            Task {
+                _ = try? await ProcessRunner.run(
+                    executable: "ssh", arguments: ["devtest", "rm -f \(path)"], timeout: 15
+                )
+            }
+        }
+        _ = try await ProcessRunner.run(
+            executable: "ssh", arguments: ["devtest", "printf '# Focus\\n' > \(path)"], timeout: 15
+        )
+
+        let connection = await SSHConnectionManager.shared.preregisterConnection(for: "devtest")
+        let state = RemoteDocumentState(
+            content: "", location: location, fileProvider: RemoteFileProvider(connection: connection),
+            connectsOnDemand: true, contentCache: cache
+        )
+        XCTAssertEqual(state.connectionPhase, .onDemand)
+
+        let appDelegate = AppDelegate()
+        let window = NSWindow()
+        appDelegate.remoteDocumentWindows[location] = window
+
+        // No background warm is started; simulate the window gaining focus.
+        appDelegate.windowDidBecomeKey(
+            Notification(name: NSWindow.didBecomeKeyNotification, object: window)
+        )
+
+        let connected = await waitUntil(timeout: 30) { state.connectionPhase == .connected }
+        XCTAssertTrue(connected, "Focusing a not-yet-connected window connects it")
+    }
+
+    /// T49: an unreachable host fails fast into an inline unavailable state without a
+    /// retry storm, keeping cached content visible. Uses a non-resolvable host so the
+    /// failure is terminal (not retried). The exact no-route classification is covered
+    /// deterministically by RemoteConnectRetryPolicyTests.
+    @MainActor
+    func testUnreachableHostFailsFastWithoutRetryStorm() async throws {
+        let host = "redmargin-unreachable-\(UUID().uuidString).invalid"
+        let location = RemoteLocation(host: host, path: "/tmp/dead.md")
+        let (cache, cacheDir) = makeTempCache()
+        defer {
+            try? FileManager.default.removeItem(at: cacheDir)
+            Task { await SSHConnectionManager.shared.disconnect(host: host) }
+        }
+
+        let connection = await SSHConnectionManager.shared.preregisterConnection(for: host)
+        let state = RemoteDocumentState(
+            content: "# Cached\n", location: location,
+            fileProvider: RemoteFileProvider(connection: connection),
+            connectsOnDemand: true, contentCache: cache
+        )
+
+        let start = Date()
+        await state.connectIfNeeded()
+        let elapsed = Date().timeIntervalSince(start)
+
+        if case .unavailable = state.connectionPhase {} else {
+            XCTFail("Unreachable host should resolve to an unavailable state, got \(state.connectionPhase)")
+        }
+        XCTAssertLessThan(elapsed, 20, "Should fail fast, not storm with retries")
+        XCTAssertEqual(state.content, "# Cached\n", "Cached content stays visible")
+    }
+
     private func prepareSlowRemoteFIFO(
         path: String,
         writes: [(delay: Int, content: String)]
@@ -428,7 +609,7 @@ final class RemoteIntegrationTests: XCTestCase {
         }
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         for process in backgroundProcesses where process.isRunning {
             process.terminate()
         }
@@ -439,6 +620,9 @@ final class RemoteIntegrationTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: RecentWorkspaceStore.defaultsKey)
         }
         savedRecentWorkspacesData = nil
-        super.tearDown()
+        // Awaited cleanup of the shared devtest connection so on-demand tests, which
+        // connect through SSHConnectionManager.shared, do not contaminate each other.
+        await SSHConnectionManager.shared.disconnect(host: "devtest")
+        try await super.tearDown()
     }
 }

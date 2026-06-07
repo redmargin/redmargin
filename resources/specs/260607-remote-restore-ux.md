@@ -149,52 +149,52 @@ Tests are implementation tasks — the implementer writes and passes each one on
 
 ### Unit Tests (`Tests/RemoteContentCacheTests.swift`)
 
-- [ ] **T24** `testCacheRoundTrip` - Saving content for a location and loading it back returns the same content, using an injected temp base directory.
-- [ ] **T25** `testCacheMissReturnsNil` - Loading a location that was never cached returns nil.
-- [ ] **T26** `testCacheSkipsOversizedContent` - Content above the 4 MB cap is not written and loads back as nil.
-- [ ] **T27** `testCacheEvictsLeastRecentlyWritten` - Exceeding the 200-entry cap evicts the oldest-written entry and keeps the newest.
-- [ ] **T28** `testEvictRemovesEntry` - `evict(for:)` deletes a previously cached entry so a later load returns nil.
+- [x] **T24** `testCacheRoundTrip` - Saving content for a location and loading it back returns the same content, using an injected temp base directory.
+- [x] **T25** `testCacheMissReturnsNil` - Loading a location that was never cached returns nil.
+- [x] **T26** `testCacheSkipsOversizedContent` - Content above the 4 MB cap is not written and loads back as nil.
+- [x] **T27** `testCacheEvictsLeastRecentlyWritten` - Exceeding the 200-entry cap evicts the oldest-written entry and keeps the newest.
+- [x] **T28** `testEvictRemovesEntry` - `evict(for:)` deletes a previously cached entry so a later load returns nil.
 
 ### Unit Tests (`Tests/RemoteRestoreOrderingTests.swift`)
 
-- [ ] **T29** `testRestoreOrderRebuildsSavedZOrder` - A pure ordering helper, given a saved back-to-front order and the saved frontmost location, returns the placement sequence back-to-front and identifies the single window to make key.
-- [ ] **T30** `testRestoreOrderFallsBackToArrayOrderWhenNoSavedOrder` - With no saved z-order, the helper falls back to the saved-array order and still selects the saved frontmost (or the last placed window when no frontmost is recorded).
+- [x] **T29** `testRestoreOrderRebuildsSavedZOrder` - A pure ordering helper, given a saved back-to-front order and the saved frontmost location, returns the placement sequence back-to-front and identifies the single window to make key.
+- [x] **T30** `testRestoreOrderFallsBackToArrayOrderWhenNoSavedOrder` - With no saved z-order, the helper falls back to the saved-array order and still selects the saved frontmost (or the last placed window when no frontmost is recorded).
 
 ### Unit Tests (`Tests/RemoteConnectRetryPolicyTests.swift`)
 
-- [ ] **T31** `testHardUnreachableIsNotRetryable` - The retry-policy classifier returns "no retry" for `.hostUnreachable`, `.connectionRefused`, and `.authenticationFailed`.
-- [ ] **T32** `testTransientErrorsAreRetryable` - The classifier returns "retry" for `.operationTimeout`, `.handshakeTimeout`, `.serverNotResponding`, `.connectionTimeout`, `.helperStartupTimeout`, and `.unexpectedDisconnect`.
-- [ ] **T33** `testBackoffWithJitterStaysWithinBounds` - The full-jitter backoff for attempt n returns a value in `0...min(maxDelay, 2^n)` and the retry loop caps at three attempts.
-- [ ] **T34** `testServerDeployerClassifiesUnreachableStderr` - "network is unreachable" and "no route to host" stderr classify to `.hostUnreachable`; "connection refused" to `.connectionRefused`; "permission denied"/"publickey" to `.authenticationFailed`.
+- [x] **T31** `testHardUnreachableIsNotRetryable` - The retry-policy classifier returns "no retry" for `.hostUnreachable`, `.connectionRefused`, and `.authenticationFailed`.
+- [x] **T32** `testTransientErrorsAreRetryable` - The classifier returns "retry" for `.operationTimeout`, `.handshakeTimeout`, `.serverNotResponding`, `.connectionTimeout`, `.helperStartupTimeout`, and `.unexpectedDisconnect`.
+- [x] **T33** `testBackoffWithJitterStaysWithinBounds` - The full-jitter backoff for attempt n returns a value in `0...min(maxDelay, 2^n)` and the retry loop caps at three attempts.
+- [x] **T34** `testServerDeployerClassifiesUnreachableStderr` - "network is unreachable" and "no route to host" stderr classify to `.hostUnreachable`; "connection refused" to `.connectionRefused`; "permission denied"/"publickey" to `.authenticationFailed`.
 
 ### Unit Tests (`Tests/RemoteStatusPresentationTests.swift`)
 
-- [ ] **T35** `testConnectingWithContentShowsNonDimmingPill` - `(.connecting, hasContent: true)` maps to a corner pill, no dimming, no Retry.
-- [ ] **T36** `testConnectingWithoutContentShowsPlaceholder` - `(.connecting, hasContent: false)` maps to a centered placeholder with a subtle backdrop.
-- [ ] **T37** `testNoRouteShowsRetry` - `.unavailable(.noRoute)` maps to a non-dimming pill with a Retry action and a host-named label.
-- [ ] **T38** `testConnectedShowsNothing` - `.connected` maps to no overlay.
+- [x] **T35** `testConnectingWithContentShowsNonDimmingPill` - `(.connecting, hasContent: true)` maps to a corner pill, no dimming, no Retry.
+- [x] **T36** `testConnectingWithoutContentShowsPlaceholder` - `(.connecting, hasContent: false)` maps to a centered placeholder with a subtle backdrop.
+- [x] **T37** `testNoRouteShowsRetry` - `.unavailable(.noRoute)` maps to a non-dimming pill with a Retry action and a host-named label.
+- [x] **T38** `testConnectedShowsNothing` - `.connected` maps to no overlay.
 
 ### Unit Tests (`Tests/RemoteDocumentStateTests.swift`)
 
-- [ ] **T39** `testOnDemandWindowDoesNoNetworkUntilConnect` - A state created with `connectsOnDemand: true` and a recording fake provider performs no file read, watch, or git call until `connectIfNeeded` is called, and starts in `.onDemand`.
-- [ ] **T40** `testConnectIfNeededReachesConnectedAndRevalidates` - With a fake provider/connection that connects successfully and returns changed content, `connectIfNeeded` transitions `.onDemand` → `.connecting` → `.connected`, starts the watcher and git detection, applies the new content, and writes it to the cache.
-- [ ] **T41** `testConnectIfNeededNoRouteIsTerminal` - A fake that throws `.hostUnreachable` puts the state in `.unavailable(.noRoute)` with no retry, leaving cached content visible.
-- [ ] **T42** `testConnectIfNeededRetriesTransientThenConnects` - A fake that throws one transient error then succeeds reaches `.connected` after a single jittered retry, within the three-attempt cap.
-- [ ] **T43** `testConnectRequestNotificationTriggersConnect` - Posting `.remoteWindowConnectRequest` for the state's location calls `connectIfNeeded`; posting it for another location does not.
+- [x] **T39** `testOnDemandWindowDoesNoNetworkUntilConnect` - A state created with `connectsOnDemand: true` and a recording fake provider performs no file read, watch, or git call until `connectIfNeeded` is called, and starts in `.onDemand`.
+- [x] **T40** `testConnectIfNeededReachesConnectedAndRevalidates` - With a fake provider/connection that connects successfully and returns changed content, `connectIfNeeded` transitions `.onDemand` → `.connecting` → `.connected`, starts the watcher and git detection, applies the new content, and writes it to the cache.
+- [x] **T41** `testConnectIfNeededNoRouteIsTerminal` - A fake that throws `.hostUnreachable` puts the state in `.unavailable(.noRoute)` with no retry, leaving cached content visible.
+- [x] **T42** `testConnectIfNeededRetriesTransientThenConnects` - A fake that throws one transient error then succeeds reaches `.connected` after a single jittered retry, within the three-attempt cap.
+- [x] **T43** `testConnectRequestNotificationTriggersConnect` - Posting `.remoteWindowConnectRequest` for the state's location calls `connectIfNeeded`; posting it for another location does not.
 
 ### Unit Tests (`Tests/SSHConnectionManagerTests.swift`)
 
-- [ ] **T44** `testPreregisterReturnsSharedConnectionPerHost` - `preregisterConnection(for:)` returns the same connection instance for repeated calls with the same host and a distinct one for a different host.
-- [ ] **T45** `testEnsureConnectedCoalescesConcurrentCallers` - Two concurrent `ensureConnected(for:)` calls for one host result in a single underlying connect attempt.
+- [x] **T44** `testPreregisterReturnsSharedConnectionPerHost` - `preregisterConnection(for:)` returns the same connection instance for repeated calls with the same host and a distinct one for a different host.
+- [x] **T45** `testEnsureConnectedCoalescesConcurrentCallers` - Two concurrent `ensureConnected(for:)` calls for one host result in a single underlying connect attempt.
 
 ### Integration Tests (`Tests/RemoteIntegrationTests.swift`)
 
 All integration tests use the `devtest` SSH alias and run with a 60-second timeout guard, per project conventions.
 
-- [ ] **T46** `testOnDemandWindowShowsCachedContentBeforeConnect` - Pre-seed the cache for a `devtest` location, build an on-demand state, and assert the cached content is present and no connection exists before `connectIfNeeded`, then live content after.
-- [ ] **T47** `testFrontmostConnectsAndOthersWarmInBackground` - Restore two `devtest` windows; assert the frontmost is connected shortly after launch and the second reaches connected via the background warm pass without an explicit focus.
-- [ ] **T48** `testFocusTriggersConnectForOnDemandWindow` - With background warm disabled in the test harness, assert that simulating key-window focus on a not-yet-connected window drives it to connected.
-- [ ] **T49** `testUnreachableHostFailsFastWithoutRetryStorm` - Build an on-demand state for a guaranteed-unreachable host (a `192.0.2.0/24` TEST-NET address) and assert `connectIfNeeded` resolves to `.unavailable(.noRoute)` within a few seconds and issues no additional connect attempts.
+- [x] **T46** `testOnDemandWindowShowsCachedContentBeforeConnect` - Pre-seed the cache for a `devtest` location, build an on-demand state, and assert the cached content is present and no connection exists before `connectIfNeeded`, then live content after.
+- [x] **T47** `testFrontmostConnectsAndOthersWarmInBackground` - Restore two `devtest` windows; assert the frontmost is connected shortly after launch and the second reaches connected via the background warm pass without an explicit focus.
+- [x] **T48** `testFocusTriggersConnectForOnDemandWindow` - With background warm disabled in the test harness, assert that simulating key-window focus on a not-yet-connected window drives it to connected.
+- [x] **T49** `testUnreachableHostFailsFastWithoutRetryStorm` - Build an on-demand state for a guaranteed-unreachable host (a `192.0.2.0/24` TEST-NET address) and assert `connectIfNeeded` resolves to `.unavailable(.noRoute)` within a few seconds and issues no additional connect attempts.
 
 ### UI Verification (`macos-ui-automation` MCP, implementer-run)
 

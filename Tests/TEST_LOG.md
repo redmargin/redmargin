@@ -1,11 +1,48 @@
 # Test Log
 
 ## Latest Run
-- Started: 2026-02-13
-- Command: DocumentStateTests (macOS) + LinuxWatcherTests (devtest)
-- Status: ALL PASS (5/5 new tests)
+
+- Started: 2026-06-07
+- Command: Remote restore UX suite — pure/offline classes via xcodebuild, devtest integration via `swift test`
+- Status: ALL PASS (28/28 new tests)
+
+### Remote Restore UX (2026-06-07)
+
+| Test | Status | Duration | Last Run |
+| --- | --- | --- | --- |
+| RemoteContentCacheTests.testCacheRoundTrip | PASS | 0.002s | 2026-06-07 15:25 |
+| RemoteContentCacheTests.testCacheMissReturnsNil | PASS | 0.002s | 2026-06-07 15:25 |
+| RemoteContentCacheTests.testCacheSkipsOversizedContent | PASS | 0.002s | 2026-06-07 15:25 |
+| RemoteContentCacheTests.testCacheEvictsLeastRecentlyWritten | PASS | 0.066s | 2026-06-07 15:25 |
+| RemoteContentCacheTests.testEvictRemovesEntry | PASS | 0.002s | 2026-06-07 15:25 |
+| RemoteRestoreOrderingTests.testRestoreOrderRebuildsSavedZOrder | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteRestoreOrderingTests.testRestoreOrderFallsBackToArrayOrderWhenNoSavedOrder | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteRestoreOrderingTests.testWindowTokenStripsRemotePrefixToStorageKey | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteConnectRetryPolicyTests.testHardUnreachableIsNotRetryable | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteConnectRetryPolicyTests.testTransientErrorsAreRetryable | PASS | 0.000s | 2026-06-07 15:25 |
+| RemoteConnectRetryPolicyTests.testBackoffWithJitterStaysWithinBounds | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteConnectRetryPolicyTests.testRetryLoopCapsAtThreeAttempts | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteConnectRetryPolicyTests.testRetryLoopRetriesTransientThenSucceeds | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteConnectRetryPolicyTests.testRetryLoopDoesNotRetryHardUnreachable | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteConnectRetryPolicyTests.testServerDeployerClassifiesUnreachableStderr | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteStatusPresentationTests.testConnectingWithContentShowsNonDimmingPill | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteStatusPresentationTests.testConnectingWithoutContentShowsPlaceholder | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteStatusPresentationTests.testNoRouteShowsRetry | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteStatusPresentationTests.testConnectedShowsNothing | PASS | 0.001s | 2026-06-07 15:25 |
+| RemoteDocumentStateTests.testOnDemandWindowDoesNoNetworkUntilConnect | PASS | 0.215s | 2026-06-07 15:25 |
+| RemoteDocumentStateTests.testHostUnreachableMapsToNoRouteReason | PASS | 0.002s | 2026-06-07 15:25 |
+| RemoteDocumentStateTests.testConnectRequestNotificationTriggersConnect | PASS | 0.317s | 2026-06-07 15:25 |
+| SSHConnectionManagerTests.testPreregisterReturnsSharedConnectionPerHost | PASS | 0.002s | 2026-06-07 15:25 |
+| SSHConnectionManagerTests.testEnsureConnectedCoalescesConcurrentCallers | PASS | 20.6s | 2026-06-07 15:25 |
+| RemoteIntegrationTests.testOnDemandWindowShowsCachedContentBeforeConnect | PASS | 1.4s | 2026-06-07 15:31 |
+| RemoteIntegrationTests.testFrontmostConnectsAndOthersWarmInBackground | PASS | 3.1s | 2026-06-07 15:31 |
+| RemoteIntegrationTests.testFocusTriggersConnectForOnDemandWindow | PASS | 2.9s | 2026-06-07 15:31 |
+| RemoteIntegrationTests.testUnreachableHostFailsFastWithoutRetryStorm | PASS | 0.03s | 2026-06-07 15:31 |
+
+Notes: pure/offline classes run under `xcodebuild test-without-building`; the four `RemoteIntegrationTests` connect to `devtest` and must run via `swift test --filter` so the working directory is the project root (the server-binary lookup is CWD-relative). `testEnsureConnectedCoalescesConcurrentCallers` and `testUnreachableHostFailsFastWithoutRetryStorm` reach unroutable hosts on purpose.
 
 ### AppShellTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testMarkdownDocumentLoadsContent | PASS | 0.005s | 2026-01-13 12:20:56 |
@@ -14,6 +51,7 @@
 | testMarkdownDocumentHandlesLargeFile | PASS | 0.012s | 2026-01-13 12:21:36 |
 
 ### BookmarkManagerTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testCreatesBookmark | PASS | 0.007s | 2026-01-13 12:21:58 |
@@ -25,6 +63,7 @@
 | testStopAccessingAll | PASS | 0.009s | 2026-01-13 12:22:54 |
 
 ### FindTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testFindHighlightsMatches | PASS | 2.293s | 2026-01-13 12:23:46 |
@@ -34,12 +73,14 @@
 | testClearFindRemovesHighlights | PASS | 2.416s | 2026-01-13 12:24:06 |
 
 ### MarkdownWebViewTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testWebViewLoadsRendererHTML | PASS | 0.501s | 2026-01-13 12:26:40 |
 | testRenderCallReturnsWithoutError | PASS | 2.084s | 2026-01-13 12:26:39 |
 
 ### JavaScript Tests (WebRenderer)
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testMarkdownItRendersBasicMarkdown | PASS | - | 2026-01-13 12:27:30 |
@@ -55,6 +96,7 @@
 | Sanitizer tests (46 tests) | PASS | - | 2026-01-13 12:27:30 |
 
 ### GitDiffParserTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testParseSimpleHunk | PASS | 0.001s | 2026-01-13 12:25:15 |
@@ -83,6 +125,7 @@
 | testGitChangeResultEncodesToJSON | PASS | 0.001s | 2026-01-13 12:25:15 |
 
 ### GitDiffParserIntegrationTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testAddedLines | PASS | 0.164s | 2026-01-13 12:24:28 |
@@ -97,6 +140,7 @@
 | testStagedButNotCommitted | PASS | 0.129s | 2026-01-13 12:24:53 |
 
 ### GitRepoDetectorTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testDetectsRepoRoot | PASS | 0.101s | 2026-01-13 12:25:43 |
@@ -109,6 +153,7 @@
 | testReturnsNilForNonRepoFile | PASS | 0.014s | 2026-01-13 12:25:43 |
 
 ### GitStateWatcherTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testParseHEADForBranchRef | PASS | 0.004s | 2026-01-13 12:26:07 |
@@ -118,6 +163,7 @@
 | testWatcherDetectsIndexChange | PASS | 0.007s | 2026-01-13 12:26:07 |
 
 ### GutterIntegrationTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testGitChangesForModifiedFile | PASS | 0.035s | 2026-01-13 12:26:21 |
@@ -127,6 +173,7 @@
 | testGutterEmptyForNonRepoFile | PASS | 0.014s | 2026-01-13 12:26:21 |
 
 ### PreferencesManagerTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testDefaultValues | PASS | 0.001s | 2026-01-13 12:26:53 |
@@ -136,6 +183,7 @@
 | testRemoteImagesPersists | PASS | 0.001s | 2026-01-13 12:26:53 |
 
 ### PrintTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testPrintConfigurationDefaults | PASS | 0.008s | 2026-01-13 12:27:10 |
@@ -146,6 +194,7 @@
 | testRestoreFromPrintRemovesClasses | PASS | 0.877s | 2026-01-13 12:27:10 |
 
 ### ProcessRunnerTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testRunsSimpleCommand | PASS | 0.005s | 2026-01-13 12:27:23 |
@@ -156,6 +205,7 @@
 | testHandlesMultipleArguments | PASS | 0.005s | 2026-01-13 12:27:23 |
 
 ### DocumentStateTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testReloadContentUpdatesContent | PASS | 0.323s | 2026-02-13 |
@@ -163,12 +213,14 @@
 | testLoadFileUpdatesAllState | PASS | 0.531s | 2026-02-13 |
 
 ### LinuxWatcherTests (devtest)
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testWatcherSurvivesAtomicSave | PASS | 0.811s | 2026-02-13 |
 | testWatcherRetriesOnDeleteSelf | PASS | 0.403s | 2026-02-13 |
 
 ### FileWatcherTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | testDispatchSourceDetectsWrite | PASS | 0.005s | 2026-01-13 12:23:15 |
@@ -177,16 +229,19 @@
 | testDispatchSourceAfterAtomicWriteNeedsRestart | PASS | 0.011s | 2026-01-13 12:23:23 |
 
 ### SidebarTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | (14 tests) | PASS | - | 2026-01-19 |
 
 ### LocalFileProviderTests
+
 | Test | Status | Duration | Last Run |
 | --- | --- | --- | --- |
 | (8 tests) | PASS | - | 2026-01-19 |
 
 ## Notes
+
 - 2026-01-13: Added BookmarkManagerTests, FindTests, GitStateWatcherTests, PreferencesManagerTests, PrintTests sections.
 - 2026-01-13: Updated sanitizer tests to 46 tests with new URL scheme allowlist tests.
 - 2026-01-10: Fixed testMixedAddAndDelete assertion - was incorrectly requiring modifiedRanges and rejecting deletedAnchors.
