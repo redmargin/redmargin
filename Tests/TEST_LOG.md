@@ -2,9 +2,21 @@
 
 ## Latest Run
 
-- Started: 2026-06-07
-- Command: Remote restore UX suite — pure/offline classes via xcodebuild, devtest integration via `swift test`
-- Status: ALL PASS (28/28 new tests). Fix: off-network host now fast-fails in ~5s (was ~60s) — timed-out connects are terminal, not retried.
+- Started: 2026-06-09
+- Command: `swift test --filter 'RemoteWindowPersistenceTests|RemoteDocumentStateTests|SSHConnectionTests/testDisconnectFinishesContinuations'`
+- Status: ALL PASS (7/7 run). Two fixes on `feature/remote-restore-ux`: (1) connection-state changes now broadcast to every window on a host, so the "Connecting…" pill no longer strands when several windows share a server; (2) quit persists only the windows still open, so a closed remote window no longer resurrects on the next launch.
+
+### Remote Restore UX — regression fixes (2026-06-09)
+
+| Test | Status | Duration | Last Run |
+| --- | --- | --- | --- |
+| RemoteDocumentStateTests.testConnectedBroadcastClearsConnectingOnAllWindowsForHost | PASS | 0.060s | 2026-06-09 10:30 |
+| RemoteDocumentStateTests.testOnDemandWindowDoesNoNetworkUntilConnect | PASS | 0.204s | 2026-06-09 10:30 |
+| RemoteDocumentStateTests.testHostUnreachableMapsToNoRouteReason | PASS | 0.001s | 2026-06-09 10:30 |
+| RemoteDocumentStateTests.testConnectRequestNotificationTriggersConnect | PASS | 0.308s | 2026-06-09 10:30 |
+| RemoteWindowPersistenceTests.testClosedRemoteWindowIsNotResurrectedAtQuit | PASS | 0.093s | 2026-06-09 10:30 |
+| RemoteWindowPersistenceTests.testQuittingWithNoRemoteWindowsClearsSavedList | PASS | 0.004s | 2026-06-09 10:30 |
+| SSHConnectionTests.testDisconnectFinishesContinuations | PASS | 0.106s | 2026-06-09 10:30 |
 
 ### Remote Restore UX (2026-06-07)
 

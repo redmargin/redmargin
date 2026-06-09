@@ -5,9 +5,10 @@ import RedmarginCore
 
 extension RemoteDocumentState {
     /// Starts the live work a connected remote window needs: App Nap prevention,
-    /// the file watcher, git detection, and connection-state observation. This is
-    /// the work that used to run unconditionally in `init`; an on-demand window
-    /// defers it until its first successful connect.
+    /// the file watcher, and git detection. This is the work that used to run
+    /// unconditionally in `init`; an on-demand window defers it until its first
+    /// successful connect. Connection-state observation is registered in `init`
+    /// (the host-filtered broadcast), gated by the presentation-phase guard.
     func startLiveConnectionWork() async {
         if !didBeginActivity {
             didBeginActivity = true
@@ -16,7 +17,6 @@ extension RemoteDocumentState {
         async let watcher: Void = setupFileWatcher()
         async let git: Void = detectGitChanges()
         _ = await (watcher, git)
-        await startObservingConnectionState()
     }
 
     /// Connects this window if it is not already connecting/connected.

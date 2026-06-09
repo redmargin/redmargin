@@ -79,10 +79,10 @@ class RemoteDocumentState {
 
     @ObservationIgnored private var repoRoot: String?
     @ObservationIgnored private var gitChangeTask: Task<Void, Never>?
-    @ObservationIgnored private var stateObserverTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
     @ObservationIgnored private var reconnectObserver: Any?
     @ObservationIgnored private var connectRequestObserver: Any?
+    @ObservationIgnored private var stateChangeObserver: Any?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
 
     /// Last content that was confirmed on the server (read or successfully written)
@@ -144,6 +144,28 @@ class RemoteDocumentState {
             }
         }
 
+        // Mirror live transport state into the presentation phase for this window.
+        // Driven by the host-filtered broadcast, not the connection's single-consumer
+        // `stateChanges` stream: every window on a host shares one connection, and the
+        // stream would deliver each transition to only one of them, stranding the rest
+        // of the windows' "Connecting…" overlay. The phase guard in
+        // handleConnectionStateChange keeps an .onDemand/.unavailable window untouched,
+        // so registering this before the window goes live is safe.
+        let stateHost = location.host
+        stateChangeObserver = NotificationCenter.default.addObserver(
+            forName: .sshConnectionStateChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  (notification.object as? String) == stateHost,
+                  let newState = notification.userInfo?["state"] as? SSHConnectionState
+            else { return }
+            Task { @MainActor in
+                self.handleConnectionStateChange(newState)
+            }
+        }
+
         if connectsOnDemand {
             // Stay passive until connectIfNeeded — no network work.
         } else {
@@ -160,30 +182,20 @@ class RemoteDocumentState {
         if let observer = connectRequestObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        if let observer = stateChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
         let provider = fileProvider
         let fToken = fileWatchToken
         let gToken = gitWatchToken
         refreshTask?.cancel()
         reloadTask?.cancel()
         gitChangeTask?.cancel()
-        stateObserverTask?.cancel()
         let began = didBeginActivity
         Task {
             if let token = fToken { await provider.unwatch(token) }
             if let token = gToken { await provider.unwatch(token) }
             if began { await SSHConnectionManager.shared.endRemoteDocumentActivity() }
-        }
-    }
-
-    func startObservingConnectionState() async {
-        let stateStream = fileProvider.stateChanges
-        stateObserverTask = Task { [weak self] in
-            for await newState in stateStream {
-                guard !Task.isCancelled, let self = self else { break }
-                await MainActor.run {
-                    self.handleConnectionStateChange(newState)
-                }
-            }
         }
     }
 
@@ -198,8 +210,8 @@ class RemoteDocumentState {
         // not here. The AsyncStream is used only for UI state (overlay).
 
         // Mirror live transport into the presentation phase (T8) once the window
-        // is live. An .onDemand or .unavailable window has no observer running yet,
-        // so its phase is owned by connectIfNeeded and left untouched here.
+        // is live. An .onDemand or .unavailable window's phase is owned by
+        // connectIfNeeded, so it is left untouched here.
         switch connectionPhase {
         case .connecting, .connected:
             switch newState {
@@ -258,8 +270,13 @@ class RemoteDocumentState {
         refreshLog.info("handleReconnection() called")
         let path = location.path
 
-        // Clear the "Connecting" overlay immediately
+        // Clear the "Connecting" overlay immediately. The overlay reads
+        // connectionPhase, so repair that too — repairing only connectionState left
+        // the pill stuck after a reconnect.
         connectionState = .connected
+        if connectionPhase == .connecting {
+            connectionPhase = .connected
+        }
         refreshToken += 1
 
         Task {

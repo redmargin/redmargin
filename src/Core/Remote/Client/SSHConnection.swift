@@ -37,6 +37,15 @@ public actor SSHConnection {
         didSet {
             if state != oldValue {
                 stateContinuation?.yield(state)
+                // Fan every transition out to all windows on this host. The
+                // `stateChanges` stream above is single-consumer, so when several
+                // windows share one connection it raffles each transition to just
+                // one of them; this broadcast reaches every window's overlay.
+                NotificationCenter.default.post(
+                    name: .sshConnectionStateChanged,
+                    object: host,
+                    userInfo: ["state": state]
+                )
             }
         }
     }

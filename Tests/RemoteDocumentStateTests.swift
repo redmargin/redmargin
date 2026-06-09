@@ -58,6 +58,63 @@ final class RemoteDocumentStateTests: XCTestCase {
         XCTAssertEqual(RemoteUnavailableReason.forConnectError(.unexpectedDisconnect), .serverError)
     }
 
+    /// A live transport transition to `.connected` must clear the "Connecting…"
+    /// overlay on EVERY window on the host, and leave other hosts untouched.
+    /// Regression: the overlay phase used to be mirrored from the connection's
+    /// single-consumer `stateChanges` stream, which every window on a host shared, so
+    /// a `.connected` reached only one window and stranded the others on "Connecting…".
+    func testConnectedBroadcastClearsConnectingOnAllWindowsForHost() async throws {
+        let host = "redmargin-\(UUID().uuidString).invalid"
+        let otherHost = "redmargin-\(UUID().uuidString).invalid"
+
+        func makeState(host: String, path: String) async -> RemoteDocumentState {
+            let location = RemoteLocation(host: host, path: path)
+            let connection = await SSHConnectionManager.shared.preregisterConnection(for: host)
+            let provider = RemoteFileProvider(connection: connection)
+            return RemoteDocumentState(
+                content: "# Cached\n",
+                location: location,
+                fileProvider: provider,
+                connectsOnDemand: true,
+                contentCache: makeCache()
+            )
+        }
+
+        // Two windows on the same host (sharing one connection) and one on another.
+        let windowA = await makeState(host: host, path: "/tmp/a.md")
+        let windowB = await makeState(host: host, path: "/tmp/b.md")
+        let otherWindow = await makeState(host: otherHost, path: "/tmp/c.md")
+
+        // Put all three in the stranded "Connecting…" state a churn would leave.
+        windowA.connectionPhase = .connecting
+        windowB.connectionPhase = .connecting
+        otherWindow.connectionPhase = .connecting
+
+        // One transport transition to .connected on `host`.
+        NotificationCenter.default.post(
+            name: .sshConnectionStateChanged,
+            object: host,
+            userInfo: ["state": SSHConnectionState.connected]
+        )
+
+        var bothCleared = false
+        for _ in 0..<40 {
+            if windowA.connectionPhase == .connected && windowB.connectionPhase == .connected {
+                bothCleared = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(bothCleared, "A .connected broadcast must clear every window on the host")
+        XCTAssertEqual(
+            otherWindow.connectionPhase, .connecting,
+            "A transition on a different host must not affect this window"
+        )
+
+        await SSHConnectionManager.shared.disconnect(host: host)
+        await SSHConnectionManager.shared.disconnect(host: otherHost)
+    }
+
     /// T43: a connect request for this window's location triggers a connect; one for
     /// another location does not.
     func testConnectRequestNotificationTriggersConnect() async throws {
