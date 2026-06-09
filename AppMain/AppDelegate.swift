@@ -120,7 +120,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
     private func restoreOpenRemoteLocations() -> [RemoteLocation] {
         guard let data = UserDefaults.standard.data(forKey: openRemoteLocationsKey) else { return [] }
-        // Don't clear yet - cleared after restore completes so failed locations survive app restart
+        // Left intact (not cleared here): the list is overwritten at clean quit with the
+        // windows still open, so leaving it lets a mid-session crash still restore the
+        // last known set.
         return (try? JSONDecoder().decode([RemoteLocation].self, from: data)) ?? []
     }
 
@@ -174,20 +176,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        // Save remote locations BEFORE windows close (windowWillClose clears the dict)
-        var allRemoteLocations = Array(remoteDocumentWindows.keys)
+        // Persist the remote windows still open BEFORE they close (windowWillClose
+        // clears the dict). On-demand restore builds a window for every saved
+        // location, so the open windows are the whole truth: a window the user closed
+        // is simply absent here and must NOT be merged back from the prior saved list,
+        // or it resurrects on the next launch.
+        let openRemoteLocations = Array(remoteDocumentWindows.keys)
 
-        // Merge in any locations that failed to restore (still pending in UserDefaults)
-        if let pendingData = UserDefaults.standard.data(forKey: openRemoteLocationsKey),
-           let pendingLocations = try? JSONDecoder().decode([RemoteLocation].self, from: pendingData) {
-            for location in pendingLocations where !allRemoteLocations.contains(location) {
-                allRemoteLocations.append(location)
-            }
-        }
-
-        print("[AppDelegate] applicationShouldTerminate: saving \(allRemoteLocations.count) remote locations")
-        if !allRemoteLocations.isEmpty {
-            if let data = try? JSONEncoder().encode(allRemoteLocations) {
+        print("[AppDelegate] applicationShouldTerminate: saving \(openRemoteLocations.count) remote locations")
+        if !openRemoteLocations.isEmpty {
+            if let data = try? JSONEncoder().encode(openRemoteLocations) {
                 UserDefaults.standard.set(data, forKey: openRemoteLocationsKey)
             }
         } else {
