@@ -32,7 +32,7 @@ User-facing behaviors:
 ### Acceptance Criteria
 
 - [x] **A1** Reopening previously open remote windows shows them immediately at their previous positions and sizes, with their last-seen contents, without waiting for any server.
-- [ ] **A2** While remote windows reopen, focus stays on the window in use: no window jumps in front of another, and the app does not bring itself forward on its own as windows fill in.
+- [x] **A2** While remote windows reopen, focus stays on the window in use: no window jumps in front of another, and the app does not bring itself forward on its own as windows fill in.
 - [x] **A3** Reopened remote windows appear in their previous front-to-back order, with the previously active window left in front.
 - [x] **A4** A remote window whose host cannot be reached shows an inline "No route" message with a Retry control and keeps its last-seen contents; the other windows are unaffected.
 - [x] **A5** Reopening time does not grow with the number of slow or unreachable windows: two unreachable windows reopen as fast as one.
