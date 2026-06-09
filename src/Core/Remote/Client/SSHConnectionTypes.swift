@@ -2,6 +2,22 @@ import Foundation
 
 extension Notification.Name {
     public static let sshConnectionReconnected = Notification.Name("RedMargin.sshConnectionReconnected")
+
+    /// Posted on every SSH connection state transition, fanned out to every window
+    /// on the host. The notification `object` is the host string and
+    /// `userInfo["state"]` carries the new `SSHConnectionState`. Unlike the
+    /// connection's `stateChanges` AsyncStream (single-consumer: it delivers each
+    /// transition to only one of the windows sharing the connection), this reaches
+    /// all of them, so no window's overlay strands on a state a sibling consumed.
+    public static let sshConnectionStateChanged = Notification.Name("RedMargin.sshConnectionStateChanged")
+
+    /// Posted to ask a specific on-demand remote window to connect. The notification
+    /// `object` is the target window's `RemoteLocation.storageKey` string.
+    public static let remoteWindowConnectRequest = Notification.Name("RedMargin.remoteWindowConnectRequest")
+
+    /// Posted after an on-demand remote window first connects, so its deferred file
+    /// tree can load. The `object` is the window's `RemoteLocation.storageKey` string.
+    public static let remoteWindowDidConnect = Notification.Name("RedMargin.remoteWindowDidConnect")
 }
 
 /// Connection state for SSH sessions

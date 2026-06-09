@@ -37,6 +37,15 @@ public actor SSHConnection {
         didSet {
             if state != oldValue {
                 stateContinuation?.yield(state)
+                // Fan every transition out to all windows on this host. The
+                // `stateChanges` stream above is single-consumer, so when several
+                // windows share one connection it raffles each transition to just
+                // one of them; this broadcast reaches every window's overlay.
+                NotificationCenter.default.post(
+                    name: .sshConnectionStateChanged,
+                    object: host,
+                    userInfo: ["state": state]
+                )
             }
         }
     }
@@ -163,7 +172,7 @@ public actor SSHConnection {
         // Get home directory via SSH before proxy connection
         let result = try await ProcessRunner.run(
             executable: "ssh",
-            arguments: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, "echo $HOME"],
+            arguments: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, "echo $HOME"],
             timeout: 15
         )
         if result.exitCode != 0 {
@@ -188,9 +197,14 @@ public actor SSHConnection {
             try await connectInternal(onProgress: onProgress, isRetry: false)
             return
         } catch let error as SSHConnectionError {
-            // Only retry on handshake/timing issues
+            // The quick-retry-and-redeploy cascade below runs only when SSH reached
+            // the host but the helper/handshake misbehaved. A `.connectionTimeout`
+            // means we could not even establish SSH (the host is unreachable now), so
+            // redeploying is pointless — it joins hard-unreachable, refused, and auth
+            // failures in `default` and throws immediately with no retry and no
+            // redeploy, so a dead host fails in seconds instead of a minute (T23).
             switch error {
-            case .handshakeTimeout, .serverNotResponding, .connectionTimeout, .helperStartupTimeout:
+            case .handshakeTimeout, .serverNotResponding, .helperStartupTimeout:
                 print("[SSHConnection] First attempt failed (\(error)), will retry...")
             default:
                 state = .disconnected
@@ -293,7 +307,7 @@ public actor SSHConnection {
         let args = [
             "-T",
             "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=10",
+            "-o", "ConnectTimeout=5",
             "-o", "ServerAliveInterval=15",
             "-o", "ServerAliveCountMax=3",
             host,

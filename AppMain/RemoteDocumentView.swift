@@ -45,6 +45,7 @@ struct RemoteDocumentWindowContent: View {
         fileProvider: RemoteFileProvider,
         showSidebar: Bool? = nil,
         sidebarWidth: CGFloat? = nil,
+        connectsOnDemand: Bool = false,
         appDelegate: AppDelegate? = nil
     ) {
         let prefs = PreferencesManager.shared
@@ -61,13 +62,15 @@ struct RemoteDocumentWindowContent: View {
         _state = State(initialValue: RemoteDocumentState(
             content: content,
             location: location,
-            fileProvider: fileProvider
+            fileProvider: fileProvider,
+            connectsOnDemand: connectsOnDemand
         ))
         let hostForLoader = location.host
         _fileTreeProvider = StateObject(wrappedValue: RemoteFileTreeProvider(
             currentFilePath: location.path,
             fileProvider: fileProvider,
             reconnectHost: location.host,
+            connectsOnDemand: connectsOnDemand,
             expandedFoldersLoader: { rootPath in
                 DocumentSettingsStorage.shared.loadExpandedFolders(forRemoteHost: hostForLoader, rootPath: rootPath)
             }
@@ -81,6 +84,7 @@ struct RemoteDocumentWindowContent: View {
         fileProvider: RemoteFileProvider,
         showSidebar: Bool? = nil,
         sidebarWidth: CGFloat? = nil,
+        connectsOnDemand: Bool = false,
         appDelegate: AppDelegate? = nil
     ) {
         let prefs = PreferencesManager.shared
@@ -97,13 +101,15 @@ struct RemoteDocumentWindowContent: View {
         _state = State(initialValue: RemoteDocumentState(
             content: "",
             location: location,
-            fileProvider: fileProvider
+            fileProvider: fileProvider,
+            connectsOnDemand: connectsOnDemand
         ))
         _fileTreeProvider = StateObject(wrappedValue: RemoteFileTreeProvider(
             currentFilePath: folderPath,
             fileProvider: fileProvider,
             reconnectHost: host,
             isDirectory: true,
+            connectsOnDemand: connectsOnDemand,
             expandedFoldersLoader: { rootPath in
                 DocumentSettingsStorage.shared.loadExpandedFolders(forRemoteHost: host, rootPath: rootPath)
             }
@@ -310,10 +316,8 @@ struct RemoteDocumentWindowContent: View {
                 }
             )
 
-            // Connection status overlay
-            if state.connectionState != .connected {
-                connectionStatusOverlay
-            }
+            // Inline connection status overlay (driven by the presentation phase)
+            connectionStatusOverlay
 
             if state.isRefreshing || isExporting {
                 VStack {
@@ -353,41 +357,45 @@ struct RemoteDocumentWindowContent: View {
 
     @ViewBuilder
     private var connectionStatusOverlay: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-                VStack(spacing: 8) {
-                    switch state.connectionState {
-                    case .reconnecting:
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        Text("Reconnecting...")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    case .disconnected:
-                        Image(systemName: "wifi.slash")
-                            .foregroundColor(.red)
-                        Text("Disconnected")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    case .connecting:
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        Text("Connecting...")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    case .connected:
-                        EmptyView()
-                    }
+        let presentation = RemoteStatusPresentation(
+            state.connectionPhase,
+            host: location.host,
+            hasContent: !state.content.isEmpty
+        )
+        switch presentation.style {
+        case .none:
+            EmptyView()
+        case .pill:
+            // Non-dimming corner pill over readable cached content.
+            VStack {
+                HStack {
+                    Spacer()
+                    statusPill(presentation)
+                        .padding(12)
                 }
-                .padding(16)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                 Spacer()
             }
-            Spacer()
+        case .placeholder:
+            // Centered placeholder with a subtle backdrop, when there is nothing
+            // cached to read behind it.
+            ZStack {
+                if presentation.showsBackdrop {
+                    Color.black.opacity(0.12)
+                }
+                statusPill(presentation)
+            }
         }
-        .background(Color.black.opacity(0.3))
+    }
+
+    private func statusPill(_ presentation: RemoteStatusPresentation) -> some View {
+        RemoteStatusPill(
+            label: presentation.label,
+            symbol: presentation.symbol,
+            actionTitle: presentation.showsRetry ? "Retry" : nil,
+            action: presentation.showsRetry
+                ? { Task { await state.connectIfNeeded(force: true) } }
+                : nil
+        )
     }
 
     private var isKeyWindow: Bool {

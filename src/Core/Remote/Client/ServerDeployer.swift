@@ -7,9 +7,10 @@ public actor ServerDeployer {
 
     public init() {}
 
-    /// SSH options for non-interactive mode
+    /// SSH options for non-interactive mode. A 5s connect timeout fast-fails
+    /// unreachable hosts during restore/warm without holding up other windows.
     private var sshOptions: [String] {
-        ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+        ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
     }
 
     public func ensureServerDeployed(
@@ -30,7 +31,12 @@ public actor ServerDeployer {
             timeout: sshTimeout
         )
         if checkResult.exitCode != 0 {
-            throw ServerDeployerError.connectionFailed(checkResult.stderr)
+            // Classify the SSH failure so the connect/restore/warm path sees a typed,
+            // correctly (non-)retryable error: "no route"/"network unreachable" →
+            // .hostUnreachable, "connection refused" → .connectionRefused, auth
+            // failures → .authenticationFailed. ServerDeployerError stays for
+            // architecture and upload failures only.
+            throw parseSSHStderr(checkResult.stderr, host: host)
         }
 
         let lines = checkResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)

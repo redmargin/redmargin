@@ -77,7 +77,13 @@ extension SSHConnection {
 
     func scheduleReconnect() {
         reconnectTask = Task {
-            let delay = min(pow(2.0, Double(reconnectAttempts)), maxReconnectDelay)
+            // Full-jitter backoff: a delay drawn uniformly from 0...min(maxDelay, 2^n)
+            // so many windows reconnecting at once don't thunder in lockstep.
+            let delay = RemoteConnectRetry.backoffDelay(
+                attempt: reconnectAttempts,
+                maxDelay: maxReconnectDelay,
+                randomFraction: Double.random(in: 0...1)
+            )
             #if canImport(os)
             sshLog.info("scheduleReconnect() attempt=\(self.reconnectAttempts) delay=\(delay)s")
             #endif
@@ -101,7 +107,7 @@ extension SSHConnection {
                 #endif
                 _ = try? await ProcessRunner.run(
                     executable: "ssh",
-                    arguments: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host,
+                    arguments: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host,
                                 "pkill -f redmargin-server 2>/dev/null || true"],
                     timeout: 15
                 )
