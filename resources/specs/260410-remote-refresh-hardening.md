@@ -164,7 +164,7 @@ Tests are implementation tasks — the implementer writes and passes each one.
 
 ### Integration Tests (`Tests/RemoteIntegrationTests.swift`)
 
-All integration tests use the `devtest` SSH alias and must run with a 60-second timeout guard to prevent hangs (per project conventions).
+All integration tests use the `devtest` SSH alias and should run with a timeout guard because they start real SSH/helper processes.
 
 - [x] `testRemoteDirectoryWatchRecoversAfterReconnect` - Expands a remote folder, forces reconnect, modifies that folder, and verifies the sidebar receives the update after reconnect.
 - [x] `testRemoteFolderSidebarRefreshDoesNotForceDocumentReconnect` - Opens a remote folder with no selected file, triggers sidebar refresh, and verifies no document read is attempted for the folder path.

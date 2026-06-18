@@ -179,8 +179,9 @@ final class MainMenuTests: XCTestCase {
     }
 
     func testCommandPaletteWindowSavesCurrentFrame() throws {
-        let savedFrame = NSRect(x: 190, y: 210, width: 760, height: 560)
-        let window = NSWindow(contentRect: savedFrame, styleMask: [.titled], backing: .buffered, defer: false)
+        let contentRect = NSRect(x: 190, y: 210, width: 760, height: 560)
+        let window = NSWindow(contentRect: contentRect, styleMask: [.titled], backing: .buffered, defer: false)
+        let savedFrame = window.frame
 
         CommandPaletteWindowController.saveFrame(of: window)
 

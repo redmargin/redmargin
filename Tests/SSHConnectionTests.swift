@@ -2,16 +2,13 @@ import XCTest
 @testable import RedmarginCore
 
 final class SSHConnectionTests: XCTestCase {
+    private static let testHost = "devtest"
 
-    // Note: Most tests require a local SSH server running and accessible via 'ssh localhost'
-    // without interactive password prompt (e.g. public key auth).
-
-    // MARK: - AsyncStream Continuation Tests (no SSH required)
+    // MARK: - AsyncStream Continuation Tests
 
     func testDisconnectFinishesContinuations() async throws {
         let connection = SSHConnection(host: "nonexistent-host-for-test")
 
-        // Start consuming the events stream in a task
         let eventsFinished = XCTestExpectation(description: "events stream terminates")
         let stateFinished = XCTestExpectation(description: "stateChanges stream terminates")
 
@@ -25,23 +22,15 @@ final class SSHConnectionTests: XCTestCase {
             stateFinished.fulfill()
         }
 
-        // Give the for-await loops a moment to start
         try await Task.sleep(nanoseconds: 100_000_000)
-
-        // disconnect() should finish both continuations
         await connection.disconnect()
 
         await fulfillment(of: [eventsFinished, stateFinished], timeout: 3.0)
     }
 
     func testHandleDisconnectFinishesContinuations() async throws {
-        let connection = SSHConnection(host: "localhost")
-
-        do {
-            try await connection.connect()
-        } catch {
-            throw XCTSkip("SSH to localhost failed: \(error)")
-        }
+        let connection = SSHConnection(host: Self.testHost)
+        try await connection.connect()
 
         let eventsFinished = XCTestExpectation(description: "events stream terminates")
         let stateFinished = XCTestExpectation(description: "stateChanges stream terminates")
@@ -56,143 +45,129 @@ final class SSHConnectionTests: XCTestCase {
             stateFinished.fulfill()
         }
 
-        // Give the for-await loops a moment to start
         try await Task.sleep(nanoseconds: 100_000_000)
-
-        // Force an intentional disconnect to trigger handleDisconnect path
         await connection.disconnect()
 
         await fulfillment(of: [eventsFinished, stateFinished], timeout: 3.0)
     }
 
-    // MARK: - App Nap Activity Tests (no SSH required)
+    // MARK: - App Nap Activity Tests
 
     func testAppNapActivityStartsWithRemoteDoc() async throws {
         let manager = SSHConnectionManager.shared
 
-        // Begin activity for first "remote document"
         await manager.beginRemoteDocumentActivity()
-
-        // Begin a second one
         await manager.beginRemoteDocumentActivity()
-
-        // End first — activity should still be active (count > 0)
         await manager.endRemoteDocumentActivity()
-
-        // End second — activity should now be ended (count == 0)
         await manager.endRemoteDocumentActivity()
-
-        // Extra end call should be safe (no crash, count stays at 0)
         await manager.endRemoteDocumentActivity()
     }
 
-    // MARK: - Connection Tests (require SSH)
+    // MARK: - Connection Tests
 
-    func testConnectLocalhost() async throws {
-        let connection = SSHConnection(host: "localhost")
+    func testConnectDevtest() async throws {
+        let connection = SSHConnection(host: Self.testHost)
+        addTeardownBlock { await connection.disconnect() }
 
-        do {
-            try await connection.connect()
-            await connection.disconnect()
-        } catch {
-            print("Skipping testConnectLocalhost: \(error)")
-            throw XCTSkip("SSH to localhost failed: \(error)")
-        }
+        try await connection.connect()
+
+        let isAlive = await connection.isAlive()
+        XCTAssertTrue(isAlive, "Connection should be alive after connect")
     }
 
     func testRPCHandshake() async throws {
-        let connection = SSHConnection(host: "localhost")
+        let connection = SSHConnection(host: Self.testHost)
+        addTeardownBlock { await connection.disconnect() }
 
-        do {
-            try await connection.connect()
+        try await connection.connect()
 
-            // Handshake is done in connect(), so if we are here, it worked.
-            // Let's send a ping if we had one, or just verify we are connected.
-
-            await connection.disconnect()
-        } catch {
-            throw XCTSkip("SSH to localhost failed: \(error)")
-        }
+        let state = await connection.getState()
+        XCTAssertEqual(state, .connected, "Handshake should leave the connection connected")
     }
 
     func testReconnectionState() async throws {
-        let connection = SSHConnection(host: "localhost")
+        let connection = SSHConnection(host: Self.testHost)
+        addTeardownBlock { await connection.disconnect() }
 
-        do {
-            try await connection.connect()
+        try await connection.connect()
+        await connection.forceReconnect()
 
-            // We can't easily kill the process from here without exposing PID
-            // But we can verify the state transitions if we had access.
-            // For now, just disconnect cleanly.
+        let immediateState = await connection.getState()
+        XCTAssertEqual(immediateState, .reconnecting, "forceReconnect should enter reconnecting state")
 
-            await connection.disconnect()
-        } catch {
-            throw XCTSkip("SSH to localhost failed: \(error)")
-        }
+        try await waitForConnectionState(connection, .connected, timeout: 15.0)
     }
 
     func testPushEvents() async throws {
-        let connection = SSHConnection(host: "localhost")
-        do {
-            try await connection.connect()
+        let connection = SSHConnection(host: Self.testHost)
+        addTeardownBlock { await connection.disconnect() }
 
-            // We'll use the events stream directly
-            // In a real test, we'd trigger a remote event,
-            // but for now we just verify the stream is accessible.
-            _ = connection.events
+        try await connection.connect()
 
-            await connection.disconnect()
-        } catch {
-            throw XCTSkip("SSH to localhost failed: \(error)")
+        let path = "/tmp/redmargin-ssh-push-\(UUID().uuidString).md"
+        _ = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: [Self.testHost, "printf '# Push\\n' > \(path)"],
+            timeout: 15
+        )
+        addTeardownBlock {
+            _ = try? await ProcessRunner.run(
+                executable: "ssh",
+                arguments: [Self.testHost, "rm -f \(path)"],
+                timeout: 15
+            )
         }
+
+        let provider = RemoteFileProvider(connection: connection)
+        let expectation = XCTestExpectation(description: "remote file change push event")
+        let token = await provider.watchFile(at: path) {
+            expectation.fulfill()
+        }
+
+        try await Task.sleep(nanoseconds: 500_000_000)
+        try await provider.writeFile(at: path, content: "# Changed\n")
+
+        await fulfillment(of: [expectation], timeout: 10.0)
+        await provider.unwatch(token)
     }
 
     func testConnectionMultiplexing() async throws {
-        // This test verifies that we can open multiple connections to the same host
-        // which should multiplex over the same control socket.
-        let conn1 = SSHConnection(host: "localhost")
-        let conn2 = SSHConnection(host: "localhost")
-
-        do {
-            try await conn1.connect()
-            try await conn2.connect()
-
+        let conn1 = SSHConnection(host: Self.testHost)
+        let conn2 = SSHConnection(host: Self.testHost)
+        addTeardownBlock {
             await conn1.disconnect()
             await conn2.disconnect()
-        } catch {
-            throw XCTSkip("SSH to localhost failed: \(error)")
         }
+
+        try await conn1.connect()
+        try await conn2.connect()
+
+        let alive1 = await conn1.isAlive()
+        let alive2 = await conn2.isAlive()
+        XCTAssertTrue(alive1, "First connection should be alive")
+        XCTAssertTrue(alive2, "Second connection should be alive")
     }
 
     func testForceReconnectOnConnectedConnection() async throws {
-        let connection = SSHConnection(host: "localhost")
+        let connection = SSHConnection(host: Self.testHost)
+        addTeardownBlock { await connection.disconnect() }
 
-        do {
-            try await connection.connect()
-        } catch {
-            throw XCTSkip("SSH to localhost failed: \(error)")
-        }
+        try await connection.connect()
 
         let isAliveBefore = await connection.isAlive()
         XCTAssertTrue(isAliveBefore, "Connection should be alive before forceReconnect")
 
-        // Force reconnect should kill the process and trigger reconnection
         await connection.forceReconnect()
 
         let stateAfter = await connection.getState()
         XCTAssertEqual(stateAfter, .reconnecting, "State should be reconnecting after forceReconnect")
 
-        // Wait for automatic reconnection (exponential backoff starts at 1s)
-        try await Task.sleep(nanoseconds: 3_000_000_000)
-
-        let stateReconnected = await connection.getState()
-        XCTAssertEqual(stateReconnected, .connected, "Connection should be re-established after forceReconnect")
-
-        await connection.disconnect()
+        try await waitForConnectionState(connection, .connected, timeout: 15.0)
     }
 
     func testForceReconnectOnDisconnectedConnectionStartsReconnectPath() async throws {
-        let connection = SSHConnection(host: "localhost")
+        let connection = SSHConnection(host: Self.testHost)
+        addTeardownBlock { await connection.disconnect() }
 
         let stateBefore = await connection.getState()
         XCTAssertEqual(stateBefore, .disconnected)
@@ -200,93 +175,81 @@ final class SSHConnectionTests: XCTestCase {
         await connection.forceReconnect()
 
         let stateAfter = await connection.getState()
-        XCTAssertEqual(stateAfter, .reconnecting,
-                       "forceReconnect on disconnected connection should start reconnect path")
-
-        // Clean up the spawned reconnect task
-        await connection.disconnect()
+        XCTAssertEqual(
+            stateAfter,
+            .reconnecting,
+            "forceReconnect on disconnected connection should start reconnect path"
+        )
     }
 
     func testConnectionManagerReturnsExistingReconnectingConnection() async throws {
         let manager = SSHConnectionManager.shared
+        await manager.disconnect(host: Self.testHost)
+        addTeardownBlock { await manager.disconnect(host: Self.testHost) }
 
-        do {
-            _ = try await manager.connection(for: "localhost")
-        } catch {
-            throw XCTSkip("SSH to localhost failed: \(error)")
-        }
-
-        // Force reconnect to put connection in reconnecting state
+        let original = try await manager.connection(for: Self.testHost)
         await manager.forceReconnectAll()
 
-        // Request connection again — should return the same reconnecting instance
-        do {
-            let conn = try await manager.connection(for: "localhost")
-            let reusable = await conn.isReusable
-            XCTAssertTrue(reusable, "Reconnecting connection should be reusable")
-        } catch {
-            XCTFail("Manager should return existing reconnecting connection: \(error)")
-        }
+        let conn = try await manager.connection(for: Self.testHost)
+        XCTAssertTrue(conn === original, "Manager should return the existing reconnecting connection")
 
-        await manager.disconnect(host: "localhost")
+        let reusable = await conn.isReusable
+        XCTAssertTrue(reusable, "Reconnecting connection should be reusable")
     }
 
     func testConnectionManagerDisconnectsNonReusableConnectionBeforeReplacement() async throws {
         let manager = SSHConnectionManager.shared
+        await manager.disconnect(host: Self.testHost)
+        addTeardownBlock { await manager.disconnect(host: Self.testHost) }
 
-        do {
-            _ = try await manager.connection(for: "localhost")
-        } catch {
-            throw XCTSkip("SSH to localhost failed: \(error)")
-        }
-
-        // Intentionally disconnect — marks it as not reusable
-        await manager.disconnect(host: "localhost")
-
-        // Register a non-reusable connection to test replacement
-        let stale = SSHConnection(host: "localhost")
-        await stale.disconnect()  // Makes isReusable == false
-        await manager.registerConnection(stale, for: "localhost")
+        let stale = SSHConnection(host: Self.testHost)
+        await stale.disconnect()
+        await manager.registerConnection(stale, for: Self.testHost)
 
         let reusableBefore = await stale.isReusable
         XCTAssertFalse(reusableBefore, "Intentionally disconnected connection should not be reusable")
 
-        // Requesting a connection should replace the non-reusable one
-        do {
-            let fresh = try await manager.connection(for: "localhost")
-            let alive = await fresh.isAlive()
-            XCTAssertTrue(alive, "Replacement connection should be alive")
-        } catch {
-            throw XCTSkip("SSH to localhost failed on replacement: \(error)")
-        }
+        let fresh = try await manager.connection(for: Self.testHost)
+        XCTAssertFalse(fresh === stale, "Manager should replace a non-reusable connection")
 
-        await manager.disconnect(host: "localhost")
+        let alive = await fresh.isAlive()
+        XCTAssertTrue(alive, "Replacement connection should be alive")
     }
 
     func testForceReconnectAllViaManager() async throws {
         let manager = SSHConnectionManager.shared
+        await manager.disconnect(host: Self.testHost)
+        addTeardownBlock { await manager.disconnect(host: Self.testHost) }
 
-        do {
-            _ = try await manager.connection(for: "localhost")
-        } catch {
-            throw XCTSkip("SSH to localhost failed: \(error)")
-        }
-
-        // Force reconnect all connections
+        let original = try await manager.connection(for: Self.testHost)
         await manager.forceReconnectAll()
 
-        // Wait for reconnection
-        try await Task.sleep(nanoseconds: 3_000_000_000)
+        try await waitForConnectionState(original, .connected, timeout: 15.0)
 
-        // Verify we can still use the connection (it reconnected)
-        do {
-            let conn = try await manager.connection(for: "localhost")
-            let alive = await conn.isAlive()
-            XCTAssertTrue(alive, "Connection should be alive after forceReconnectAll")
-        } catch {
-            XCTFail("Connection should be usable after forceReconnectAll: \(error)")
+        let conn = try await manager.connection(for: Self.testHost)
+        XCTAssertTrue(conn === original, "Manager should keep the reconnecting connection instance")
+
+        let alive = await conn.isAlive()
+        XCTAssertTrue(alive, "Connection should be alive after forceReconnectAll")
+    }
+
+    private func waitForConnectionState(
+        _ connection: SSHConnection,
+        _ expectedState: SSHConnectionState,
+        timeout: TimeInterval,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let state = await connection.getState()
+            if state == expectedState {
+                return
+            }
+            try await Task.sleep(nanoseconds: 250_000_000)
         }
 
-        await manager.disconnect(host: "localhost")
+        let finalState = await connection.getState()
+        XCTFail("Timed out waiting for \(expectedState); final state was \(finalState)", file: file, line: line)
     }
 }

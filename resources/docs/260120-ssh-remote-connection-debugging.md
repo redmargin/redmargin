@@ -42,13 +42,18 @@ SSH remote file connections fail on first attempt but succeed on second attempt.
 
 **Research**: This is a known POSIX limitation. Apple's documentation warns against using GCD after fork.
 
-**Solution**: Removed `fork()` from Daemon.swift. Proxy now spawns daemon using `setsid --fork` which forks *before* Swift/GCD initializes:
+**Solution**: Removed `fork()` from Daemon.swift. Proxy now spawns the daemon as a separate process. On Linux it uses `setsid --fork`, which forks *before* Swift/GCD initializes; on macOS it launches the helper directly with detached stdio because `/usr/bin/setsid` is not available:
 
 ```swift
 // Proxy.swift
 let process = Process()
+#if os(Linux)
 process.executableURL = URL(fileURLWithPath: "/usr/bin/setsid")
 process.arguments = ["--fork", binaryPath, "run", "--pid-file", pidFile, ...]
+#else
+process.executableURL = URL(fileURLWithPath: binaryPath)
+process.arguments = ["run", "--pid-file", pidFile, ...]
+#endif
 ```
 
 ### 3. Race Condition in Daemon Startup
@@ -119,7 +124,7 @@ static func start(reconnect: Bool) {
 let args = [
     "-T",                           // Disable PTY (cleaner for binary protocol)
     "-o", "BatchMode=yes",          // No interactive prompts
-    "-o", "ConnectTimeout=10",      // Don't wait forever for TCP
+    "-o", "ConnectTimeout=5",       // Don't wait forever for TCP
     "-o", "ServerAliveInterval=15", // Keepalive ping every 15s
     "-o", "ServerAliveCountMax=3",  // Disconnect after 3 missed pings
     host,
@@ -129,6 +134,7 @@ let args = [
 ```
 
 **Removed** (caused issues):
+
 - `ControlMaster` - Stale sockets cause "Session open refused by peer"
 - `ControlPath` - Tilde expansion unreliable
 - `ControlPersist` - Related to above
@@ -156,34 +162,41 @@ private func waitForSyncMarker(...) async throws {
 ## Debugging Commands
 
 ```bash
-# Clean slate - remove server and kill daemon
-ssh dockerhost 'pkill -f redmargin-server; rm -rf ~/.redmargin-server'
+# Clean slate on the devtest VM - stop helper processes and remove daemon state
+ssh devtest 'ps -eo pid=,args= | awk "/[.]redmargin-server\\/redmargin-server-/ {print \$1}" | xargs -r kill; rm -f ~/.redmargin-server/rpc.sock ~/.redmargin-server/daemon.pid ~/.redmargin-server/daemon.pid.lock'
 
 # Check what's deployed
-ssh dockerhost 'ls -la ~/.redmargin-server/'
+ssh devtest 'ls -la ~/.redmargin-server/'
 
 # Test proxy manually (should output sync marker then wait)
-ssh dockerhost ~/.redmargin-server/redmargin-server-0.42.8 proxy --reconnect
+ssh devtest ~/.redmargin-server/redmargin-server-16.0 proxy --reconnect
 
 # Send Hello and see response
-printf '\x00\x00\x00S{"type":"Hello","id":1,"payload":{"clientVersion":"0.42.8","capabilities":[]}}' | \
-    ssh -T dockerhost ~/.redmargin-server/redmargin-server-0.42.8 proxy --reconnect | xxd
+printf '\x00\x00\x00M{"type":"Hello","id":1,"payload":{"clientVersion":"1.5.1","capabilities":[]}}' | \
+    ssh -T devtest ~/.redmargin-server/redmargin-server-16.0 proxy --reconnect | xxd
 
 # Check if daemon is running
-ssh dockerhost 'ps aux | grep redmargin'
+ssh devtest 'ps -ef | grep redmargin-server | grep -v grep || true'
 
 # Check daemon socket
-ssh dockerhost 'ls -la ~/.redmargin-server/rpc.sock'
+ssh devtest 'ls -la ~/.redmargin-server/rpc.sock'
 
 # View app logs
 tail -f /tmp/redmargin.log
 ```
+
+### 8. Proxy Processes Survive SSH Session Close
+
+**Problem**: After remote tests, `devtest` accumulated many `redmargin-server-16.0 proxy --reconnect` processes. Each proxy had stopped receiving local stdin, but its socket-to-stdout bridge still waited for daemon output, so the process never exited.
+
+**Solution**: When the stdin-to-socket bridge reaches EOF, `Proxy.bridgeStdioToSocket` now calls `shutdown(socketFD, 1)` before waiting for the socket-to-stdout side. That signals EOF to the daemon side, lets the response bridge drain, and allows the proxy process to exit with the SSH session.
 
 ### 5. connect() Succeeds Before accept() (THE REAL Root Cause)
 
 **Problem**: Even with sync marker moved after `connectToDaemon()`, first connections still timed out. Investigation revealed that `connect()` on a Unix domain socket succeeds as soon as the connection is queued in the kernel backlog - it does NOT wait for the server to call `accept()`.
 
 **Sequence**:
+
 1. Proxy spawns daemon via `setsid --fork`
 2. Daemon calls `listener.start()` → socket listening, but `accept()` not called yet
 3. Daemon initializes `RPCHandler()` → takes some time
@@ -193,6 +206,7 @@ tail -f /tmp/redmargin.log
 7. Daemon finally calls `accept()`, processes Hello → too late, client timed out
 
 **Solution**: Two-phase ready signal:
+
 1. Daemon sends `RDY\n` immediately after `accept()` (proves it's truly ready)
 2. Proxy waits for `RDY\n` before outputting sync marker
 3. Moved `RPCHandler()` initialization BEFORE `listener.start()` to minimize gap
@@ -252,17 +266,15 @@ public func reset() {
 
 ## Version History
 
-| Version | Changes |
-|---------|---------|
-| 0.42.3  | Initial timeout fixes |
-| 0.42.4  | Added sync marker, removed fork() |
-| 0.42.5  | Fixed sync marker client-side handling |
-| 0.42.6  | Added lock file for daemon startup |
-| 0.42.7  | Fixed setsid --fork daemon spawning |
-| 0.42.8  | Moved sync marker AFTER daemon connection |
-| 0.42.9  | Added RDY signal: proxy waits for daemon accept() before sync marker |
-| 0.42.10 | **THE FIX**: Replaced waitUntilExit() and Thread.sleep() with usleep() |
-| 1.2.0   | Reset RPCStreamHandler buffer on disconnect; auto-recovery via NotificationCenter |
+- 0.42.3: Initial timeout fixes
+- 0.42.4: Added sync marker, removed fork()
+- 0.42.5: Fixed sync marker client-side handling
+- 0.42.6: Added lock file for daemon startup
+- 0.42.7: Fixed setsid --fork daemon spawning
+- 0.42.8: Moved sync marker AFTER daemon connection
+- 0.42.9: Added RDY signal: proxy waits for daemon accept() before sync marker
+- 0.42.10: **THE FIX**: Replaced waitUntilExit() and Thread.sleep() with usleep()
+- 1.2.0: Reset RPCStreamHandler buffer on disconnect; auto-recovery via NotificationCenter
 
 ### 6. process.waitUntilExit() Hangs with GCD (THE ACTUAL Root Cause)
 

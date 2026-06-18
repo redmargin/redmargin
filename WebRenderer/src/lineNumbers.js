@@ -83,7 +83,7 @@
         lines.forEach(function(lineNum) {
             const lineEl = document.createElement('div');
             lineEl.className = 'line-number';
-            lineEl.textContent = lineNum;
+            lineEl.textContent = String(lineNum);
             lineEl.style.top = (linePositions[lineNum] + verticalOffset) + 'px';
             container.appendChild(lineEl);
         });

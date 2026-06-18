@@ -38,7 +38,8 @@ final class ServerTests: XCTestCase {
         let socketPath = tempDir.appendingPathComponent("rpc.sock").path
 
         guard let serverPath = findServerBinary() else {
-            throw XCTSkip("Server binary not found. Build with /build first.")
+            XCTFail("Server binary not found. Build with ./resources/scripts/build.sh first.")
+            return
         }
 
         let (process, stderrPipe) = try startDaemon(
@@ -81,16 +82,50 @@ final class ServerTests: XCTestCase {
         XCTAssertFalse(process.isRunning, "Daemon should have stopped")
     }
 
-    /// Test that file watch triggers FileChanged push event
-    /// Note: This test requires the daemon's file watcher to work, which depends on
-    /// DispatchSource events being delivered. In the daemon process, the main run loop
-    /// is not active, so FileWatcher events on .main queue may not be delivered.
-    /// This test is marked as a known limitation requiring manual verification.
     func testFileWatchPushEvent() async throws {
-        // Skip this test as file watching in the daemon requires run loop integration
-        // that's difficult to test in unit tests. The functionality is verified via
-        // integration tests with the actual app (see RemoteIntegrationTests).
-        throw XCTSkip("File watch events require main run loop; verify manually with app")
+        let pidFile = tempDir.appendingPathComponent("daemon.pid").path
+        let socketPath = tempDir.appendingPathComponent("rpc.sock").path
+        let watchedFile = tempDir.appendingPathComponent("watched.md")
+        try "# Before\n".write(to: watchedFile, atomically: false, encoding: .utf8)
+
+        guard let serverPath = findServerBinary() else {
+            XCTFail("Server binary not found. Build with ./resources/scripts/build.sh first.")
+            return
+        }
+
+        let (process, stderrPipe) = try startDaemon(
+            serverPath: serverPath,
+            pidFile: pidFile,
+            socketPath: socketPath
+        )
+        serverProcess = process
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        guard process.isRunning else {
+            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderr = String(data: stderrData, encoding: .utf8) ?? "no output"
+            XCTFail("Daemon process exited prematurely. stderr: \(stderr)")
+            return
+        }
+
+        let clientFD = connectToSocket(socketPath)
+        XCTAssertGreaterThanOrEqual(clientFD, 0, "Should connect to daemon socket")
+        defer { if clientFD >= 0 { _ = testSystemClose(clientFD) } }
+
+        let helloResponse = try await sendHelloAndGetResponse(clientFD: clientFD)
+        XCTAssertTrue(helloResponse.payload.accepted)
+
+        _ = try await sendWatchFileRequest(clientFD: clientFD, path: watchedFile.path)
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        try "# After\n".write(to: watchedFile, atomically: false, encoding: .utf8)
+
+        let sawFileChanged = try await pollForFileChangedEvent(
+            clientFD: clientFD,
+            expectedPath: watchedFile.path,
+            timeout: 5.0
+        )
+        XCTAssertTrue(sawFileChanged, "Daemon should push FileChanged for watched file")
     }
 
     /// Test that proxy connects to daemon and properly bridges
@@ -104,7 +139,8 @@ final class ServerTests: XCTestCase {
         let socketPath = tempDir.appendingPathComponent("rpc.sock").path
 
         guard let serverPath = findServerBinary() else {
-            throw XCTSkip("Server binary not found. Build with /build first.")
+            XCTFail("Server binary not found. Build with ./resources/scripts/build.sh first.")
+            return
         }
 
         let (process, stderrPipe) = try startDaemon(

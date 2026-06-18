@@ -191,7 +191,7 @@ Tests are implementation tasks — the implementer writes and passes each one on
 
 ### Integration Tests (`Tests/RemoteIntegrationTests.swift`)
 
-All integration tests use the `devtest` SSH alias and run with a 60-second timeout guard, per project conventions.
+All integration tests use the `devtest` SSH alias and should run with a timeout guard because they start real SSH/helper processes.
 
 - [x] **T46** `testOnDemandWindowShowsCachedContentBeforeConnect` - Pre-seed the cache for a `devtest` location, build an on-demand state, and assert the cached content is present and no connection exists before `connectIfNeeded`, then live content after.
 - [x] **T47** `testFrontmostConnectsAndOthersWarmInBackground` - Restore two `devtest` windows; assert the frontmost is connected shortly after launch and the second reaches connected via the background warm pass without an explicit focus.

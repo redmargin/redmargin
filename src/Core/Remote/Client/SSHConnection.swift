@@ -114,7 +114,14 @@ public actor SSHConnection {
             isIntentionallyDisconnected = false
             reconnectAttempts = 0
             state = .reconnecting
-            scheduleReconnect()
+            if remoteBinaryPath == nil {
+                reconnectTask?.cancel()
+                reconnectTask = Task { [weak self] in
+                    try? await self?.connect(onProgress: nil)
+                }
+            } else {
+                scheduleReconnect()
+            }
         case .reconnecting:
             // Cancel the existing slow reconnect loop and start fresh immediately
             reconnectTask?.cancel()

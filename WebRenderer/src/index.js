@@ -1,7 +1,3 @@
-/**
- * RedMargin Markdown Renderer
- * Renders Markdown to HTML with sourcepos attributes for Git gutter integration.
- */
 (function() {
     'use strict';
 
@@ -37,7 +33,7 @@
             .replace(/"/g, '&quot;');
     }
 
-    function getMermaidSourcepos(token) {
+    function getFenceSourcepos(token) {
         if (!token || !token.map) {
             return token && token.attrGet ? token.attrGet('data-sourcepos') : '';
         }
@@ -48,6 +44,10 @@
         return startLine + ':1-' + endLine + ':' + fenceLength;
     }
 
+    function isRawHtmlFenceInfo(info) {
+        return info === '{=html}' || info === '=html';
+    }
+
     var defaultFenceRenderer = md.renderer.rules.fence || function(tokens, idx, options, env, self) {
         return self.renderToken(tokens, idx, options);
     };
@@ -56,21 +56,23 @@
         var token = tokens[idx];
         var info = (token.info || '').trim();
 
+        if (isRawHtmlFenceInfo(info)) {
+            var rawSourcepos = getFenceSourcepos(token);
+            return '<div class="raw-html-block"' +
+                (rawSourcepos ? ' data-sourcepos="' + escapeHtml(rawSourcepos) + '"' : '') +
+                '>' + (token.content || '') + '</div>';
+        }
+
         if (info !== 'mermaid') {
             return defaultFenceRenderer(tokens, idx, options, env, self);
         }
 
-        var sourcepos = getMermaidSourcepos(token);
+        var sourcepos = getFenceSourcepos(token);
         return '<div class="mermaid-block"' +
             (sourcepos ? ' data-sourcepos="' + escapeHtml(sourcepos) + '"' : '') +
             ' data-source="' + escapeHtml(token.content || '') + '"></div>';
     };
 
-    /**
-     * Adjusts data-sourcepos attributes by adding an offset.
-     * This compensates for stripped front matter lines so gutter/line numbers
-     * reference the original file line numbers.
-     */
     function offsetSourcepos(container, offset) {
         if (!offset || !container) return;
 
@@ -180,12 +182,6 @@
         return rerenderMermaidForTheme(theme);
     }
 
-    /**
-     * Optimize table column widths using min-content/max-content measurement.
-     * Each column starts at its min-content width (longest word — no mid-word
-     * breaks anywhere), then extra space is distributed proportionally to each
-     * column's growth potential (max-content minus min-content).
-     */
     function optimizeTableWidths(container) {
         var tables = container.querySelectorAll('table');
         for (var t = 0; t < tables.length; t++) {
@@ -196,7 +192,9 @@
             var numCols = rows[0].cells.length;
             if (numCols <= 1) continue;
 
-            var containerStyle = getComputedStyle(container);
+            var containerStyle = window.getComputedStyle
+                ? window.getComputedStyle(container)
+                : { paddingLeft: '0', paddingRight: '0' };
             var availWidth = container.clientWidth
                 - parseFloat(containerStyle.paddingLeft)
                 - parseFloat(containerStyle.paddingRight);

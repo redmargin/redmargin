@@ -28,7 +28,10 @@ final class RestoreProgressWindowController: NSWindowController {
     }
 
     func update(message: String) {
-        window?.contentViewController = NSHostingController(rootView: RestoreProgressView(message: message))
+        guard let window else { return }
+        let currentFrame = window.frame
+        window.contentViewController = NSHostingController(rootView: RestoreProgressView(message: message))
+        window.setFrame(currentFrame, display: false)
     }
 
     static func configureFramePersistence(on window: NSWindow) {

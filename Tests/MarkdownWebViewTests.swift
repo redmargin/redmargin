@@ -393,6 +393,50 @@ final class MarkdownWebViewTests: XCTestCase {
         )
     }
 
+    func testPandocRawHtmlFenceRendersSanitizedHtml() throws {
+        loadRenderer()
+        installJSErrorCapture()
+
+        renderMarkdown("""
+        ```{=html}
+        <div class="sevbar" onclick="evil()">
+          <div class="cell c-critical"><span class="n">2</span><span class="l">Critical</span></div>
+          <div class="cell c-high"><span class="n">10</span><span class="l">High</span></div>
+          <script>alert(1)</script>
+          <a href="javascript:alert(1)">bad</a>
+        </div>
+        ```
+        """)
+
+        waitForJavaScriptCondition("!!document.querySelector('.raw-html-block .sevbar .c-critical')")
+
+        XCTAssertEqual(
+            evaluateJavaScriptValue("window.__testErrors.length") as? Int,
+            0,
+            "Raw HTML fence render should not emit JavaScript errors"
+        )
+        XCTAssertEqual(
+            evaluateJavaScriptValue("document.querySelector('.sevbar .c-critical .n')?.textContent") as? String,
+            "2",
+            "Severity bar HTML should render through the sanitized raw HTML fence"
+        )
+        XCTAssertEqual(
+            evaluateJavaScriptValue("document.querySelector('.sevbar')?.hasAttribute('onclick')") as? Bool,
+            false,
+            "Raw HTML event handlers should be stripped"
+        )
+        XCTAssertEqual(
+            evaluateJavaScriptValue("document.querySelectorAll('.raw-html-block script').length") as? Int,
+            0,
+            "Raw HTML scripts should be stripped"
+        )
+        XCTAssertEqual(
+            evaluateJavaScriptValue("document.querySelector('.raw-html-block a')?.hasAttribute('href')") as? Bool,
+            false,
+            "Unsafe raw HTML links should lose href"
+        )
+    }
+
     func testWebViewRecoveryAfterProcessTermination() throws {
         loadRenderer()
 

@@ -11,10 +11,16 @@ typealias PlatformWatcher = DarwinWatcher
 
 class DarwinWatcher: ServerWatcher {
     private var internalWatcher: FileWatcher?
+    private static let queue = DispatchQueue(label: "com.redmargin.server.filewatch")
 
     required init?(path: String, onChange: @escaping () -> Void) {
         let url = URL(fileURLWithPath: path)
-        self.internalWatcher = FileWatcher(url: url, onChange: onChange)
+        self.internalWatcher = FileWatcher(
+            url: url,
+            queue: Self.queue,
+            observeWakeNotifications: false,
+            onChange: onChange
+        )
         if self.internalWatcher == nil { return nil }
     }
 
@@ -127,10 +133,17 @@ typealias PlatformDirectoryWatcher = DarwinDirectoryWatcher
 
 class DarwinDirectoryWatcher: ServerDirectoryWatcher {
     private var internalWatcher: FileWatcher?
+    private static let queue = DispatchQueue(label: "com.redmargin.server.directorywatch")
 
     required init?(rootPath: String, ignoredDirs: Set<String>, onChange: @escaping () -> Void) {
         let url = URL(fileURLWithPath: rootPath)
-        self.internalWatcher = FileWatcher(url: url, writeOnly: true, onChange: onChange)
+        self.internalWatcher = FileWatcher(
+            url: url,
+            writeOnly: true,
+            queue: Self.queue,
+            observeWakeNotifications: false,
+            onChange: onChange
+        )
         guard self.internalWatcher != nil else { return nil }
     }
 

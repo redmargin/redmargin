@@ -1,6 +1,6 @@
 # Redmargin
 
-Markdown viewer for macOS with Git change indicators, remote file access over SSH, Mermaid diagrams, syntax highlighting, and PDF export.
+Markdown viewer for macOS with Git change indicators, remote file access over SSH, Mermaid diagrams, Pandoc raw HTML blocks, syntax highlighting, and PDF export.
 
 ## Download
 
@@ -15,6 +15,7 @@ Download the latest notarized macOS build from [GitHub Releases](https://github.
 - **File sidebar** — Browse Markdown files in the repository or directory (Cmd+1). Collapsible folders, current file highlighted, and git status bars enabled by default.
 - **Syntax highlighting** — Code blocks render with language-aware coloring. Supports Python, JavaScript, Swift, Rust, Go, and more.
 - **Mermaid diagrams** — Fenced `mermaid` blocks render as diagrams, follow the active theme, and print/export with the preview.
+- **Pandoc raw HTML blocks** — Fenced `{=html}` / `=html` blocks render as sanitized HTML, while ordinary `html` fences remain code blocks.
 - **Interactive checkboxes** — Click to toggle, saves immediately (local and remote).
 - **Find in page** — Search with match count and navigation (Cmd+F).
 - **PDF export** — Export with theme, gutter, line numbers, margins, and font size preserved (Cmd+E). Saves to Downloads.
@@ -28,6 +29,7 @@ Download the latest notarized macOS build from [GitHub Releases](https://github.
 Markdown files can contain inline HTML which creates XSS risks. Redmargin applies multiple layers of protection:
 
 - **HTML sanitization** — Allowlist-based sanitizer strips scripts, event handlers, and dangerous tags.
+- **Raw HTML fence sanitization** — Pandoc raw HTML fences use the same sanitizer as inline Markdown HTML before insertion.
 - **URL scheme allowlist** — Only http/https/mailto allowed in links; file:// and other schemes blocked.
 - **Navigation policy** — External links open in system browser; file:// navigation blocked.
 - **Remote loading blocked** — External resources blocked by default via WKContentRuleList (images configurable in Preferences).
@@ -123,7 +125,7 @@ redmargin/
 
 ## Status
 
-v1.5.0 - See `resources/docs/CHANGELOG.md` for version history.
+v1.5.1 - See `resources/docs/CHANGELOG.md` for version history.
 
 ## License
 

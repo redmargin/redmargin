@@ -21,6 +21,12 @@
     --gutter-added: #4aba5a;
     --gutter-modified: #d4a24a;
     --gutter-deleted: #cf6a6a;
+    --severity-critical: #991b1b;
+    --severity-high: #c2410c;
+    --severity-medium: #ca8a04;
+    --severity-low: #15803d;
+    --severity-total: #3f3f46;
+    --severity-label: rgba(255, 255, 255, 0.82);
 }
 
 * {
@@ -126,6 +132,62 @@ pre {
     margin: 0 0 1em 0;
     position: relative;
 }
+
+.raw-html-block {
+    max-width: var(--content-max-width, none);
+    margin: 0 0 1em 0;
+}
+
+.sevbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+    overflow: hidden;
+    width: 100%;
+    max-width: var(--content-max-width, none);
+    margin: 0 0 1em 0;
+    border: 1px solid var(--table-border);
+    border-radius: 6px;
+    background: var(--table-border);
+}
+
+.raw-html-block > .sevbar:last-child {
+    margin-bottom: 0;
+}
+
+.sevbar .cell {
+    flex: 1 1 112px;
+    min-width: 96px;
+    padding: 10px 14px;
+    color: #ffffff;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.sevbar .n,
+.sevbar .l {
+    display: block;
+}
+
+.sevbar .n {
+    font-size: 1.35em;
+    font-weight: 700;
+}
+
+.sevbar .l {
+    margin-top: 2px;
+    color: var(--severity-label);
+    font-size: 0.74em;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.sevbar .c-critical { background: var(--severity-critical); }
+.sevbar .c-high { background: var(--severity-high); }
+.sevbar .c-medium { background: var(--severity-medium); }
+.sevbar .c-low { background: var(--severity-low); }
+.sevbar .c-total { background: var(--severity-total); }
 
 .mermaid-block {
     background: var(--pre-bg);

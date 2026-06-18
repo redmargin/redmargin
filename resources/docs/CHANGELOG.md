@@ -3,6 +3,21 @@
 
 ## Unreleased
 
+### Added
+
+- Added sanitized rendering for Pandoc raw HTML fences (`{=html}` / `=html`) while preserving normal `html` fences as code blocks.
+
+### Changed
+
+- Reworked SSH and server integration coverage so the full Swift suite now runs without skipped tests against the `devtest` test host.
+
+### Fixed
+
+- Fixed remote helper proxy shutdown so closed SSH sessions no longer leave orphaned proxy processes.
+- Fixed remote/server file watch tests by giving daemon-side watchers their own queues and disabling app wake observers outside the app process.
+
+## v1.5.1 (2026-06-09)
+
 ### Bug Fixes
 
 - Fixed Open Remote connections to Intel Macs by bundling and deploying the x86_64 macOS remote helper.
@@ -283,7 +298,7 @@ First stable release.
 - Added: Tests/ServerTests.swift with daemon lifecycle tests
 - Added: testDaemonStartStop verifies PID file, socket, RPC handshake
 - Added: testDaemonSurvivesProxyDisconnect verifies reconnection works
-- Changed: testFileWatchPushEvent skipped (requires main run loop on macOS)
+- Changed: testFileWatchPushEvent now runs with daemon-owned watcher queues
 - Updated: Spec test checkboxes marked complete
 
 ## 260120 Remote Recents Bug Fixes

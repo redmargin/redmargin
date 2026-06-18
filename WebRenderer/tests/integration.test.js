@@ -210,6 +210,51 @@ A native macOS Markdown viewer with live rendering.
         );
     });
 
+    await test('testPandocRawHtmlFenceRendersThroughSanitizer', async () => {
+        const harness = createAppHarness({ disableMermaid: true });
+
+        harness.window.App.render({
+            markdown: '```{=html}\n' +
+                '<div class="sevbar" onclick="evil()">\n' +
+                '  <div class="cell c-critical"><span class="n">2</span><span class="l">Critical</span></div>\n' +
+                '  <script>alert(1)</script>\n' +
+                '  <a href="javascript:alert(1)">bad</a>\n' +
+                '</div>\n' +
+                '```',
+            options: { theme: 'light', basePath: '' }
+        });
+        await flushPromises();
+        await flushPromises();
+
+        const rawBlock = harness.document.querySelector('.raw-html-block');
+        const sevbar = harness.document.querySelector('.raw-html-block .sevbar');
+        const critical = harness.document.querySelector('.sevbar .c-critical');
+        const badLink = harness.document.querySelector('.sevbar a');
+
+        assertTrue(!!rawBlock, 'Expected Pandoc raw HTML fence to render as sanitized HTML');
+        assertTrue(!!sevbar, 'Expected severity bar markup to be preserved');
+        assertTrue(!!critical, 'Expected severity class markup to be preserved');
+        assertEqual(rawBlock.getAttribute('data-sourcepos'), '1:1-7:3', 'Raw HTML fence should preserve source position');
+        assertTrue(!harness.document.querySelector('.raw-html-block pre'), 'Raw HTML fence should not render as a code block');
+        assertTrue(!sevbar.hasAttribute('onclick'), 'Event handlers should be stripped from raw HTML');
+        assertTrue(!harness.document.querySelector('.raw-html-block script'), 'Scripts should be stripped from raw HTML');
+        assertTrue(!!badLink && !badLink.hasAttribute('href'), 'Unsafe href should be stripped from raw HTML');
+    });
+
+    await test('testRegularHtmlFenceStillRendersAsCode', async () => {
+        const harness = createAppHarness({ disableMermaid: true });
+
+        harness.window.App.render({
+            markdown: '```html\n<div class="sevbar">text</div>\n```',
+            options: { theme: 'light', basePath: '' }
+        });
+        await flushPromises();
+        await flushPromises();
+
+        assertTrue(!!harness.document.querySelector('pre code'), 'Regular html fences should remain code blocks');
+        assertEqual(harness.document.querySelectorAll('.sevbar').length, 0, 'Regular html fences should not render raw HTML');
+    });
+
     await test('testSourcePosMapPrefersListItemsOverListContainer', async () => {
         const harness = createAppHarness({ disableMermaid: true });
 

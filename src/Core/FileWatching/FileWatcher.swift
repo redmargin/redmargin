@@ -10,15 +10,23 @@ public class FileWatcher {
     private let url: URL
     private let onChange: () -> Void
     private let eventMask: DispatchSource.FileSystemEvent
+    private let queue: DispatchQueue
     private var isRecreating = false
     private var wakeObserver: Any?
 
     /// Called when all retry attempts are exhausted and the watcher is dead.
     public var onWatcherDied: (() -> Void)?
 
-    public init?(url: URL, writeOnly: Bool = false, onChange: @escaping () -> Void) {
+    public init?(
+        url: URL,
+        writeOnly: Bool = false,
+        queue: DispatchQueue = .main,
+        observeWakeNotifications: Bool = true,
+        onChange: @escaping () -> Void
+    ) {
         self.url = url
         self.onChange = onChange
+        self.queue = queue
         // writeOnly excludes .attrib to avoid loops when file is read (atime updates)
         self.eventMask = writeOnly ? [.write, .rename, .delete] : [.write, .rename, .delete, .attrib]
         guard startWatching() else {
@@ -27,12 +35,14 @@ public class FileWatcher {
         }
         print("[FileWatcher] Started watching: \(url.path)")
 
-        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.recreateAfterWake()
+        if observeWakeNotifications {
+            wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didWakeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.recreateAfterWake()
+            }
         }
     }
 
@@ -76,7 +86,7 @@ public class FileWatcher {
         source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fileDescriptor,
             eventMask: eventMask,
-            queue: .main
+            queue: queue
         )
 
         source?.setEventHandler { [weak self] in
@@ -116,7 +126,7 @@ public class FileWatcher {
     private func retryStartWatching(attempt: Int) {
         let delay = FileWatcher.retryDelays[min(attempt - 1, FileWatcher.retryDelays.count - 1)]
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self = self else { return }
             if self.startWatching() {
                 print("[FileWatcher] Restarted watching (attempt \(attempt)): \(self.url.path)")

@@ -64,8 +64,9 @@ final class SidebarTests: XCTestCase {
             arguments: ["init"],
             workingDirectory: repoDir
         )
+        XCTAssertEqual(gitInit.exitCode, 0, "git init failed: \(gitInit.stderr)")
         guard gitInit.exitCode == 0 else {
-            throw XCTSkip("Could not initialize git repo")
+            return
         }
 
         // Create files at repo root and in subdirectory
@@ -94,8 +95,9 @@ final class SidebarTests: XCTestCase {
         try FileManager.default.createDirectory(at: repoDir, withIntermediateDirectories: true)
 
         let gitInit = try await ProcessRunner.run(executable: "git", arguments: ["init"], workingDirectory: repoDir)
+        XCTAssertEqual(gitInit.exitCode, 0, "git init failed: \(gitInit.stderr)")
         guard gitInit.exitCode == 0 else {
-            throw XCTSkip("Could not initialize git repo")
+            return
         }
         _ = try await ProcessRunner.run(
             executable: "git",

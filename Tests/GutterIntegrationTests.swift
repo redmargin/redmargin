@@ -109,21 +109,19 @@ final class GutterIntegrationTests: XCTestCase {
         // No changes to report since no repo
     }
 
-    // MARK: - Existing Tests
-
     func testGitChangesForModifiedFile() async throws {
-        // Test with the actual README.md which has uncommitted changes
-        let fileURL = URL(fileURLWithPath: "/Users/marco/dev/redmargin/README.md")
+        let repoURL = try gitHelper.createRepo(named: "modified-file-test")
+        let fileURL = try gitHelper.createFile(
+            named: "README.md",
+            content: "# Title\n\nOriginal body\n",
+            in: repoURL
+        )
+        try gitHelper.commit(message: "Initial commit", in: repoURL)
+        try "# Title\n\nChanged body\n".write(to: fileURL, atomically: true, encoding: .utf8)
 
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            throw XCTSkip("README.md not found")
-        }
-
-        // Detect repo
         let repoRoot = try await GitRepoDetector.detectRepoRoot(forFile: fileURL)
         XCTAssertNotNil(repoRoot, "Should detect repo root")
 
-        // Get changes
         let changes = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: repoRoot!)
 
         print("Added: \(changes.addedRanges.count), Modified: \(changes.modifiedRanges.count), " +

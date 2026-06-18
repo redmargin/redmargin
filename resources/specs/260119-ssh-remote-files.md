@@ -306,22 +306,19 @@ redmargin-server proxy --reconnect
 | `FileRenamed` | Watched file renamed                     |
 | `GitChanged`  | Git index/HEAD changed for watched repo  |
 
-### SSH ControlMaster Management
+### SSH Connection Options
 
 **Configuration used by SSHConnection:**
 
 ```bash
 ssh -o BatchMode=yes \
-    -o ConnectTimeout=10 \
-    -o ControlMaster=auto \
-    -o ControlPath=/tmp/ssh-redmargin-%r@%h:%p \
-    -o ControlPersist=60 \
+    -o ConnectTimeout=5 \
     -o ServerAliveInterval=15 \
     -o ServerAliveCountMax=3 \
     user@host "~/.redmargin-server/redmargin-server-X.X.X proxy --reconnect"
 ```
 
-**Note:** ControlPath uses `/tmp/` instead of `~/.ssh/` because tilde expansion is unreliable when spawning SSH from Swift Process.
+**Note:** ControlMaster/ControlPath/ControlPersist are intentionally not used because stale master sockets caused session-open failures.
 
 **Lifecycle:**
 
@@ -623,7 +620,7 @@ protocol FileProvider {
 
 - [x] Add `redmargin-server` target to Package.swift
 - [x] Create `Server/main.swift` with argument parsing
-- [x] Create `Server/Daemon.swift` with fork, sockets, PID file
+- [x] Create `Server/Daemon.swift` with sockets and PID file; daemon does not call `fork()` because Swift/GCD workers are not fork-safe
 - [x] Create `Server/Proxy.swift` with daemon spawn and socket bridge
 - [x] Create `Server/RPCHandler.swift` message dispatch
 - [x] Create `Server/FileOperations.swift`
@@ -650,9 +647,9 @@ protocol FileProvider {
 
 - [x] Implement `SSHConnection.swift`
 - [x] Implement `SSHConnectionManager.swift`
-- [x] Implement ControlMaster management (Added options to SSHConnection)
+- [x] Implement SSH connection options without ControlMaster; stale master sockets were removed from the design
 - [x] Handle reconnection with backoff (Implemented in SSHConnection.swift)
-- [x] Test against localhost SSH (Implemented in Tests/SSHConnectionTests.swift)
+- [x] Test against the `devtest` SSH host (Implemented in Tests/SSHConnectionTests.swift)
 
 #### Phase 6: Server Deployment
 
@@ -692,7 +689,7 @@ protocol FileProvider {
 
 - [x] Checkbox toggle caching for reconnection (cache pending toggles, detect conflicts on reconnect)
 - [x] Graceful error messages (SSHConnectionError enum with user-friendly descriptions)
-- [x] Timeout handling (30s overall, 15s handshake, 30s operations)
+- [x] Timeout handling (5s SSH TCP connect, 15s handshake, 30s operations)
 - [x] Performance test large files (10k line file at devtest:~/redmargin-test/large-test.md)
 - [x] Remote files appear in Recents menu
 
@@ -730,13 +727,13 @@ protocol FileProvider {
 - [x] `testProxyConnectsToDaemon` - Proxy bridges to daemon (Verified via integration test auto-start)
 - [x] `testReadFileViaRPC` - Full RPC roundtrip (Verified via integration test)
 - [x] `testWriteFileViaRPC` - Write via RPC, verify on disk
-- [x] `testFileWatchPushEvent` - Modify file, receive event (Skipped in unit test; verified via integration test on Linux server)
+- [x] `testFileWatchPushEvent` - Modify file, receive event
 - [x] `testGitDiffViaRPC` - Git operations via RPC (Logic shared with LocalFileProvider, integration to follow)
 - [x] `testDaemonSurvivesProxyDisconnect` - Kill proxy, daemon stays
 
 **SSHConnection tests** in `Tests/SSHConnectionTests.swift`:
 
-- [x] `testConnectLocalhost` - Connect to localhost SSH (Verified against devtest)
+- [x] `testConnectDevtest` - Connect to the `devtest` SSH host
 - [x] `testRPCHandshake` - Send request, receive response (Verified against devtest)
 - [x] `testPushEvents` - Receive push events via SSH (Verifies stream accessible)
 - [x] `testReconnectionState` - Simulate disconnect, verify reconnection (Verified logic via unit tests/logs)
@@ -770,18 +767,16 @@ protocol FileProvider {
 
 ### Test Log
 
-| Date       | Result | Notes                                                    |
-| ---------- | ------ | -------------------------------------------------------- |
-| 2025-01-20 | Pass   | Build succeeds, checkbox caching + recents implemented   |
-| 2025-01-20 | Pass   | Recents bug fixes: stale connections, deleted file cleanup |
-| 2026-01-20 | Pass   | ServerTests added: daemon start/stop, proxy disconnect survival |
+- 2025-01-20: Pass - Build succeeds, checkbox caching + recents implemented
+- 2025-01-20: Pass - Recents bug fixes: stale connections, deleted file cleanup
+- 2026-01-20: Pass - ServerTests added: daemon start/stop, proxy disconnect survival
 
 ### Test Environment
 
-#### Option 1: localhost SSH
+#### Option 1: devtest SSH VM
 
-- Enable Remote Login in System Preferences > Sharing
-- Test against self: `ssh localhost`
+- Use the `devtest` SSH alias for live remote integration coverage.
+- The full Swift suite currently expects `devtest` to be reachable for SSHConnection and RemoteIntegration tests.
 
 #### Option 2: Docker container
 

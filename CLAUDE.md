@@ -146,16 +146,17 @@ The `devtest` SSH alias points to a Linux (Ubuntu 22.04) development server used
 - Building Linux server binaries (`resources/scripts/build-linux.sh`)
 - Running Linux-specific tests
 - Integration testing SSH remote file features
+- Running live SSHConnection and RemoteIntegration coverage; the test suite assumes this alias is reachable when remote tests are requested
 
 Commands:
 
 - Build Linux binary: `./resources/scripts/build-linux.sh`
-- Run Linux-specific tests on devtest only when explicitly requested, with a timeout guard
+- Run Linux/remote SSH tests on devtest only when explicitly requested, with a timeout guard
 
-**IMPORTANT:** Always run remote/SSH tests with timeouts - they tend to hang:
+**IMPORTANT:** Always run remote/SSH tests with a guard - they exercise real SSH processes and remote helper daemons. A portable guard on macOS is:
 
 ```bash
-swift test --filter RemoteIntegrationTests 2>&1 & pid=$!; sleep 60; kill $pid 2>/dev/null
-# Or use timeout command:
-timeout 60 swift test --filter SSHConnectionTests
+swift test --filter RemoteIntegrationTests 2>&1 & pid=$!; sleep 60; kill "$pid" 2>/dev/null
 ```
+
+After interrupted remote test runs, check `ssh devtest 'ps -ef | grep redmargin-server | grep -v grep || true'` and stop leftover helpers before rerunning.

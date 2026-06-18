@@ -121,6 +121,9 @@ enum Proxy {
         // Stdin -> Socket
         DispatchQueue.global().async {
             bridgeFileDescriptors(from: 0, to: socketFD)
+            // Signal EOF to the daemon so its socket->stdout bridge can drain and
+            // the proxy process can exit when the SSH session closes.
+            _ = shutdown(socketFD, 1)
             group.leave()
         }
 

@@ -2,9 +2,35 @@
 
 ## Latest Run
 
-- Started: 2026-06-09
-- Command: `swift test --filter 'RemoteWindowPersistenceTests|RemoteDocumentStateTests|SSHConnectionTests/testDisconnectFinishesContinuations'`
-- Status: ALL PASS (7/7 run). Two fixes on `feature/remote-restore-ux`: (1) connection-state changes now broadcast to every window on a host, so the "Connecting…" pill no longer strands when several windows share a server; (2) quit persists only the windows still open, so a closed remote window no longer resurrects on the next launch.
+- Started: 2026-06-18
+- Commands: `npm test` in `WebRenderer`; `./resources/scripts/build.sh --no-install`; `swift test`
+- Status: ALL PASS. JavaScript renderer tests passed, the build script completed, and Swift executed 347 tests with 0 failures and 0 skips.
+- Notes: SSHConnection and RemoteIntegration coverage now use the real `devtest` host. `rg -n "XCTSkip|Skipping test" Tests src Server -S` returns no matches.
+
+### Full suite and skip removal (2026-06-18)
+
+| Suite | Status | Result | Last Run |
+| --- | --- | --- | --- |
+| WebRenderer `npm test` | PASS | Sourcepos 17, line number 2, sanitizer 49, gutter 21, integration 13, Mermaid 5 | 2026-06-18 |
+| `./resources/scripts/build.sh --no-install` | PASS | macOS app bundle and bundled remote helpers built | 2026-06-18 |
+| `swift test` | PASS | 347 tests, 0 failures, 0 skips | 2026-06-18 |
+| Skip marker sweep | PASS | No `XCTSkip` or `Skipping test` matches under `Tests`, `src`, or `Server` | 2026-06-18 |
+
+### Raw HTML fence rendering (2026-06-18)
+
+| Test | Status | Coverage |
+| --- | --- | --- |
+| WebRenderer integration raw HTML fence tests | PASS | Pandoc `{=html}` / `=html` fences render through the sanitizer; ordinary `html` fences remain code blocks |
+| MarkdownWebView raw HTML fence test | PASS | WKWebView renders sanitized Pandoc raw HTML and strips unsafe attributes |
+
+### Remote and skip-removal fixes (2026-06-18)
+
+| Area | Status | Coverage |
+| --- | --- | --- |
+| SSHConnectionTests | PASS | Live `devtest` connect, RPC handshake, push events, reconnect, multiplexing, and manager behavior |
+| ServerTests | PASS | Daemon lifecycle, proxy reconnect, and local file-watch push events |
+| Sidebar/Gutter tests | PASS | Git-backed tests use isolated temp repos and fail explicitly on setup errors |
+| Remote helper cleanup | PASS | Proxy now signals EOF to the daemon on stdin close so helper processes exit after SSH sessions |
 
 ### Remote Restore UX — regression fixes (2026-06-09)
 
@@ -51,7 +77,7 @@
 | RemoteIntegrationTests.testFocusTriggersConnectForOnDemandWindow | PASS | 2.9s | 2026-06-07 15:31 |
 | RemoteIntegrationTests.testUnreachableHostFailsFastWithoutRetryStorm | PASS | 5.0s | 2026-06-07 16:00 |
 
-Notes: pure/offline classes run under `xcodebuild test-without-building`; the four `RemoteIntegrationTests` connect to `devtest` and must run via `swift test --filter` so the working directory is the project root (the server-binary lookup is CWD-relative). `testEnsureConnectedCoalescesConcurrentCallers` and `testUnreachableHostFailsFastWithoutRetryStorm` reach unroutable hosts on purpose.
+Notes: pure/offline classes can run without `devtest`; live remote coverage in `RemoteIntegrationTests`, `SSHConnectionTests`, and `SSHConnectionManagerTests.testEnsureConnectedCoalescesConcurrentCallers` uses `devtest` and should be guarded because it starts real SSH/helper processes. `testEnsureConnectedCoalescesConcurrentCallers` and `testUnreachableHostFailsFastWithoutRetryStorm` reach unroutable hosts on purpose.
 
 ### AppShellTests
 
@@ -105,7 +131,7 @@ Notes: pure/offline classes run under `xcodebuild test-without-building`; the fo
 | testTaskListRenders | PASS | - | 2026-01-13 12:27:30 |
 | testSourceposOnBlockquote | PASS | - | 2026-01-13 12:27:30 |
 | testSourceposOnHorizontalRule | PASS | - | 2026-01-13 12:27:30 |
-| Sanitizer tests (46 tests) | PASS | - | 2026-01-13 12:27:30 |
+| Sanitizer tests (49 tests) | PASS | - | 2026-06-18 |
 
 ### GitDiffParserTests
 

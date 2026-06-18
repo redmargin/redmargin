@@ -34,6 +34,12 @@
     --gutter-added: #4aba5a;
     --gutter-modified: #d4a24a;
     --gutter-deleted: #cf6a6a;
+    --severity-critical: #991b1b;
+    --severity-high: #c2410c;
+    --severity-medium: #ca8a04;
+    --severity-low: #15803d;
+    --severity-total: #3f3f46;
+    --severity-label: rgba(255, 255, 255, 0.82);
 }
 
 /* Print-specific media rules */
@@ -82,6 +88,15 @@
 
     body:not(.print-dark-theme) a {
         color: #2563eb !important;
+    }
+
+    body:not(.print-dark-theme) .sevbar .cell,
+    body:not(.print-dark-theme) .sevbar .n {
+        color: #ffffff !important;
+    }
+
+    body:not(.print-dark-theme) .sevbar .l {
+        color: var(--severity-label) !important;
     }
 
     /* Inline code - light theme print */
@@ -200,6 +215,12 @@
         break-inside: avoid;
     }
 
+    .raw-html-block,
+    .sevbar {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
     /* Adjust content container for print */
     #content-container {
         max-width: none;
@@ -217,7 +238,7 @@
 
     /* Remove all width constraints in print */
     p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, hr, .task-list-item,
-    table, pre, img, .mermaid-block {
+    table, pre, img, .mermaid-block, .raw-html-block, .sevbar {
         max-width: none !important;
     }
 
