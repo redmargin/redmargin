@@ -159,6 +159,46 @@ final class FileWatcherTests: XCTestCase {
         source.cancel()
     }
 
+    // MARK: - writeOnly (attribute) Regression
+
+    /// Regression for the macOS remote-helper file-descriptor exhaustion: the git
+    /// metadata / single-file watchers must be writeOnly so an access-time or
+    /// permission (`.attrib`) change does NOT fire onChange. Reading a watched file
+    /// (e.g. a watch-driven `git status` reading `.git/index`) bumps its access time;
+    /// if that re-fired the watcher it formed a runaway watch->read->watch loop that
+    /// spawned git until the helper daemon ran out of file descriptors.
+    func testWriteOnlyWatcherIgnoresAttributeOnlyChange() async throws {
+        let fired = XCTestExpectation(description: "writeOnly watcher must not fire on attrib-only change")
+        fired.isInverted = true
+
+        let watcher = FileWatcher(url: testFile, writeOnly: true, onChange: {
+            fired.fulfill()
+        })
+        XCTAssertNotNil(watcher)
+
+        // chmod is an attribute-only change (no content write).
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: testFile.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: testFile.path)
+
+        await fulfillment(of: [fired], timeout: 1.5)
+        _ = watcher
+    }
+
+    /// The writeOnly watcher must still detect real content writes.
+    func testWriteOnlyWatcherStillDetectsWrites() async throws {
+        let fired = XCTestExpectation(description: "writeOnly watcher fires on write")
+
+        let watcher = FileWatcher(url: testFile, writeOnly: true, onChange: {
+            fired.fulfill()
+        })
+        XCTAssertNotNil(watcher)
+
+        try "new content".write(to: testFile, atomically: false, encoding: .utf8)
+
+        await fulfillment(of: [fired], timeout: 3.0)
+        _ = watcher
+    }
+
     // MARK: - Idle Recovery Tests
 
     func testWatcherCallsOnDiedAfterRetryExhaustion() async throws {

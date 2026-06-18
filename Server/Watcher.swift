@@ -15,8 +15,16 @@ class DarwinWatcher: ServerWatcher {
 
     required init?(path: String, onChange: @escaping () -> Void) {
         let url = URL(fileURLWithPath: path)
+        // writeOnly excludes `.attrib`. These watchers guard git metadata
+        // (`.git/index`, `HEAD`, refs) and individual files, where only writes
+        // matter. Including `.attrib` makes a read update the file's access time
+        // and re-fire the watcher, so a watch-driven `git status`/`git diff` that
+        // merely reads `.git/index` retriggers itself — a runaway loop that spawns
+        // git until the daemon exhausts its file descriptors. Linux's inotify mask
+        // has no attrib equivalent, which is why this only bit macOS remotes.
         self.internalWatcher = FileWatcher(
             url: url,
+            writeOnly: true,
             queue: Self.queue,
             observeWakeNotifications: false,
             onChange: onChange

@@ -52,6 +52,16 @@ public enum ProcessRunner {
             process.currentDirectoryURL = workingDirectory
         }
 
+        // Run git in read-only mode for status/diff: GIT_OPTIONAL_LOCKS=0 stops git
+        // from refreshing and rewriting `.git/index` during `status`/`diff`. Without
+        // it, a watch-triggered `git status` writes the index, which re-fires the
+        // remote helper's `.git/index` watcher, which triggers another status — a
+        // runaway feedback loop that spawns git until the daemon exhausts its file
+        // descriptors and every directory read fails. Harmless for non-git commands.
+        var environment = ProcessInfo.processInfo.environment
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
+        process.environment = environment
+
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe

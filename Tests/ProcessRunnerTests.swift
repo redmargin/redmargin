@@ -79,4 +79,30 @@ class ProcessRunnerTests: XCTestCase {
 
         XCTAssertFalse(process.isRunning)
     }
+
+    /// Regression: every spawned command must carry GIT_OPTIONAL_LOCKS=0 so a
+    /// watch-driven `git status`/`git diff` cannot refresh and rewrite `.git/index`,
+    /// which would re-fire the remote helper's git watcher and spawn git in a loop
+    /// until the daemon ran out of file descriptors.
+    func testInjectsGitOptionalLocksDisabled() async throws {
+        let result = try await ProcessRunner.run(
+            executable: "bash",
+            arguments: ["-c", "printf %s \"$GIT_OPTIONAL_LOCKS\""]
+        )
+
+        XCTAssertEqual(result.stdout, "0")
+        XCTAssertEqual(result.exitCode, 0)
+    }
+
+    func testPreservesInheritedEnvironment() async throws {
+        // Injecting GIT_OPTIONAL_LOCKS must not wipe the rest of the environment
+        // (PATH etc. are needed for the /usr/bin/env executable-resolution path).
+        let result = try await ProcessRunner.run(
+            executable: "bash",
+            arguments: ["-c", "printf %s \"$PATH\""]
+        )
+
+        XCTAssertFalse(result.stdout.isEmpty, "PATH should be inherited")
+        XCTAssertEqual(result.exitCode, 0)
+    }
 }
