@@ -64,7 +64,7 @@ echo "Creating app bundle..."
 rm -rf build/Redmargin.app
 mkdir -p build/Redmargin.app/Contents/MacOS
 mkdir -p build/Redmargin.app/Contents/Resources
-cp .build/arm64-apple-macosx/release/Redmargin build/Redmargin.app/Contents/MacOS/Redmargin
+cp .build/release/Redmargin build/Redmargin.app/Contents/MacOS/Redmargin
 cp build/Info.plist build/Redmargin.app/Contents/
 cp build/PkgInfo build/Redmargin.app/Contents/
 

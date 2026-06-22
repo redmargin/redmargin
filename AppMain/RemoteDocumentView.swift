@@ -211,7 +211,7 @@ struct RemoteDocumentWindowContent: View {
         SidebarView(
             rootNodes: fileTreeProvider.rootNodes,
             rootDirectory: fileTreeProvider.rootDirectory,
-            currentFileURL: URL(fileURLWithPath: state.location.path),
+            currentFileURL: URL.redmarginRemotePath(state.location.path),
             isLoading: fileTreeProvider.isLoading,
             loadError: fileTreeProvider.loadError,
             onFileSelected: { url in
@@ -291,7 +291,7 @@ struct RemoteDocumentWindowContent: View {
         ZStack(alignment: .top) {
             MarkdownWebView(
                 markdown: state.content,
-                fileURL: URL(fileURLWithPath: state.location.path),
+                fileURL: URL.redmarginRemotePath(state.location.path),
                 onCheckboxToggle: state.handleCheckboxToggle,
                 onScrollPositionChange: { position in
                     DocumentSettingsStorage.shared.saveScrollPosition(position, for: state.location)

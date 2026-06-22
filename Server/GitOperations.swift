@@ -6,12 +6,16 @@ actor GitOperations {
     private var watchers: [String: GitWatcher] = [:]
     private var repoToToken: [String: String] = [:]  // repoRoot -> token (dedup)
 
+    private nonisolated func expandTilde(in path: String) -> String {
+        NSString(string: path).expandingTildeInPath
+    }
+
     func setEventHandler(_ handler: @escaping (Data) -> Void) {
         self.eventHandler = handler
     }
 
     func detectRepo(path: String) async -> String? {
-        let url = URL(fileURLWithPath: path)
+        let url = URL(fileURLWithPath: expandTilde(in: path))
         do {
             let root = try await GitRepoDetector.detectRepoRoot(forFile: url)
             return root?.path
@@ -21,8 +25,8 @@ actor GitOperations {
     }
 
     func diff(path: String, repoRoot: String) async -> GitDiffResponsePayload {
-        let fileURL = URL(fileURLWithPath: path)
-        let rootURL = URL(fileURLWithPath: repoRoot)
+        let fileURL = URL(fileURLWithPath: expandTilde(in: path))
+        let rootURL = URL(fileURLWithPath: expandTilde(in: repoRoot))
 
         do {
             let changes = try await GitDiffParser.parseChanges(forFile: fileURL, repoRoot: rootURL)
@@ -33,23 +37,25 @@ actor GitOperations {
     }
 
     func status(path: String) async -> GitStatusResponsePayload {
-        let url = URL(fileURLWithPath: path)
+        let url = URL(fileURLWithPath: expandTilde(in: path))
         let snapshot = await GitStatusProvider.shared.status(for: url)
         return GitStatusResponsePayload(snapshot: snapshot, error: nil)
     }
 
     func watchRepo(repoRoot: String) -> String {
+        let expandedRepoRoot = expandTilde(in: repoRoot)
+
         // Remove existing watcher for this repo to prevent accumulation
-        if let existingToken = repoToToken[repoRoot] {
+        if let existingToken = repoToToken[expandedRepoRoot] {
             watchers[existingToken]?.stop()
             watchers.removeValue(forKey: existingToken)
             print("[GitOperations] Replaced existing watcher for \(repoRoot)")
         }
 
         let token = UUID().uuidString
-        repoToToken[repoRoot] = token
+        repoToToken[expandedRepoRoot] = token
 
-        let watcher = GitWatcher(repoRoot: repoRoot) { [weak self] in
+        let watcher = GitWatcher(repoRoot: expandedRepoRoot) { [weak self] in
             Task { [weak self] in
                 guard let self = self else { return }
                 print("[GitWatcher] Git changed: \(repoRoot)")

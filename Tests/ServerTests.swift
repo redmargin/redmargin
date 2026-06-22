@@ -128,6 +128,72 @@ final class ServerTests: XCTestCase {
         XCTAssertTrue(sawFileChanged, "Daemon should push FileChanged for watched file")
     }
 
+    func testReadAndWriteExpandTildePaths() async throws {
+        let pidFile = tempDir.appendingPathComponent("daemon.pid").path
+        let socketPath = tempDir.appendingPathComponent("rpc.sock").path
+        let homeTestDirName = ".redmargin-tilde-test-\(UUID().uuidString.prefix(8))"
+        let homeTestDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(homeTestDirName)
+        try FileManager.default.createDirectory(at: homeTestDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: homeTestDir) }
+
+        let readableFile = homeTestDir.appendingPathComponent("read.md")
+        try "# Read via tilde\n".write(to: readableFile, atomically: false, encoding: .utf8)
+
+        guard let serverPath = findServerBinary() else {
+            XCTFail("Server binary not found. Build with ./resources/scripts/build.sh first.")
+            return
+        }
+
+        let (process, stderrPipe) = try startDaemon(
+            serverPath: serverPath,
+            pidFile: pidFile,
+            socketPath: socketPath
+        )
+        serverProcess = process
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        guard process.isRunning else {
+            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderr = String(data: stderrData, encoding: .utf8) ?? "no output"
+            XCTFail("Daemon process exited prematurely. stderr: \(stderr)")
+            return
+        }
+
+        let clientFD = connectToSocket(socketPath)
+        XCTAssertGreaterThanOrEqual(clientFD, 0, "Should connect to daemon socket")
+        defer { if clientFD >= 0 { _ = testSystemClose(clientFD) } }
+
+        let helloResponse = try await sendHelloAndGetResponse(clientFD: clientFD)
+        XCTAssertTrue(helloResponse.payload.accepted)
+
+        let readResponse: RPCMessage<ReadFileResponsePayload> = try await sendRequest(
+            clientFD: clientFD,
+            id: 2,
+            type: RPCMessageType.readFile.rawValue,
+            payload: ReadFilePayload(path: "~/\(homeTestDirName)/read.md")
+        )
+        XCTAssertNil(readResponse.payload.error)
+        XCTAssertEqual(readResponse.payload.content, "# Read via tilde\n")
+
+        let writeResponse: RPCMessage<WriteFileResponsePayload> = try await sendRequest(
+            clientFD: clientFD,
+            id: 3,
+            type: RPCMessageType.writeFile.rawValue,
+            payload: WriteFilePayload(
+                path: "~/\(homeTestDirName)/written.md",
+                content: "# Written via tilde\n"
+            )
+        )
+        XCTAssertNil(writeResponse.payload.error)
+
+        let writtenContent = try String(
+            contentsOf: homeTestDir.appendingPathComponent("written.md"),
+            encoding: .utf8
+        )
+        XCTAssertEqual(writtenContent, "# Written via tilde\n")
+    }
+
     /// Test that proxy connects to daemon and properly bridges
     func testProxyConnectsToDaemon() async throws {
         // Implicitly tested in RemoteIntegrationTests via SSHConnection which uses the proxy
@@ -335,6 +401,45 @@ final class ServerTests: XCTestCase {
         let response = try JSONDecoder().decode(RPCMessage<WatchFileResponsePayload>.self, from: messages[0])
 
         return response.payload.token
+    }
+
+    private func sendRequest<Payload: Codable, Response: Codable>(
+        clientFD: Int32,
+        id: Int,
+        type: String,
+        payload: Payload
+    ) async throws -> RPCMessage<Response> {
+        let requestData = try RPCStreamHandler.encode(id: id, type: type, payload: payload)
+
+        _ = requestData.withUnsafeBytes { ptr -> Int in
+            guard let baseAddress = ptr.baseAddress else { return -1 }
+            return testSocketWrite(clientFD, baseAddress, requestData.count)
+        }
+
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        let readResult = buffer.withUnsafeMutableBytes { ptr -> Int in
+            testSocketRead(clientFD, ptr.baseAddress!, 4096)
+        }
+
+        guard readResult > 0 else {
+            throw NSError(
+                domain: "ServerTests",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to read response"]
+            )
+        }
+
+        let streamHandler = RPCStreamHandler()
+        let messages = streamHandler.receive(data: Data(buffer.prefix(readResult)))
+        guard let responseData = messages.first else {
+            throw NSError(
+                domain: "ServerTests",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "No messages received"]
+            )
+        }
+
+        return try JSONDecoder().decode(RPCMessage<Response>.self, from: responseData)
     }
 
     private func pollForFileChangedEvent(

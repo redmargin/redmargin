@@ -13,6 +13,8 @@
 
 ### Fixed
 
+- Fixed remote folders opened with `~` paths on macOS remotes so sidebar expansion and Markdown file selection preserve the remote home path instead of resolving it on the local Mac.
+- Fixed app bundling on Intel Macs by copying SwiftPM's active release product path instead of a hardcoded Apple Silicon build path.
 - Fixed remote helper proxy shutdown so closed SSH sessions no longer leave orphaned proxy processes.
 - Fixed remote/server file watch tests by giving daemon-side watchers their own queues and disabling app wake observers outside the app process.
 - Fixed macOS remote connections (such as wraith) breaking after a while: the remote helper's git watcher reacted to file access-time changes, so a watch-driven git status kept retriggering itself and spawning git until the helper ran out of file descriptors and every directory listing failed. Git watchers now react only to real writes, and git status/diff run in read-only mode so they no longer disturb the index.

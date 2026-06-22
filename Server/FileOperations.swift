@@ -11,14 +11,17 @@ actor FileOperations {
 
     private var eventHandler: ((Data) -> Void)?
 
+    private nonisolated func expandTilde(in path: String) -> String {
+        NSString(string: path).expandingTildeInPath
+    }
+
     func setEventHandler(_ handler: @escaping (Data) -> Void) {
         self.eventHandler = handler
     }
 
     func listDirectory(path: String) -> ListDirectoryResponsePayload {
         do {
-            let expandedPath = NSString(string: path).expandingTildeInPath
-            let url = URL(fileURLWithPath: expandedPath)
+            let url = URL(fileURLWithPath: expandTilde(in: path))
             let contents = try FileManager.default.contentsOfDirectory(
                 at: url,
                 includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
@@ -51,8 +54,7 @@ actor FileOperations {
         ]
         let markdownExtensions: Set<String> = ["md", "markdown"]
 
-        let expandedPath = NSString(string: path).expandingTildeInPath
-        let rootURL = URL(fileURLWithPath: expandedPath)
+        let rootURL = URL(fileURLWithPath: expandTilde(in: path))
 
         guard let enumerator = FileManager.default.enumerator(
             at: rootURL,
@@ -93,7 +95,7 @@ actor FileOperations {
 
     func readFile(path: String) -> ReadFileResponsePayload {
         do {
-            let url = URL(fileURLWithPath: path)
+            let url = URL(fileURLWithPath: expandTilde(in: path))
             let content = try String(contentsOf: url, encoding: .utf8)
             return ReadFileResponsePayload(content: content, error: nil)
         } catch {
@@ -115,7 +117,7 @@ actor FileOperations {
     }
 
     func readAsset(path: String) -> ReadAssetResponsePayload {
-        let expandedPath = NSString(string: path).expandingTildeInPath
+        let expandedPath = expandTilde(in: path)
         guard let data = FileManager.default.contents(atPath: expandedPath) else {
             return ReadAssetResponsePayload(data: nil, mimeType: nil, error: "File not found")
         }
@@ -139,7 +141,8 @@ actor FileOperations {
     }
 
     func writeFile(path: String, content: String) -> WriteFileResponsePayload {
-        let url = URL(fileURLWithPath: path)
+        let expandedPath = expandTilde(in: path)
+        let url = URL(fileURLWithPath: expandedPath)
         let directory = url.deletingLastPathComponent()
 
         // Write to temp file in SAME directory (required for atomic rename)
@@ -155,7 +158,7 @@ actor FileOperations {
 
         // Use POSIX rename() which atomically overwrites destination
         // This is the ONLY safe way to do atomic file replacement
-        let result = rename(tempPath, path)
+        let result = rename(tempPath, expandedPath)
         if result != 0 {
             // Clean up temp file on failure
             unlink(tempPath)
@@ -171,9 +174,11 @@ actor FileOperations {
     private var pathToFileToken: [String: String] = [:]  // path -> token (dedup)
 
     func watchFile(path: String) -> String {
+        let expandedPath = expandTilde(in: path)
+
         // Remove existing watcher for this path to prevent accumulation
         // across reconnections (old unwatch RPCs may have failed).
-        if let existingToken = pathToFileToken[path] {
+        if let existingToken = pathToFileToken[expandedPath] {
             watchers[existingToken]?.stop()
             watchers.removeValue(forKey: existingToken)
             fileWatchPaths.removeValue(forKey: existingToken)
@@ -181,10 +186,10 @@ actor FileOperations {
         }
 
         let token = UUID().uuidString
-        pathToFileToken[path] = token
-        fileWatchPaths[token] = path
+        pathToFileToken[expandedPath] = token
+        fileWatchPaths[token] = expandedPath
 
-        if let watcher = PlatformWatcher(path: path, onChange: { [weak self] in
+        if let watcher = PlatformWatcher(path: expandedPath, onChange: { [weak self] in
             Task { [weak self] in
                 guard let self = self else { return }
                 print("File changed: \(path)")
@@ -225,7 +230,7 @@ actor FileOperations {
     private var pathToDirToken: [String: String] = [:]  // path -> token (dedup)
 
     func watchDirectory(path: String) -> String {
-        let expandedPath = NSString(string: path).expandingTildeInPath
+        let expandedPath = expandTilde(in: path)
 
         // Remove existing watcher for this path to prevent accumulation
         if let existingToken = pathToDirToken[expandedPath] {

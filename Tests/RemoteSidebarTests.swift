@@ -65,6 +65,44 @@ final class RemoteSidebarTests: XCTestCase {
         XCTAssertEqual(listedPaths, ["/repo/emails"])
     }
 
+    func testRemoteFileTreeProviderPreservesTildeRootPaths() async throws {
+        let remoteProvider = TestRemoteTreeFileProvider(
+            repoRoot: nil,
+            directoryEntries: [
+                "~/engagement": [
+                    DirectoryEntry(name: "docs", isDirectory: true),
+                    DirectoryEntry(name: "README.md", isDirectory: false)
+                ],
+                "~/engagement/docs": [
+                    DirectoryEntry(name: "guide.md", isDirectory: false)
+                ]
+            ]
+        )
+
+        let provider = await RemoteFileTreeProvider(
+            currentFilePath: "~/engagement",
+            fileProvider: remoteProvider,
+            isDirectory: true,
+            expandedFoldersLoader: { _ in Set<String>() }
+        )
+        try await waitForRemoteProvider(provider)
+
+        let rootNodes = await provider.rootNodes
+        let docsNode = try XCTUnwrap(rootNodes.first { $0.name == "docs" })
+        let readmeNode = try XCTUnwrap(rootNodes.first { $0.name == "README.md" })
+        XCTAssertEqual(readmeNode.url.path, "~/engagement/README.md")
+        XCTAssertEqual(docsNode.url.path, "~/engagement/docs")
+
+        await MainActor.run {
+            docsNode.isExpanded = true
+        }
+
+        try await waitUntil("tilde child path listed", timeout: 2) {
+            let listedPaths = await remoteProvider.recordedListPaths()
+            return listedPaths.contains("~/engagement/docs")
+        }
+    }
+
     func testRemoteFileTreeProviderRestoresNestedExpandedFoldersAfterInitialLoad() async throws {
         let remoteProvider = TestRemoteTreeFileProvider(
             repoRoot: "/repo",

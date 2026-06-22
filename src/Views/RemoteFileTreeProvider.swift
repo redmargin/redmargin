@@ -437,7 +437,7 @@ public class RemoteFileTreeProvider: ObservableObject {
         for entry in sorted {
             if !showHiddenFiles && entry.name.hasPrefix(".") { continue }
             let fullPath = (parentPath as NSString).appendingPathComponent(entry.name)
-            let url = URL(fileURLWithPath: fullPath)
+            let url = URL.redmarginRemotePath(fullPath)
 
             if entry.isDirectory {
                 if Self.ignoredDirectories.contains(entry.name) { continue }
