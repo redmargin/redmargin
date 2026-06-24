@@ -117,6 +117,7 @@ public struct ReadFileResponsePayload: Codable {
 public enum FileErrorCode: String {
     case fileNotFound = "FILE_NOT_FOUND"
     case permissionDenied = "PERMISSION_DENIED"
+    case connectionFailed = "CONNECTION_FAILED"
 }
 
 public struct WriteFilePayload: Codable {

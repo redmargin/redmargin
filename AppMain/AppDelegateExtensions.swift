@@ -375,6 +375,25 @@ extension AppDelegate {
         }
     }
 
+    /// Single-quotes a remote path for safe use in a shell command while leaving
+    /// a leading `~` or `~user` segment unquoted so the remote shell still expands
+    /// it to the home directory. Single quotes would otherwise suppress tilde
+    /// expansion, making `test -d '~/foo'` look for a literal `~/foo` directory.
+    static func shellArgPreservingTilde(_ path: String) -> String {
+        func singleQuoted(_ s: String) -> String {
+            "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        }
+        guard path.hasPrefix("~") else { return singleQuoted(path) }
+        guard let slash = path.firstIndex(of: "/") else {
+            // Bare `~` or `~user` with no path component: leave as-is to expand.
+            return path
+        }
+        // Keep the `~`/`~user` prefix and the separating slash unquoted; quote the rest.
+        let prefix = String(path[...slash])
+        let rest = String(path[path.index(after: slash)...])
+        return rest.isEmpty ? prefix : prefix + singleQuoted(rest)
+    }
+
     @discardableResult
     private func performRecentRemoteFolderOpen(
         _ location: RemoteLocation,
@@ -387,13 +406,22 @@ extension AppDelegate {
                 "-o", "BatchMode=yes",
                 "-o", "ConnectTimeout=5",
                 location.host,
-                "test -d '\(location.path)'"
+                "test -d \(Self.shellArgPreservingTilde(location.path))"
             ]
             let checkResult = try await ProcessRunner.run(
                 executable: "/usr/bin/ssh",
                 arguments: sshArgs,
                 timeout: 10
             )
+            // ssh exits 255 on its own connection/auth failures; only the remote
+            // command's own non-zero exit means the folder is genuinely absent.
+            if checkResult.exitCode == 255 {
+                let reason = checkResult.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                throw RemoteFileError(
+                    message: reason.isEmpty ? "Could not connect to \(location.host)" : reason,
+                    code: .connectionFailed
+                )
+            }
             if checkResult.exitCode != 0 {
                 throw RemoteFileError(message: "Folder does not exist", code: .fileNotFound)
             }
