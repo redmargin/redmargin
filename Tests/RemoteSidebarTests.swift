@@ -467,6 +467,41 @@ final class RemoteSidebarTests: XCTestCase {
         XCTAssertFalse(loadingAfterRefresh, "isLoading should be false after refresh completes")
     }
 
+    func testRemoteSidebarRefreshSelfHealsAfterTransientFailure() async throws {
+        let remoteProvider = RecoveringRemoteTreeFileProvider(
+            repoRoot: "/repo",
+            initialEntries: [DirectoryEntry(name: "old.md", isDirectory: false)]
+        )
+
+        let provider = await RemoteFileTreeProvider(
+            currentFilePath: "/repo/old.md",
+            fileProvider: remoteProvider,
+            expandedFoldersLoader: { _ in Set<String>() }
+        )
+        try await waitForRemoteProvider(provider)
+
+        // The remote now has a new file, but the next listing (the refresh)
+        // fails as if the SSH channel hiccuped mid-operation.
+        await remoteProvider.setEntries([DirectoryEntry(name: "new.md", isDirectory: false)])
+        await remoteProvider.setFailNextList(true)
+
+        await provider.refresh()
+
+        // The refresh fails, but the sidebar must self-heal via a reconnecting
+        // reload instead of dead-ending at a manual Retry.
+        try await waitUntil("sidebar self-heals to the updated tree", timeout: 8) {
+            let isLoading = await provider.isLoading
+            let names = await provider.rootNodes.map { $0.name }
+            let loadError = await provider.loadError
+            return !isLoading && loadError == nil && names.contains("new.md")
+        }
+
+        let names = await provider.rootNodes.map { $0.name }
+        XCTAssertTrue(names.contains("new.md"), "Self-heal should reload the updated tree, got: \(names)")
+        let loadError = await provider.loadError
+        XCTAssertNil(loadError, "Self-heal should leave no error state behind")
+    }
+
     private func waitForRemoteProvider(_ provider: RemoteFileTreeProvider, timeout: TimeInterval = 5) async throws {
         try await waitUntil("remote provider initial load", timeout: timeout) {
             let isLoading = await provider.isLoading
@@ -548,6 +583,42 @@ actor TestRemoteTreeFileProvider: RemoteFileTreeProviding {
     func updateEntries(_ entries: [String: [DirectoryEntry]]) {
         directoryEntries = entries
     }
+}
+
+/// Lists successfully except when armed to fail the next listing once, modelling
+/// a transient SSH-channel hiccup during a sidebar refresh.
+actor RecoveringRemoteTreeFileProvider: RemoteFileTreeProviding {
+    private let repoRoot: String?
+    private var entries: [DirectoryEntry]
+    private var failNextList = false
+
+    init(repoRoot: String?, initialEntries: [DirectoryEntry]) {
+        self.repoRoot = repoRoot
+        self.entries = initialEntries
+    }
+
+    func setEntries(_ value: [DirectoryEntry]) { entries = value }
+    func setFailNextList(_ value: Bool) { failNextList = value }
+
+    func detectGitRepo(for path: String) async throws -> String? { repoRoot }
+
+    func gitStatus(for path: String) async throws -> GitStatusSnapshot { .empty }
+
+    func listDirectory(at path: String) async throws -> [DirectoryEntry] {
+        if failNextList {
+            failNextList = false
+            throw RPCError.serverError("transient channel drop")
+        }
+        return entries
+    }
+
+    func watchDirectory(at path: String, onChange: @escaping ([String]) -> Void) async -> WatchToken { UUID() }
+
+    func unwatchDirectory(_ token: WatchToken) async {}
+
+    func watchGitRepo(at repoRoot: String, onChange: @escaping () -> Void) async -> WatchToken { UUID() }
+
+    func unwatch(_ token: WatchToken) async {}
 }
 
 actor FailingRemoteTreeFileProvider: RemoteFileTreeProviding {

@@ -48,7 +48,8 @@ public enum GitDiffParser {
         let result = try await ProcessRunner.run(
             executable: "git",
             arguments: ["ls-files", "--error-unmatch", "--", relativePath],
-            workingDirectory: repoRoot
+            workingDirectory: repoRoot,
+            timeout: 10
         )
 
         // Exit code 0 = tracked, non-zero = untracked
@@ -60,7 +61,8 @@ public enum GitDiffParser {
         let result = try await ProcessRunner.run(
             executable: "git",
             arguments: ["check-ignore", "--quiet", "--", relativePath],
-            workingDirectory: repoRoot
+            workingDirectory: repoRoot,
+            timeout: 10
         )
 
         // Exit code 0 = ignored, 1 = not ignored, other codes are treated as not ignored.
@@ -72,7 +74,8 @@ public enum GitDiffParser {
         let result = try await ProcessRunner.run(
             executable: "git",
             arguments: ["diff", "--unified=0", "HEAD", "--", relativePath],
-            workingDirectory: repoRoot
+            workingDirectory: repoRoot,
+            timeout: 10
         )
 
         // Check for errors

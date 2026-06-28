@@ -67,23 +67,60 @@ public enum ProcessRunner {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
+        // Guarantee the pipe write ends are closed on EVERY exit path (success,
+        // throw, timeout, cancellation, launch failure). The read ends are closed
+        // by their own reader threads after EOF (below) so we never yank an FD out
+        // from under a blocked read. Relying on ARC dealloc leaked descriptors: an
+        // abandoned continuation or retained closure kept the Pipe alive, and over
+        // hours of git polling the daemon hit its FD limit (EMFILE) and every
+        // directory read began failing. Closing the write ends here also unblocks
+        // any reader still waiting for EOF on the launch-failure path.
+        defer {
+            try? stdoutPipe.fileHandleForWriting.close()
+            try? stderrPipe.fileHandleForWriting.close()
+        }
+
         return try await withThrowingTaskGroup(of: ProcessResult.self) { group in
             group.addTask {
                 return try await withCheckedThrowingContinuation { continuation in
+                    // Drain both pipes concurrently on background threads, started
+                    // BEFORE the child can fill them. The previous code read the
+                    // pipes synchronously inside terminationHandler, which only runs
+                    // AFTER the child exits — so a child whose output exceeded the
+                    // 64KB pipe buffer (e.g. a large `git status`) blocked forever
+                    // writing, never terminated, never got drained, and leaked its
+                    // pipe FDs when the timeout killed it. Draining concurrently
+                    // removes the deadlock entirely.
+                    let readGroup = DispatchGroup()
+                    let outBox = DataBox()
+                    let errBox = DataBox()
+
+                    readGroup.enter()
+                    DispatchQueue.global().async {
+                        let handle = stdoutPipe.fileHandleForReading
+                        outBox.data = handle.readDataToEndOfFile()
+                        try? handle.close()   // release the read FD on the thread that owns it
+                        readGroup.leave()
+                    }
+                    readGroup.enter()
+                    DispatchQueue.global().async {
+                        let handle = stderrPipe.fileHandleForReading
+                        errBox.data = handle.readDataToEndOfFile()
+                        try? handle.close()
+                        readGroup.leave()
+                    }
+
                     process.terminationHandler = { terminatedProcess in
-                        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-
-                        let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
-                        let stderr = String(data: stderrData, encoding: .utf8) ?? ""
-
-                        let result = ProcessResult(
-                            stdout: stdout,
-                            stderr: stderr,
-                            exitCode: terminatedProcess.terminationStatus
-                        )
-
-                        continuation.resume(returning: result)
+                        // Reads finish once the child exits and its write ends close
+                        // (EOF). Wait for both before resuming so output isn't lost.
+                        readGroup.notify(queue: DispatchQueue.global()) {
+                            let result = ProcessResult(
+                                stdout: String(data: outBox.data, encoding: .utf8) ?? "",
+                                stderr: String(data: errBox.data, encoding: .utf8) ?? "",
+                                exitCode: terminatedProcess.terminationStatus
+                            )
+                            continuation.resume(returning: result)
+                        }
                     }
 
                     do {
@@ -107,6 +144,12 @@ public enum ProcessRunner {
             return result
         }
     }
+}
+
+/// Mutable box so the background reader tasks can hand their data back to the
+/// termination handler without capturing an `inout`.
+private final class DataBox: @unchecked Sendable {
+    var data = Data()
 }
 
 /// Errors that can occur when running a process

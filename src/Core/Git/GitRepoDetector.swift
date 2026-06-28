@@ -16,7 +16,8 @@ public enum GitRepoDetector {
         do {
             result = try await ProcessRunner.run(
                 executable: "git",
-                arguments: ["-C", directory.path, "rev-parse", "--show-toplevel"]
+                arguments: ["-C", directory.path, "rev-parse", "--show-toplevel"],
+                timeout: 10
             )
         } catch let error as ProcessRunnerError {
             // Check if git is not found

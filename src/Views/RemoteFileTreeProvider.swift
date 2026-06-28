@@ -38,6 +38,9 @@ public class RemoteFileTreeProvider: ObservableObject {
     private var restoreExpandedFoldersTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private var gitStatusTask: Task<Void, Never>?
+    /// Self-heal for a refresh that hit a transient SSH hiccup. Instead of
+    /// dead-ending at a manual Retry, the sidebar reconnects and reloads itself.
+    private var refreshRecoveryTask: Task<Void, Never>?
     private var refreshGeneration = 0
     private var loadGeneration = 0
     private var gitStatuses: [String: GitFileStatus] = [:]
@@ -176,6 +179,7 @@ public class RemoteFileTreeProvider: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         refreshTask?.cancel()
+        refreshRecoveryTask?.cancel()
         gitStatusTask?.cancel()
         restoreExpandedFoldersTask?.cancel()
     }
@@ -185,6 +189,10 @@ public class RemoteFileTreeProvider: ObservableObject {
         refreshTask?.cancel()
         refreshTask = nil
         gitStatusTask?.cancel()
+        // A full load is the strongest recovery and supersedes any pending one.
+        // Drop the reference (without cancelling, in case this call is itself
+        // driven by that recovery task) so stale recoveries don't pile up.
+        refreshRecoveryTask = nil
         await unwatchGitStatus()
         clearGitStatus(in: rootNodes)
         loadGeneration += 1
@@ -309,6 +317,9 @@ public class RemoteFileTreeProvider: ObservableObject {
         guard let root = rootDirectory else { return }
         print("[RemoteFileTreeProvider] refresh() for \(root)")
 
+        // A fresh refresh supersedes any in-flight self-heal from a prior failure.
+        refreshRecoveryTask?.cancel()
+        refreshRecoveryTask = nil
         refreshTask?.cancel()
         refreshGeneration += 1
         let generation = refreshGeneration
@@ -341,12 +352,39 @@ public class RemoteFileTreeProvider: ObservableObject {
             if let nodes = result {
                 self.rootNodes = nodes
                 self.loadError = nil
+                self.isLoading = false
                 self.refreshGitStatus()
             } else {
-                print("[RemoteFileTreeProvider] refresh timed out, preserving existing tree")
-                self.loadError = "Could not refresh the remote file list."
+                // The list op exceeded the refresh guard (its own reconnect chain
+                // outlasts this guard). Don't dead-end at a manual Retry — recover
+                // through the full reconnecting load path. isLoading is managed by
+                // scheduleRefreshRecovery so a populated tree stays visible.
+                print("[RemoteFileTreeProvider] refresh did not complete, self-healing via reconnecting reload")
+                self.scheduleRefreshRecovery()
             }
-            self.isLoading = false
+        }
+    }
+
+    /// Recovers a failed/timed-out refresh by reconnecting and reloading from
+    /// scratch after a short delay. The full load path (`loadFiles`) re-pings and
+    /// force-reconnects the SSH channel, which the refresh path's cancelled probe
+    /// cannot. Keeps any existing tree visible; the reconnect notification and the
+    /// manual Retry button remain as additional fallbacks.
+    private func scheduleRefreshRecovery() {
+        if rootNodes.isEmpty {
+            // Nothing to keep showing: spin while we reconnect rather than
+            // flashing a misleading "No Markdown files" empty state.
+            isLoading = true
+            loadError = nil
+        } else {
+            isLoading = false
+        }
+
+        refreshRecoveryTask?.cancel()
+        refreshRecoveryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self, !Task.isCancelled else { return }
+            await self.loadFiles()
         }
     }
 

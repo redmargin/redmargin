@@ -59,7 +59,10 @@ public struct SidebarView: View {
                 Divider()
             }
 
-            if isLoading {
+            if isLoading && rootNodes.isEmpty {
+                // Only blank to a spinner during the initial load. A background
+                // refresh or reconnecting recovery keeps the existing tree
+                // visible so the sidebar never flashes empty mid-recovery.
                 Spacer()
                 HStack {
                     Spacer()
