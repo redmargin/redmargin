@@ -50,6 +50,8 @@ class RPCHandler {
             return try await handleGitStatus(data)
         case .watchGitRepo:
             return try await handleWatchGitRepo(data)
+        case .unwatchGitRepo:
+            return try await handleUnwatchGitRepo(data)
         case .watchDirectory:
             return try await handleWatchDirectory(data)
         case .unwatchDirectory:
@@ -202,5 +204,25 @@ class RPCHandler {
             type: RPCMessageType.watchGitRepoResponse.rawValue,
             payload: WatchGitRepoResponsePayload(token: token)
         )
+    }
+
+    private func handleUnwatchGitRepo(_ data: Data) async throws -> Data {
+        let msg = try JSONDecoder().decode(RPCMessage<UnwatchGitRepoPayload>.self, from: data)
+        let success = await gitOperations.unwatchRepo(token: msg.payload.token)
+        return try RPCStreamHandler.encode(
+            id: msg.id,
+            type: RPCMessageType.unwatchGitRepoResponse.rawValue,
+            payload: UnwatchGitRepoResponsePayload(success: success)
+        )
+    }
+
+    /// Releases every watcher held by this daemon. Called when a client
+    /// connection drops: watchers live on shared actors for the daemon's whole
+    /// life, so without this their inotify FDs accumulate across reconnects until
+    /// the descriptor limit is hit. A fresh connection re-establishes the watches
+    /// it needs.
+    func stopAllWatchers() async {
+        await fileOperations.stopAllWatchers()
+        await gitOperations.stopAllWatchers()
     }
 }

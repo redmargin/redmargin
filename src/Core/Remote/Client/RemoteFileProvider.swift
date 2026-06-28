@@ -20,6 +20,11 @@ public actor RemoteFileProvider: FileProvider {
     private let connection: SSHConnection
     private var watchers: [WatchToken: WatchCallback] = [:]
     private var remoteTokens: [WatchToken: String] = [:] // Local Token -> Remote Token String
+    /// Git-repo watch tokens are tracked separately so unwatch routes to the
+    /// git unwatch RPC. They previously shared `remoteTokens`, so unwatching a
+    /// git repo sent UnwatchFile, which the server resolved against its file
+    /// watchers and never matched — leaking the git watcher's inotify FDs.
+    private var gitRepoRemoteTokens: [WatchToken: String] = [:]
     private var gitRepoCache: [String: String?] = [:]
 
     /// Access to connection state changes for UI updates
@@ -153,23 +158,31 @@ public actor RemoteFileProvider: FileProvider {
                 )
                 let response = try JSONDecoder().decode(RPCMessage<WatchFileResponsePayload>.self, from: data)
                 remoteTokens[token] = response.payload.token
-                print("[RemoteFileProvider] Watching \(path) (attempt \(attempt))")
+                RemoteLog.info("[RemoteFileProvider] Watching \(path) (attempt \(attempt))")
                 return
             } catch {
-                print("[RemoteFileProvider] watchFile \(path) failed (attempt \(attempt)/\(attempts)): \(error)")
+                RemoteLog.error("[RemoteFileProvider] watchFile \(path) failed (attempt \(attempt)/\(attempts)): \(error)")
                 if attempt < attempts {
                     try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_000_000_000)
                 }
             }
         }
-        print("[RemoteFileProvider] watchFile \(path) gave up after \(attempts) attempts")
+        RemoteLog.error("[RemoteFileProvider] watchFile \(path) gave up after \(attempts) attempts")
     }
 
     public func unwatch(_ token: WatchToken) async {
-        let remoteToken = remoteTokens.removeValue(forKey: token)
         watchers.removeValue(forKey: token)
 
-        if let remoteToken = remoteToken {
+        // Git-repo watches must be released via the git unwatch RPC; file watches
+        // via the file unwatch RPC. Routing to the wrong one leaves the server's
+        // watcher (and its inotify FDs) alive.
+        if let gitToken = gitRepoRemoteTokens.removeValue(forKey: token) {
+            let payload = UnwatchGitRepoPayload(token: gitToken)
+            _ = try? await connection.send(type: RPCMessageType.unwatchGitRepo.rawValue, payload: payload)
+            return
+        }
+
+        if let remoteToken = remoteTokens.removeValue(forKey: token) {
             let payload = UnwatchFilePayload(token: remoteToken)
             _ = try? await connection.send(type: RPCMessageType.unwatchFile.rawValue, payload: payload)
         }
@@ -285,7 +298,7 @@ public actor RemoteFileProvider: FileProvider {
                 RPCMessage<WatchDirectoryResponsePayload>.self, from: data)
             directoryRemoteTokens[token] = response.payload.token
         } catch {
-            print("[RemoteFileProvider] Failed to start remote directory watch for \(path): \(error)")
+            RemoteLog.error("[RemoteFileProvider] Failed to start remote directory watch for \(path): \(error)")
         }
 
         return token
@@ -309,43 +322,43 @@ public actor RemoteFileProvider: FileProvider {
         do {
             let data = try await connection.send(type: RPCMessageType.watchGitRepo.rawValue, payload: payload)
             let response = try JSONDecoder().decode(RPCMessage<WatchGitRepoResponsePayload>.self, from: data)
-            remoteTokens[token] = response.payload.token
+            gitRepoRemoteTokens[token] = response.payload.token
         } catch {
-            print("[RemoteFileProvider] Failed to start remote git watch for \(repoRoot): \(error)")
+            RemoteLog.error("[RemoteFileProvider] Failed to start remote git watch for \(repoRoot): \(error)")
         }
 
         return token
     }
 
     private func handlePushEvent(_ data: Data) {
-        print("[RemoteFileProvider] handlePushEvent called, data size: \(data.count)")
+        RemoteLog.info("[RemoteFileProvider] handlePushEvent called, data size: \(data.count)")
         if let msg = try? JSONDecoder().decode(RPCMessage<FileChangedPayload>.self, from: data),
            msg.type == RPCMessageType.fileChanged.rawValue {
-            print("[RemoteFileProvider] File changed event: \(msg.payload.path)")
+            RemoteLog.info("[RemoteFileProvider] File changed event: \(msg.payload.path)")
             let callbacks = watchers.values.filter { $0.path == msg.payload.path }
-            print("[RemoteFileProvider] Found \(callbacks.count) watchers for path")
+            RemoteLog.info("[RemoteFileProvider] Found \(callbacks.count) watchers for path")
             for item in callbacks {
                 item.callback()
             }
         } else if let msg = try? JSONDecoder().decode(RPCMessage<DirectoryChangedPayload>.self, from: data),
                   msg.type == RPCMessageType.directoryChanged.rawValue {
             let fileCount = msg.payload.files.count
-            print("[RemoteFileProvider] Directory changed: \(msg.payload.path) (\(fileCount) files)")
+            RemoteLog.info("[RemoteFileProvider] Directory changed: \(msg.payload.path) (\(fileCount) files)")
             let callbacks = directoryWatchers.values.filter { $0.path == msg.payload.path }
             for item in callbacks {
                 item.callback(msg.payload.files)
             }
         } else if let msg = try? JSONDecoder().decode(RPCMessage<GitChangedPayload>.self, from: data),
                   msg.type == RPCMessageType.gitChanged.rawValue {
-            print("[RemoteFileProvider] Git changed event: \(msg.payload.repoRoot)")
+            RemoteLog.info("[RemoteFileProvider] Git changed event: \(msg.payload.repoRoot)")
             let callbacks = watchers.values.filter { $0.path == msg.payload.repoRoot }
-            print("[RemoteFileProvider] Found \(callbacks.count) watchers for repo")
+            RemoteLog.info("[RemoteFileProvider] Found \(callbacks.count) watchers for repo")
             for item in callbacks {
                 item.callback()
             }
         } else {
             if let text = String(data: data, encoding: .utf8) {
-                print("[RemoteFileProvider] Unknown push event: \(text.prefix(200))")
+                RemoteLog.info("[RemoteFileProvider] Unknown push event: \(text.prefix(200))")
             }
         }
     }

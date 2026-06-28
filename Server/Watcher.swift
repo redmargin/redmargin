@@ -126,6 +126,13 @@ class LinuxWatcher: ServerWatcher {
         source = nil
         inotify = nil
     }
+
+    deinit {
+        // Safety net: if this watcher is dropped without an explicit stop()
+        // (e.g. replaced by reference reassignment), cancel the dispatch source
+        // and release the inotify FD instead of orphaning them.
+        stop()
+    }
 }
 #endif
 
@@ -222,6 +229,11 @@ class LinuxDirectoryWatcher: ServerDirectoryWatcher {
         source = nil
         inotify = nil
     }
+
+    deinit {
+        // Safety net for a watcher dropped without an explicit stop().
+        stop()
+    }
 }
 #endif
 
@@ -269,6 +281,11 @@ class GitWatcher {
             return
         }
 
+        // Stop the previous ref watcher before replacing it. Branch switches call
+        // this repeatedly; without the explicit stop() the old watcher's inotify
+        // FD lingered until ARC happened to release it.
+        refWatcher?.stop()
+
         if headContent.hasPrefix("ref: ") {
             let refPath = String(headContent.dropFirst(5))
             let branchRefURL = repoRoot.appendingPathComponent(".git").appendingPathComponent(refPath)
@@ -285,5 +302,10 @@ class GitWatcher {
         indexWatcher?.stop()
         headWatcher?.stop()
         refWatcher?.stop()
+    }
+
+    deinit {
+        // Safety net: release child watchers if dropped without stop().
+        stop()
     }
 }

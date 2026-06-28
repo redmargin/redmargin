@@ -276,4 +276,23 @@ actor FileOperations {
         }
         return false
     }
+
+    /// Stops and releases every file and directory watcher (freeing their
+    /// inotify FDs). Called on client disconnect so watchers don't accumulate
+    /// across reconnects until the daemon hits its descriptor limit.
+    func stopAllWatchers() {
+        for watcher in watchers.values {
+            watcher.stop()
+        }
+        watchers.removeAll()
+        fileWatchPaths.removeAll()
+        pathToFileToken.removeAll()
+
+        for watcher in directoryWatchers.values {
+            watcher.stop()
+        }
+        directoryWatchers.removeAll()
+        dirWatchPaths.removeAll()
+        pathToDirToken.removeAll()
+    }
 }

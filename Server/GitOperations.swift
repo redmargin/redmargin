@@ -83,4 +83,14 @@ actor GitOperations {
         }
         return false
     }
+
+    /// Stops and releases every git watcher (freeing their inotify FDs). Called
+    /// on client disconnect so watchers don't accumulate across reconnects.
+    func stopAllWatchers() {
+        for watcher in watchers.values {
+            watcher.stop()
+        }
+        watchers.removeAll()
+        repoToToken.removeAll()
+    }
 }

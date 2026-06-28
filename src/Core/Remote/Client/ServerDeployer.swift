@@ -65,14 +65,14 @@ public actor ServerDeployer {
         if binaryExists && remoteHash != "NOHASH" {
             let localHash = md5Hash(of: localBinaryURL)
             if localHash == remoteHash {
-                print("[ServerDeployer] Server already deployed and up-to-date at \(remoteBinaryPath)")
+                RemoteLog.info("[ServerDeployer] Server already deployed and up-to-date at \(remoteBinaryPath)")
                 onProgress?("Connecting to")
                 return remoteBinaryPath
             }
-            print("[ServerDeployer] Hash mismatch: local=\(localHash ?? "nil") remote=\(remoteHash)")
+            RemoteLog.info("[ServerDeployer] Hash mismatch: local=\(localHash ?? "nil") remote=\(remoteHash)")
         }
 
-        print("[ServerDeployer] Deploying \(localBinaryURL.lastPathComponent) to \(host)...")
+        RemoteLog.info("[ServerDeployer] Deploying \(localBinaryURL.lastPathComponent) to \(host)...")
 
         // 4. Kill old daemon FIRST so we can overwrite the binary
         onProgress?("Stopping old server on")
@@ -133,7 +133,7 @@ public actor ServerDeployer {
             arguments: sshOptions + [host, killCmd],
             timeout: sshTimeout
         )
-        print("[ServerDeployer] Killed old server processes on \(host)")
+        RemoteLog.info("[ServerDeployer] Killed old server processes on \(host)")
     }
 
     private func findLocalBinary(osName: String, arch: String) -> URL? {
@@ -188,14 +188,14 @@ public actor ServerDeployer {
             ! -name 'redmargin-server-\(version)' -type f -delete 2>/dev/null || true
             """
         _ = try? await ProcessRunner.run(executable: "ssh", arguments: [host, cleanupCmd])
-        print("[ServerDeployer] Cleaned up old versions")
+        RemoteLog.info("[ServerDeployer] Cleaned up old versions")
     }
 
     /// Check if local binary is newer than deployed binary by comparing MD5 hashes
     private func binaryNeedsUpdate(host: String, remotePath: String, localURL: URL) async -> Bool {
         // Get local file hash
         guard let localHash = md5Hash(of: localURL) else {
-            print("[ServerDeployer] Could not hash local binary, will redeploy")
+            RemoteLog.info("[ServerDeployer] Could not hash local binary, will redeploy")
             return true
         }
 
@@ -206,14 +206,14 @@ public actor ServerDeployer {
             arguments: sshOptions + [host, hashCmd],
             timeout: sshTimeout
         ), result.exitCode == 0 else {
-            print("[ServerDeployer] Could not get remote hash, will redeploy")
+            RemoteLog.info("[ServerDeployer] Could not get remote hash, will redeploy")
             return true
         }
 
         let remoteHash = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         let needsUpdate = localHash != remoteHash
         if needsUpdate {
-            print("[ServerDeployer] Hash mismatch: local=\(localHash) remote=\(remoteHash)")
+            RemoteLog.info("[ServerDeployer] Hash mismatch: local=\(localHash) remote=\(remoteHash)")
         }
         return needsUpdate
     }
@@ -259,7 +259,7 @@ public actor ServerDeployer {
             arguments: sshOptions + [host, removeCmd],
             timeout: sshTimeout
         )
-        print("[ServerDeployer] Killed processes and removed server on \(host)")
+        RemoteLog.info("[ServerDeployer] Killed processes and removed server on \(host)")
     }
 }
 

@@ -502,6 +502,29 @@ final class RemoteSidebarTests: XCTestCase {
         XCTAssertNil(loadError, "Self-heal should leave no error state behind")
     }
 
+    func testRemoteSidebarShowsConnectingNotEmptyWhileAwaitingOnDemandConnect() async throws {
+        let remoteProvider = TestRemoteTreeFileProvider(
+            repoRoot: "/repo",
+            directoryEntries: ["/repo": [DirectoryEntry(name: "README.md", isDirectory: false)]]
+        )
+
+        // On-demand windows defer loading until the connection is established.
+        // Until then the sidebar must report loading (spinner), never the
+        // misleading empty "No Markdown files" state.
+        let provider = await RemoteFileTreeProvider(
+            currentFilePath: "/repo/README.md",
+            fileProvider: remoteProvider,
+            reconnectHost: "examplehost",
+            connectsOnDemand: true,
+            expandedFoldersLoader: { _ in Set<String>() }
+        )
+
+        let isLoading = await provider.isLoading
+        let rootNodes = await provider.rootNodes
+        XCTAssertTrue(isLoading, "On-demand provider should report loading while awaiting connect")
+        XCTAssertTrue(rootNodes.isEmpty, "No nodes should load before the connection is established")
+    }
+
     private func waitForRemoteProvider(_ provider: RemoteFileTreeProvider, timeout: TimeInterval = 5) async throws {
         try await waitUntil("remote provider initial load", timeout: timeout) {
             let isLoading = await provider.isLoading

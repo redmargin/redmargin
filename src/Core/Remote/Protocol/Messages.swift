@@ -24,6 +24,8 @@ public enum RPCMessageType: String, Codable {
     case gitStatusResponse = "GitStatusResponse"
     case watchGitRepo = "WatchGitRepo"
     case watchGitRepoResponse = "WatchGitRepoResponse"
+    case unwatchGitRepo = "UnwatchGitRepo"
+    case unwatchGitRepoResponse = "UnwatchGitRepoResponse"
     case gitChanged = "GitChanged"
     case findMarkdownFiles = "FindMarkdownFiles"
     case findMarkdownFilesResponse = "FindMarkdownFilesResponse"
@@ -273,6 +275,22 @@ public struct WatchGitRepoResponsePayload: Codable {
 
     public init(token: String) {
         self.token = token
+    }
+}
+
+public struct UnwatchGitRepoPayload: Codable {
+    public let token: String
+
+    public init(token: String) {
+        self.token = token
+    }
+}
+
+public struct UnwatchGitRepoResponsePayload: Codable {
+    public let success: Bool
+
+    public init(success: Bool) {
+        self.success = success
     }
 }
 

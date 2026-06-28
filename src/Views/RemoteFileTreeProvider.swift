@@ -99,8 +99,14 @@ public class RemoteFileTreeProvider: ObservableObject {
         self.expandedFoldersLoader = expandedFoldersLoader
         self.reconnectHost = reconnectHost
         if connectsOnDemand {
+            // The tree can't load until the SSH connection is established (which
+            // may include a one-time helper redeploy). Show the connecting spinner
+            // until the connect notification fires loadFiles, rather than falling
+            // through to a misleading "No Markdown files" empty state.
+            isLoading = true
             observeConnectNotification()
         } else {
+            isLoading = true
             Task {
                 await loadFiles()
             }
@@ -126,8 +132,14 @@ public class RemoteFileTreeProvider: ObservableObject {
         self.expandedFoldersLoader = expandedFoldersLoader
         self.reconnectHost = reconnectHost
         if connectsOnDemand {
+            // The tree can't load until the SSH connection is established (which
+            // may include a one-time helper redeploy). Show the connecting spinner
+            // until the connect notification fires loadFiles, rather than falling
+            // through to a misleading "No Markdown files" empty state.
+            isLoading = true
             observeConnectNotification()
         } else {
+            isLoading = true
             Task {
                 await loadFiles()
             }
@@ -182,6 +194,26 @@ public class RemoteFileTreeProvider: ObservableObject {
         refreshRecoveryTask?.cancel()
         gitStatusTask?.cancel()
         restoreExpandedFoldersTask?.cancel()
+
+        // Release the server-side watches this provider registered. Without this,
+        // closing a window/sidebar while the SSH connection stays alive (e.g.
+        // another window to the same host) orphans the directory and git watches
+        // on the daemon, leaking their inotify FDs until the connection drops.
+        let provider = fileProvider
+        let directoryTokens = Array(directoryWatchTokens.values)
+        let gitToken = gitWatchToken
+        directoryWatchTokens.removeAll()
+        gitWatchToken = nil
+        if !directoryTokens.isEmpty || gitToken != nil {
+            Task.detached {
+                for token in directoryTokens {
+                    await provider.unwatchDirectory(token)
+                }
+                if let gitToken {
+                    await provider.unwatch(gitToken)
+                }
+            }
+        }
     }
 
     /// Loads the root directory
@@ -225,7 +257,7 @@ public class RemoteFileTreeProvider: ObservableObject {
                     return
                 }
             } catch {
-                print("[RemoteFileTreeProvider] Git detection failed: \(error)")
+                RemoteLog.info("[RemoteFileTreeProvider] Git detection failed: \(error)")
             }
         }
 
@@ -315,7 +347,7 @@ public class RemoteFileTreeProvider: ObservableObject {
     /// preserving the existing tree.
     public func refresh() {
         guard let root = rootDirectory else { return }
-        print("[RemoteFileTreeProvider] refresh() for \(root)")
+        RemoteLog.info("[RemoteFileTreeProvider] refresh() for \(root)")
 
         // A fresh refresh supersedes any in-flight self-heal from a prior failure.
         refreshRecoveryTask?.cancel()
@@ -359,7 +391,7 @@ public class RemoteFileTreeProvider: ObservableObject {
                 // outlasts this guard). Don't dead-end at a manual Retry — recover
                 // through the full reconnecting load path. isLoading is managed by
                 // scheduleRefreshRecovery so a populated tree stays visible.
-                print("[RemoteFileTreeProvider] refresh did not complete, self-healing via reconnecting reload")
+                RemoteLog.error("[RemoteFileTreeProvider] refresh did not complete, self-healing via reconnecting reload")
                 self.scheduleRefreshRecovery()
             }
         }
@@ -421,7 +453,7 @@ public class RemoteFileTreeProvider: ObservableObject {
             refreshGitStatus()
             return true
         } catch {
-            print("[RemoteFileTreeProvider] Failed to list root \(directory): \(error)")
+            RemoteLog.error("[RemoteFileTreeProvider] Failed to list root \(directory): \(error)")
             guard isCurrentLoad(loadGeneration, rootPath: directory) else { return false }
             loadError = "Could not load the remote file list."
             return false
@@ -458,7 +490,7 @@ public class RemoteFileTreeProvider: ObservableObject {
                 await loadChildrenIfNeeded(for: child)
             }
         } catch {
-            print("[RemoteFileTreeProvider] Failed to list \(path): \(error)")
+            RemoteLog.error("[RemoteFileTreeProvider] Failed to list \(path): \(error)")
         }
     }
 

@@ -191,9 +191,9 @@ public actor SSHConnection {
     }
 
     public func connect(onProgress: (@Sendable (String) -> Void)? = nil) async throws {
-        print("[SSHConnection] connect() called for \(host), current state: \(state)")
+        RemoteLog.info("[SSHConnection] connect() called for \(host), current state: \(state)")
         if state == .connected {
-            print("[SSHConnection] Already connected, returning")
+            RemoteLog.info("[SSHConnection] Already connected, returning")
             return
         }
         state = .connecting
@@ -212,32 +212,32 @@ public actor SSHConnection {
             // redeploy, so a dead host fails in seconds instead of a minute (T23).
             switch error {
             case .handshakeTimeout, .serverNotResponding, .helperStartupTimeout:
-                print("[SSHConnection] First attempt failed (\(error)), will retry...")
+                RemoteLog.info("[SSHConnection] First attempt failed (\(error)), will retry...")
             default:
                 state = .disconnected
                 throw error
             }
         } catch {
-            print("[SSHConnection] Connection failed: \(error)")
+            RemoteLog.info("[SSHConnection] Connection failed: \(error)")
             state = .disconnected
             throw error
         }
 
         // Quick retry - daemon is likely running, just connect again
-        print("[SSHConnection] Quick retry (daemon should be running)...")
+        RemoteLog.info("[SSHConnection] Quick retry (daemon should be running)...")
         try await Task.sleep(nanoseconds: 500_000_000) // 500ms
         do {
             try await establishConnection()
             state = .connected
             startHealthCheck()
-            print("[SSHConnection] Quick retry succeeded")
+            RemoteLog.info("[SSHConnection] Quick retry succeeded")
             return
         } catch {
-            print("[SSHConnection] Quick retry failed: \(error)")
+            RemoteLog.info("[SSHConnection] Quick retry failed: \(error)")
         }
 
         // Final attempt - full redeploy
-        print("[SSHConnection] Full redeploy and retry...")
+        RemoteLog.info("[SSHConnection] Full redeploy and retry...")
         onProgress?("Redeploying to")
         await deployer.removeDeployedServer(host: host)
         try await connectInternal(onProgress: onProgress, isRetry: true)
@@ -246,30 +246,30 @@ public actor SSHConnection {
     private func connectInternal(onProgress: (@Sendable (String) -> Void)?, isRetry: Bool) async throws {
         do {
             // 1. Ensure server is deployed
-            print("[SSHConnection] Deploying server... (retry: \(isRetry))")
+            RemoteLog.info("[SSHConnection] Deploying server... (retry: \(isRetry))")
             let path = try await deployer.ensureServerDeployed(host: host, onProgress: onProgress)
             self.remoteBinaryPath = path
-            print("[SSHConnection] Server deployed at \(path)")
+            RemoteLog.info("[SSHConnection] Server deployed at \(path)")
 
             // 2. Establish connection
-            print("[SSHConnection] Establishing connection...")
+            RemoteLog.info("[SSHConnection] Establishing connection...")
             onProgress?("Connecting to")
             try await establishConnection()
             state = .connected
             startHealthCheck()
             reconnectAttempts = 0
-            print("[SSHConnection] Connected to \(host)")
+            RemoteLog.info("[SSHConnection] Connected to \(host)")
         } catch {
-            print("[SSHConnection] Connection failed: \(error)")
+            RemoteLog.info("[SSHConnection] Connection failed: \(error)")
             state = .disconnected
             throw error
         }
     }
 
     func establishConnection() async throws {
-        print("[SSHConnection] establishConnection() starting")
+        RemoteLog.info("[SSHConnection] establishConnection() starting")
         guard let remoteBinaryPath = remoteBinaryPath else {
-            print("[SSHConnection] ERROR: No remote binary path")
+            RemoteLog.info("[SSHConnection] ERROR: No remote binary path")
             throw SSHConnectionError.serverNotResponding(host: host)
         }
 
@@ -321,7 +321,7 @@ public actor SSHConnection {
             "\(remoteBinaryPath) proxy --reconnect"
         ]
         process.arguments = args
-        print("[SSHConnection] SSH command: ssh \(args.joined(separator: " "))")
+        RemoteLog.info("[SSHConnection] SSH command: ssh \(args.joined(separator: " "))")
 
         let inPipe = Pipe()
         let outPipe = Pipe()
@@ -344,14 +344,14 @@ public actor SSHConnection {
             if !data.isEmpty {
                 stderrCollector.append(data)
                 if let text = String(data: data, encoding: .utf8) {
-                    print("[SSHConnection] stderr: \(text)")
+                    RemoteLog.info("[SSHConnection] stderr: \(text)")
                 }
             }
         }
 
-        print("[SSHConnection] Starting SSH process...")
+        RemoteLog.info("[SSHConnection] Starting SSH process...")
         try process.run()
-        print("[SSHConnection] SSH process started, PID: \(process.processIdentifier)")
+        RemoteLog.info("[SSHConnection] SSH process started, PID: \(process.processIdentifier)")
 
         // Brief wait to catch immediate SSH failures
         try await Task.sleep(nanoseconds: 200_000_000) // 200ms
@@ -363,20 +363,20 @@ public actor SSHConnection {
         }
 
         // Wait for sync marker - discard any shell initialization output (.bashrc, etc.)
-        print("[SSHConnection] Waiting for sync marker...")
+        RemoteLog.info("[SSHConnection] Waiting for sync marker...")
         try await waitForSyncMarker(
             stdout: outPipe.fileHandleForReading,
             process: process,
             stderrCollector: stderrCollector,
             errPipe: errPipe)
-        print("[SSHConnection] Sync marker received, starting protocol")
+        RemoteLog.info("[SSHConnection] Sync marker received, starting protocol")
 
         // Start reading loop
         startReading()
-        print("[SSHConnection] Reading loop started")
+        RemoteLog.info("[SSHConnection] Reading loop started")
 
         // Handshake with specific timeout
-        print("[SSHConnection] Sending Hello handshake...")
+        RemoteLog.info("[SSHConnection] Sending Hello handshake...")
         let hello = HelloPayload(clientVersion: AppVersion.current, protocolVersion: 1)
 
         let responseData: Data
@@ -391,14 +391,14 @@ public actor SSHConnection {
             throw SSHConnectionError.handshakeTimeout(host: host)
         }
 
-        print("[SSHConnection] Got Hello response, decoding...")
+        RemoteLog.info("[SSHConnection] Got Hello response, decoding...")
         let response = try JSONDecoder().decode(RPCMessage<HelloResponsePayload>.self, from: responseData)
 
         guard response.payload.accepted else {
-            print("[SSHConnection] Handshake rejected!")
+            RemoteLog.info("[SSHConnection] Handshake rejected!")
             throw SSHConnectionError.serverNotResponding(host: host)
         }
-        print("[SSHConnection] Handshake accepted!")
+        RemoteLog.info("[SSHConnection] Handshake accepted!")
     }
 
     /// Waits for the sync marker from the server, discarding any shell initialization output.
@@ -427,7 +427,7 @@ public actor SSHConnection {
             let elapsed = DispatchTime.now().uptimeNanoseconds - startTime.uptimeNanoseconds
             if elapsed > timeoutNanos {
                 let preview = await String(data: accumulator.getBuffer().prefix(500), encoding: .utf8) ?? "<binary>"
-                print("[SSHConnection] Sync marker timeout. Buffer: \(preview)")
+                RemoteLog.info("[SSHConnection] Sync marker timeout. Buffer: \(preview)")
                 errPipe.fileHandleForReading.readabilityHandler = nil
                 throw SSHConnectionError.helperStartupTimeout(host: host, stderr: stderrCollector.getString())
             }
@@ -441,7 +441,7 @@ public actor SSHConnection {
             if result.found {
                 if !result.discarded.isEmpty {
                     let discarded = String(data: result.discarded, encoding: .utf8) ?? "<binary>"
-                    print("[SSHConnection] Discarded shell output: \(discarded.prefix(200))")
+                    RemoteLog.info("[SSHConnection] Discarded shell output: \(discarded.prefix(200))")
                 }
                 if !result.remaining.isEmpty {
                     _ = streamHandler.receive(data: result.remaining)
@@ -572,7 +572,7 @@ public actor SSHConnection {
 
     private func startReading() {
         guard let stdout = stdoutPipe?.fileHandleForReading else {
-            print("[SSHConnection] ERROR: No stdout pipe for reading")
+            RemoteLog.info("[SSHConnection] ERROR: No stdout pipe for reading")
             return
         }
 
@@ -581,36 +581,36 @@ public actor SSHConnection {
             let data = handle.availableData
 
             if data.isEmpty {
-                print("[SSHConnection] EOF on stdout, disconnecting")
+                RemoteLog.info("[SSHConnection] EOF on stdout, disconnecting")
                 handle.readabilityHandler = nil
                 Task { await self.handleDisconnect() }
                 return
             }
 
-            print("[SSHConnection] Received \(data.count) bytes from stdout")
+            RemoteLog.info("[SSHConnection] Received \(data.count) bytes from stdout")
             Task { await self.processIncomingData(data) }
         }
     }
 
     private func processIncomingData(_ data: Data) {
         let messages = streamHandler.receive(data: data)
-        print("[SSHConnection] Parsed \(messages.count) messages from incoming data")
+        RemoteLog.info("[SSHConnection] Parsed \(messages.count) messages from incoming data")
         for msgData in messages {
             if let header = try? JSONDecoder().decode(RPCHeader.self, from: msgData) {
-                print("[SSHConnection] Message: type=\(header.type), id=\(header.id?.description ?? "nil")")
+                RemoteLog.info("[SSHConnection] Message: type=\(header.type), id=\(header.id?.description ?? "nil")")
                 if let id = header.id {
                     if pendingRequestIds.contains(id) {
-                        print("[SSHConnection] Completing request id=\(id)")
+                        RemoteLog.info("[SSHConnection] Completing request id=\(id)")
                         completeRequest(id: id, data: msgData)
                     } else {
-                        print("[SSHConnection] WARNING: No pending request for id=\(id)")
+                        RemoteLog.info("[SSHConnection] WARNING: No pending request for id=\(id)")
                     }
                 } else {
-                    print("[SSHConnection] Push event received")
+                    RemoteLog.info("[SSHConnection] Push event received")
                     eventContinuation?.yield(msgData)
                 }
             } else {
-                print("[SSHConnection] ERROR: Failed to decode message header")
+                RemoteLog.info("[SSHConnection] ERROR: Failed to decode message header")
             }
         }
     }

@@ -59,7 +59,17 @@ enum Daemon {
                 let streamHandler = RPCStreamHandler()
                 handleClient(clientFD: clientFD, rpcHandler: rpcHandler, streamHandler: streamHandler)
                 _ = systemClose(clientFD)
-                fputs("Connection closed\n", stderr)
+                // Release every watcher this session registered. Watchers live on
+                // the shared RPCHandler for the daemon's whole life, so without
+                // this their inotify FDs accumulate across reconnects until the
+                // daemon exhausts its descriptors. A new connection re-watches.
+                let teardown = DispatchSemaphore(value: 0)
+                Task {
+                    await rpcHandler.stopAllWatchers()
+                    teardown.signal()
+                }
+                teardown.wait()
+                fputs("Connection closed, watchers released\n", stderr)
             }
         }
     }
