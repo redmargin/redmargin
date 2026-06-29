@@ -1,7 +1,7 @@
 # Changelog
 <!-- markdownlint-disable MD022 MD032 -->
 
-## Unreleased
+## v1.5.2 (2026-06-29)
 
 ### Added
 
