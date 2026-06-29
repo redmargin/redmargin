@@ -10,9 +10,16 @@
 ### Changed
 
 - Reworked SSH and server integration coverage so the full Swift suite now runs without skipped tests against the `devtest` test host.
+- Remote window titles now show the full remote path instead of only the file name.
+- The remote sidebar keeps the existing file list visible during a background refresh and shows a connecting indicator while a restored window reconnects, instead of flashing an empty "No Markdown files" list.
+- Remote and SSH diagnostics now go to the system log at retained levels so connection and helper failures can be inspected after the fact.
 
 ### Fixed
 
+- Fixed the remote helper exhausting its file descriptors from leaked subprocess pipes: git command output is now drained reliably and pipes are always closed, so long-running remote sessions no longer fail every directory listing after hours of use.
+- Fixed remote directory, file, and git watches leaking on the helper: they are now released when a connection drops or a window closes, so watchers no longer accumulate across reconnects, including a previously missing path for releasing git-repo watches.
+- Fixed remote git operations (diff, repository detection, and tracking checks) running without a time limit, so a stuck git process can no longer hang remote file loading.
+- Fixed the remote sidebar dead-ending at a manual "Retry" after a transient connection hiccup; it now reconnects and reloads itself automatically.
 - Fixed remote folders opened with `~` paths on macOS remotes so sidebar expansion and Markdown file selection preserve the remote home path instead of resolving it on the local Mac.
 - Fixed app bundling on Intel Macs by copying SwiftPM's active release product path instead of a hardcoded Apple Silicon build path.
 - Fixed remote helper proxy shutdown so closed SSH sessions no longer leave orphaned proxy processes.

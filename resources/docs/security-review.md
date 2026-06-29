@@ -3,9 +3,11 @@
 ## Latest Review: 2026-01-26
 
 **Scope**: Full codebase including SSH remote features
+
 **Files reviewed**: `src/Views/MarkdownWebView.swift`, `src/Core/Utilities/ProcessRunner.swift`, `src/Core/Remote/Client/SSHConnection.swift`, `src/Core/Remote/Client/ServerDeployer.swift`, `Server/FileOperations.swift`, `Server/RPCHandler.swift`, `WebRenderer/src/sanitizer.js`, `WebRenderer/src/index.js`, `RedMargin.entitlements`
 
 ### Summary
+
 - Critical: 0
 - High: 1
 - Medium: 2
@@ -19,6 +21,7 @@
 **Location**: `src/Views/MarkdownWebView.swift:186-187`
 
 **Issue**: The WKWebView grants read access to the entire filesystem:
+
 ```swift
 let accessURL = URL(fileURLWithPath: "/")
 webView.loadFileURL(rendererURL, allowingReadAccessTo: accessURL)
@@ -29,6 +32,7 @@ While `allowFileAccessFromFileURLs` is disabled, this broad access combined with
 **Impact**: File existence disclosure via side channels. No data exfiltration possible (content rules block remote requests).
 
 **Action Items**:
+
 - [ ] Restrict `allowingReadAccessTo:` to document directory and bundle resources only
 - [ ] Calculate common ancestor of renderer path and document path for access URL
 - [ ] Test that relative image paths still resolve after the change
@@ -44,6 +48,7 @@ While `allowFileAccessFromFileURLs` is disabled, this broad access combined with
 **Impact**: Potential RCE on remote host if app bundle compromised.
 
 **Action Items**:
+
 - [ ] Evaluate adding `codesign --verify` check on bundled binary before upload
 - [ ] Consider embedding expected binary hash in app code for verification
 - [ ] Document that hardened runtime protects bundle integrity (defense-in-depth)
@@ -59,6 +64,7 @@ While `allowFileAccessFromFileURLs` is disabled, this broad access combined with
 **Impact**: No additional privilege gained - SSH user already has full access.
 
 **Action Items**:
+
 - [ ] Document that server trusts SSH-authenticated client (by design)
 - [ ] Consider optional server-side directory restriction for defense-in-depth (low priority)
 - [ ] No code change required - accept as design decision
@@ -68,6 +74,7 @@ While `allowFileAccessFromFileURLs` is disabled, this broad access combined with
 ## Positive Observations
 
 ### WKWebView Security (MarkdownWebView.swift)
+
 - [x] `allowFileAccessFromFileURLs` disabled (line 65)
 - [x] Non-persistent data store prevents session persistence (line 66)
 - [x] Content Rule Lists block remote resources by default (lines 101-114)
@@ -77,6 +84,7 @@ While `allowFileAccessFromFileURLs` is disabled, this broad access combined with
 - [x] Fragment escaping for safe JavaScript execution (lines 372-374)
 
 ### HTML Sanitization (sanitizer.js)
+
 - [x] Allowlist-based tag filtering with explicit dangerous tag removal (lines 149-158)
 - [x] URL scheme allowlist (not blocklist) for href and src (lines 49, 52)
 - [x] `javascript:` blocked implicitly by allowlist approach
@@ -85,17 +93,20 @@ While `allowFileAccessFromFileURLs` is disabled, this broad access combined with
 - [x] Only checkbox inputs allowed, other input types stripped (lines 173-179)
 
 ### Process Execution (ProcessRunner.swift)
+
 - [x] Known paths mapping for security-critical executables like `git` (lines 15-17)
 - [x] Arguments passed as array, not shell string (line 39)
-- [x] Timeout support prevents hanging processes (lines 87-93)
+- [x] Timeout support prevents hanging processes (lines 134-138)
 
 ### SSH Connection (SSHConnection.swift)
-- [x] Hardcoded `/usr/bin/ssh` path (line 193)
-- [x] BatchMode=yes prevents interactive prompts (line 201)
+
+- [x] Hardcoded `/usr/bin/ssh` path (line 309)
+- [x] BatchMode=yes prevents interactive prompts (line 316)
 - [x] Connection and operation timeouts (lines 167-189, 391)
 - [x] Actor-based concurrency for thread safety
 
 ### Entitlements (RedMargin.entitlements)
+
 - [x] No dangerous entitlements (disable-library-validation, allow-dyld-environment-variables, etc.)
 - [x] Security-scoped bookmarks for persistent file access
 
@@ -114,7 +125,7 @@ While `allowFileAccessFromFileURLs` is disabled, this broad access combined with
 ### From 2026-01-13 Review
 
 | Finding | Status | Notes |
-|---------|--------|-------|
+| --- | --- | --- |
 | URL scheme allowlist | FIXED | Explicit allowlists in sanitizer: href (http/https/mailto), src (http/https/file) |
 | File access scope | ACCEPTED | Documented as intentional; navigation policy blocks file:// link clicks |
 | Docs alignment | FIXED | README and spec updated to reflect actual behavior |
