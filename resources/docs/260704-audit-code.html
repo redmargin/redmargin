@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Redmargin Remote Subsystem Audit - 2026-07-04</title>
+<style>
+  :root {
+    --bg: #14171c; --panel: #1b1f26; --panel-2: #222732; --line: #2c313c;
+    --ink: #e6e9ef; --ink-dim: #9aa3b2; --ink-faint: #6b7280;
+    --accent: #5b9dd9; --crit: #e5606a; --imp: #e0a54a; --min: #7f8794;
+    --ok: #4fb477; --chip: #2a2f3a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  a { color: var(--accent); }
+  .wrap { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--line);
+    padding: 20px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .sub { color: var(--ink-dim); font-size: 12px; margin-bottom: 18px; }
+  .posture { border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+    background: var(--panel-2); margin-bottom: 18px; }
+  .posture .grade { font-size: 30px; font-weight: 700; }
+  .posture .why { font-size: 12px; color: var(--ink-dim); margin-top: 4px; }
+  .bar { height: 8px; border-radius: 6px; background: var(--chip); overflow: hidden; margin: 14px 0 6px; }
+  .bar > i { display: block; height: 100%; background: var(--ok); width: 0; transition: width .3s; }
+  .barlabel { font-size: 12px; color: var(--ink-dim); margin-bottom: 18px; }
+  .filters { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+  .filters button, .sevfilter button { text-align: left; background: var(--panel-2);
+    color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; cursor: pointer; font-size: 13px; }
+  .filters button.active, .sevfilter button.active { border-color: var(--accent); color: #fff; }
+  .sevfilter { display: flex; gap: 6px; margin-bottom: 14px; }
+  .sevfilter button { flex: 1; text-align: center; padding: 6px 4px; }
+  input[type=search] { width: 100%; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); margin-bottom: 14px; }
+  main { padding: 26px 32px; max-width: 1000px; }
+  .count { color: var(--ink-dim); font-size: 13px; margin-bottom: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 14px; }
+  .card.done { opacity: .5; }
+  .card h3 { margin: 0 0 8px; font-size: 15px; display: flex; align-items: baseline; gap: 10px; }
+  .tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+    padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
+  .tag.crit { background: rgba(229,96,106,.16); color: var(--crit); }
+  .tag.imp { background: rgba(224,165,74,.16); color: var(--imp); }
+  .tag.min { background: rgba(127,135,148,.18); color: var(--min); }
+  .id { color: var(--ink-faint); font-weight: 600; font-size: 12px; }
+  .loc { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+    color: var(--accent); margin: 2px 0 10px; }
+  .card p { margin: 6px 0; }
+  .lbl { color: var(--ink-faint); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .fix { background: var(--panel-2); border-radius: 8px; padding: 8px 12px; margin-top: 10px; font-size: 13px; }
+  .meta { display: flex; gap: 16px; align-items: center; margin-top: 10px; font-size: 12px; color: var(--ink-dim); }
+  .conf { font-family: ui-monospace, monospace; }
+  .status { margin-left: auto; }
+  .status select { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 3px 6px; font-size: 12px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<aside>
+  <h1>Remote Subsystem Audit</h1>
+  <div class="sub">2026-07-04 &middot; hostile multi-agent pass</div>
+  <div class="posture">
+    <div class="grade" id="posture-grade">C</div>
+    <div class="why" id="posture-why">One cross-client event defect and a cluster of hang, storm, and leak defects in the remote path beyond the reconnect bug already fixed. Core flows work; they degrade badly under reconnect, concurrency, slow links, and long sessions.</div>
+  </div>
+  <div class="bar"><i id="progress"></i></div>
+  <div class="barlabel"><span id="donecount">0</span> of <span id="total">0</span> resolved</div>
+  <input type="search" id="search" placeholder="Search findings...">
+  <div class="sevfilter">
+    <button data-sev="all" class="active">All</button>
+    <button data-sev="Critical">Crit</button>
+    <button data-sev="Important">Imp</button>
+    <button data-sev="Minor">Min</button>
+  </div>
+  <div class="filters">
+    <button data-cat="all" class="active">All categories</button>
+    <button data-cat="retry-storm">Retry / storm</button>
+    <button data-cat="ui-stall">UI stall</button>
+    <button data-cat="leak">Resource leak</button>
+    <button data-cat="server">Server daemon</button>
+    <button data-cat="deploy">Deploy / version</button>
+  </div>
+</aside>
+<main>
+  <div class="count" id="count"></div>
+  <div id="list"></div>
+</main>
+</div>
+<script>
+const F = [
+  { id:"S1", sev:"Critical", cat:"server", conf:80, status:"open",
+    title:"Daemon shares one RPCHandler across all connections; connects overwrite the event handler and any disconnect stops every watcher",
+    loc:"Server/Daemon.swift:34, 58-73, 99-100",
+    desc:"The daemon builds a single RPCHandler once, then every handleClient calls setEventHandler(sendData), overwriting the prior connection's write closure. On any client disconnect it calls stopAllWatchers() globally.",
+    scenario:"Two overlapping connections to one daemon (a reconnect race, wake-from-sleep forceReconnectAll, or a second Mac): the newer connect redirects the older client's file/git watch events to the newer socket, so the older window's gutter and preview stop updating. Either disconnect then tears down every client's watches, silencing a still-connected window until manual refresh.",
+    fix:"Give each connection its own event routing (per-connection handler map keyed by clientFD), and scope watcher teardown to the connection that is closing rather than stopAllWatchers()." },
+
+  { id:"D1", sev:"Important", cat:"deploy", conf:82, status:"open",
+    title:"cleanupOldVersions runs an SSH call with no timeout and no BatchMode, awaited before deploy returns",
+    loc:"src/Core/Remote/Client/ServerDeployer.swift:190",
+    desc:"Every other SSH call passes sshOptions (BatchMode=yes, ConnectTimeout=5) and an explicit timeout. This one passes neither, and ProcessRunner's default timeout is nil (no timeout).",
+    scenario:"The binary uploads successfully, then cleanup stalls (network hiccup, or an interactive prompt with no BatchMode). With no timeout the call blocks forever, and ensureServerDeployed awaits it at line 106, so a completed deploy never returns and the connect hangs indefinitely.",
+    fix:"Pass sshOptions + timeout: sshTimeout to the cleanupOldVersions ProcessRunner.run call, matching every other SSH invocation." },
+
+  { id:"F1", sev:"Important", cat:"retry-storm", conf:78, status:"open",
+    title:"scheduleReconnect reschedules on every failure with no terminal-error check and no attempt cap",
+    loc:"src/Core/Remote/Client/SSHConnectionExtensions.swift:130-137",
+    desc:"The reconnect loop recurses scheduleReconnect() unconditionally on failure. It never consults RemoteConnectRetry.isRetryable, so terminal failures are retried the same as transient ones, forever.",
+    scenario:"A live session drops and the reconnect gets a terminal error (SSH key removed, host decommissioned, connection refused). The loop retries every ~30s forever, and the escalation ladder fires a full redeploy (rm -rf + scp against the dead/broken host) every sixth attempt indefinitely. Same class as the bug just fixed.",
+    fix:"On failure, fast-fail terminal errors via RemoteConnectRetry.isRetryable and park in .disconnected after a bounded number of cycles, so a permanently-broken host stops the background loop instead of hammering it. Keep retrying genuinely transient/unreachable states." },
+
+  { id:"S2", sev:"Important", cat:"server", conf:75, status:"open",
+    title:"Accept loop busy-spins at 100% CPU on a persistent accept() failure",
+    loc:"Server/Daemon.swift:49-53",
+    desc:"while true { let fd = acceptConnection(); if fd < 0 { continue } } has no errno check and no backoff.",
+    scenario:"On EMFILE (descriptor exhaustion) or EBADF (listener closed), accept() returns -1 immediately on every iteration, pegging a CPU core forever and starving real work. Descriptor exhaustion is exactly the state the recent leak fixes were guarding against.",
+    fix:"Inspect errno; on EMFILE/ENFILE back off briefly, on EBADF/EINVAL break the loop and exit so the proxy can respawn a clean daemon." },
+
+  { id:"F5", sev:"Important", cat:"retry-storm", conf:70, status:"open",
+    title:"ping() liveness probe tears down a healthy-but-slow connection on timeout",
+    loc:"src/Core/Remote/Client/RemoteFileProvider.swift:51-60 (send default disconnectOnTimeout:true, SSHConnection.swift:479, 566)",
+    desc:"ping() calls connection.send without passing disconnectOnTimeout, so it uses the default true. The real read/list probes deliberately pass false; ping does not.",
+    scenario:"On a high-latency link, a ping that exceeds 3s times out and force-disconnects a perfectly healthy connection, triggering a reconnect. Because ping is the pingFirst liveness check on the interactive refresh path, slow links get spurious teardown-and-reconnect churn.",
+    fix:"Call send with disconnectOnTimeout: false in ping(); a slow probe should report not-alive, not kill the transport." },
+
+  { id:"B2", sev:"Important", cat:"ui-stall", conf:78, status:"open",
+    title:"Interactive refresh/read can redeploy the server synchronously and run the full timeout cascade, stalling the UI 50-80s",
+    loc:"src/Core/Remote/Client/RemoteInteractiveOperationSupport.swift:117-198; AppMain/RemoteDocumentState.swift:460-538",
+    desc:"A single user-initiated read chains ping(3s) then probe(5s) then ping(3s) then forceReconnect + waitForRemoteConnection(20s) then a full redeploy (removeDeployedServer + scp) then fullRead(30s), all serial. Sidebar file selection runs the same cascade with isRefreshing already false, so there is no spinner and the old document stays on screen.",
+    scenario:"Cmd+R (or a sidebar click) on a wedged connection after wake-from-sleep leaves Refreshing up, or shows nothing at all on sidebar select, for the better part of a minute or more. This is the stall you hit, generalized across the interactive paths.",
+    fix:"Bound the whole interactive operation with a single overall deadline, surface a spinner + cancel on the sidebar path, and move the redeploy escalation off the interactive path (or gate it behind explicit user confirmation) so a refresh never blocks on a full scp." },
+
+  { id:"D2", sev:"Important", cat:"deploy", conf:70, status:"open",
+    title:"pkill -f redmargin-server and rm -rf ~/.redmargin-server hit every version and every session for the user",
+    loc:"src/Core/Remote/Client/ServerDeployer.swift:130, 248, 256",
+    desc:"killOldProcesses and removeDeployedServer match any redmargin-server process for the account and delete the whole server directory, not just the current session or version.",
+    scenario:"A second concurrent redmargin session (another Mac, or an overlapping connect during reconnect) is on the same host and user. A redeploy or self-heal from one client kills the other's live daemon and removes its binary, dropping that session mid-use.",
+    fix:"Scope the kill to the specific version/PID being replaced (match the exact binary path or track the daemon PID), and avoid rm -rf of the shared directory while another session may be live." },
+
+  { id:"L1", sev:"Important", cat:"leak", conf:68, status:"open",
+    title:"RemoteFileProvider spawns an unstored, uncancelled event-loop Task that leaks one parked task per document opened",
+    loc:"src/Core/Remote/Client/RemoteFileProvider.swift:89",
+    desc:"init starts Task { for await eventData in connection.events } without storing or cancelling it. The shared cached connection's events stream only finishes at app teardown, so the loop parks for the app's life, re-checking weak self only when the next event arrives, while strongly holding the connection.",
+    scenario:"Over a long session opening and closing many remote documents on the same host, one suspended coroutine leaks per open, each pinning an SSHConnection. Slow memory growth, not descriptor exhaustion.",
+    fix:"Store the Task and cancel it in a RemoteFileProvider deinit (or scope it to a structured lifetime tied to the provider)." },
+
+  { id:"S3", sev:"Important", cat:"server", conf:66, status:"open",
+    title:"Server ignores partial socket writes, truncating length-prefixed frames and desyncing the client stream",
+    loc:"Server/Daemon.swift:85-93; Server/UnixSocket.swift:33-35",
+    desc:"socketWrite issues one write() and sendData discards the byte count. There is no write-until-complete loop.",
+    scenario:"On a full socket send buffer (large git diff, base64 asset), write() short-writes; the rest of the frame is never sent. The client reads a wrong 4-byte length for the next frame and desyncs permanently, hanging that session.",
+    fix:"Loop write() until all bytes are sent (handle EINTR/EAGAIN), and treat a failed write as a connection close." },
+
+  { id:"S4", sev:"Minor", cat:"server", conf:60, status:"open",
+    title:"Frame reader trusts the length prefix with no cap; server read has no idle timeout",
+    loc:"src/Core/Remote/Protocol/RPCMessage.swift:46-52; Server/Daemon.swift:109-111",
+    desc:"receive() reads a 4-byte length (up to ~4 GB) and buffers until complete, with no sanity cap. The daemon's socketRead has no timeout.",
+    scenario:"A desync (S3) or a corrupt prefix is read as a huge length; the buffer grows toward OOM, or the reader thread blocks forever waiting for bytes that never arrive, wedging a pool thread.",
+    fix:"Cap the maximum frame size and drop/rese the connection on violation; add an idle read timeout on the server socket." },
+
+  { id:"D3", sev:"Minor", cat:"deploy", conf:60, status:"open",
+    title:"Non-atomic upload plus ignored chmod result can leave a corrupt or non-executable binary at the canonical path",
+    loc:"src/Core/Remote/Client/ServerDeployer.swift:89-103",
+    desc:"scp writes straight to the final redmargin-server-<version> path (no temp file + mv), and the chmod +x result is discarded.",
+    scenario:"An scp interrupted by the 120s timeout, or a chmod that fails (noexec mount), leaves a partial or non-executable binary that the connect path execs; a persistently failing chmod turns into a redeploy loop.",
+    fix:"scp to a temp path then mv into place; check the chmod exit code and fail the deploy if it is non-zero." },
+
+  { id:"S5", sev:"Minor", cat:"server", conf:60, status:"open",
+    title:"Daemon never self-exits; a new proxy steals the socket and orphans a wedged daemon",
+    loc:"Server/Daemon.swift:49; Server/UnixSocket.swift:47; Server/Proxy.swift",
+    desc:"The accept loop is while true with no idle timeout, no last-client-disconnect exit, and no parent-death check. listener.start() unlinks and rebinds the socket path.",
+    scenario:"If a daemon wedges (S2/S4), a new proxy unlinks the path and binds a fresh socket, spawning a new daemon while the wedged one lives on with its descriptors and watchers. Repeated reconnects pile up orphan daemons.",
+    fix:"Exit the daemon when the last client disconnects (or on an idle timeout / parent-death signal) so wedged daemons do not accumulate." },
+
+  { id:"F6", sev:"Minor", cat:"retry-storm", conf:58, status:"open",
+    title:"Remote file watch gives up after 3 tries and never re-arms after a reconnect",
+    loc:"src/Core/Remote/Client/RemoteFileProvider.swift:149-171",
+    desc:"Watch registration makes 3 bounded attempts then silently gives up, and nothing re-registers existing watchers after a reconnect.",
+    scenario:"After any reconnect, auto-refresh silently stops for open documents until they are reopened; the user sees stale content with no indication the live updates died.",
+    fix:"Re-register active watchers on the reconnected notification, and surface a visible degraded-state indicator if registration ultimately fails." },
+
+  { id:"F2", sev:"Minor", cat:"retry-storm", conf:55, status:"open",
+    title:"Redeploy escalation and forceReconnect both zero reconnectAttempts, collapsing backoff and restarting the escalation ladder",
+    loc:"src/Core/Remote/Client/SSHConnectionExtensions.swift:126; SSHConnection.swift:129",
+    desc:"The new .redeploy escalation resets reconnectAttempts to 0 (so backoffDelay(attempt:0) is 0-1s), and forceReconnect in the .reconnecting case also resets it.",
+    scenario:"On a reachable-but-broken host, the loop climbs to attempt 6, redeploys, resets to 0, and tight-retries near 1s again; repeated external forceReconnect calls (sidebar/UI requesting the connection) can pin backoff near zero and keep escalation from settling.",
+    fix:"Keep a separate monotonic backoff counter that the redeploy step does not reset, or apply a floor to the post-redeploy delay so the loop cannot collapse to sub-second retries." },
+
+  { id:"B5", sev:"Minor", cat:"ui-stall", conf:55, status:"open",
+    title:"Window restore does synchronous blocking disk reads on the main actor, one per restored window",
+    loc:"AppMain/RemoteContentCache.swift:70-73 (loadSync); AppDelegateFolderAndMenu.swift:109",
+    desc:"loadSync uses a blocking Data(contentsOf:) inside a @MainActor loop over restored windows before any window is shown. Each entry is capped at 4MB, up to 200 entries.",
+    scenario:"Launch with many or large cached remote windows produces a main-thread launch stall proportional to total cached bytes before the first window paints.",
+    fix:"Load cached content off the main actor (await a background read) and paint the window shell first." },
+
+  { id:"D6", sev:"Minor", cat:"deploy", conf:95, status:"open",
+    title:"Dead code: detectRemotePlatform and binaryNeedsUpdate have no callers",
+    loc:"src/Core/Remote/Client/ServerDeployer.swift:111, 195",
+    desc:"Both private methods are unused; ensureServerDeployed inlines the uname and hash logic. Confirmed by grep across src/, AppMain/, Tests/.",
+    scenario:"Not a runtime defect. Duplicated uname/hash logic that can drift from the live path and misleads readers about which code runs.",
+    fix:"Delete both methods." },
+
+  { id:"D5", sev:"Minor", cat:"server", conf:45, status:"open",
+    title:"Misaligned load(as: UInt32.self) on a Data slice can trap on aarch64",
+    loc:"src/Core/Remote/Protocol/RPCMessage.swift:46-48",
+    desc:"After removeSubrange(0..<totalLength), withUnsafeBytes may present a base pointer that is not 4-byte aligned; load(as:) requires alignment and can trap on strict-alignment architectures.",
+    scenario:"On an aarch64 Linux server, a particular buffer layout traps the daemon while decoding a frame length. Input-dependent, low likelihood.",
+    fix:"Read the 4 bytes and reassemble the UInt32 explicitly (loadUnaligned on newer Swift, or byte-shift), rather than load(as:)." },
+];
+
+const list = document.getElementById('list');
+const sevRank = { Critical: 0, Important: 1, Minor: 2 };
+let sevFilter = 'all', catFilter = 'all', q = '';
+
+function render() {
+  F.sort((a,b) => sevRank[a.sev]-sevRank[b.sev] || b.conf-a.conf);
+  list.innerHTML = '';
+  let shown = 0;
+  for (const f of F) {
+    const matchSev = sevFilter === 'all' || f.sev === sevFilter;
+    const matchCat = catFilter === 'all' || f.cat === catFilter;
+    const hay = (f.title+f.desc+f.scenario+f.loc+f.id).toLowerCase();
+    const matchQ = !q || hay.includes(q);
+    if (!(matchSev && matchCat && matchQ)) continue;
+    shown++;
+    const sevCls = f.sev==='Critical'?'crit':f.sev==='Important'?'imp':'min';
+    const el = document.createElement('div');
+    el.className = 'card' + (f.status==='fixed'||f.status==='wontfix' ? ' done' : '');
+    el.innerHTML = `
+      <h3><span class="tag ${sevCls}">${f.sev}</span><span class="id">${f.id}</span>${f.title}</h3>
+      <div class="loc">${f.loc}</div>
+      <p>${f.desc}</p>
+      <p><span class="lbl">Failure</span><br>${f.scenario}</p>
+      <div class="fix"><span class="lbl">Fix</span><br>${f.fix}</div>
+      <div class="meta">
+        <span class="conf">confidence ${f.conf}</span>
+        <span>${f.cat}</span>
+        <span class="status">
+          <select data-id="${f.id}">
+            <option value="open"${f.status==='open'?' selected':''}>Open</option>
+            <option value="fixed"${f.status==='fixed'?' selected':''}>Fixed</option>
+            <option value="wontfix"${f.status==='wontfix'?' selected':''}>Won't fix</option>
+          </select>
+        </span>
+      </div>`;
+    list.appendChild(el);
+  }
+  document.getElementById('count').textContent = `${shown} finding${shown===1?'':'s'} shown of ${F.length} total`;
+  updateProgress();
+}
+function updateProgress() {
+  const done = F.filter(f => f.status==='fixed' || f.status==='wontfix').length;
+  document.getElementById('donecount').textContent = done;
+  document.getElementById('total').textContent = F.length;
+  document.getElementById('progress').style.width = (done/F.length*100)+'%';
+}
+list.addEventListener('change', e => {
+  if (e.target.tagName==='SELECT') {
+    const f = F.find(x => x.id===e.target.dataset.id);
+    f.status = e.target.value;
+    render();
+  }
+});
+document.querySelectorAll('.sevfilter button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.sevfilter button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); sevFilter = b.dataset.sev; render();
+}));
+document.querySelectorAll('.filters button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.filters button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); catFilter = b.dataset.cat; render();
+}));
+document.getElementById('search').addEventListener('input', e => { q = e.target.value.toLowerCase().trim(); render(); });
+render();
+</script>
+</body>
+</html>
