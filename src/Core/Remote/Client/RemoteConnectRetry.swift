@@ -31,6 +31,38 @@ public enum RemoteConnectRetry {
         }
     }
 
+    /// Attempts (post-increment) before killing a possibly-wedged remote daemon.
+    public static let killDaemonAfterAttempts = 3
+
+    /// Attempts (post-increment) before redeploying the remote server binary.
+    public static let redeployAfterAttempts = 6
+
+    /// Corrective action a failing reconnect loop should take before its next
+    /// attempt. A bare `proxy --reconnect` cannot recover on its own from two
+    /// states, so the loop must escalate rather than retry the same doomed
+    /// command forever:
+    ///
+    /// - `.killDaemon` — a wedged-but-present daemon; killing it lets the next
+    ///   SSH session start a clean one. Cheap, so try it first.
+    /// - `.redeploy` — the versioned binary is missing or stale, e.g. version
+    ///   skew right after an app update, when reconnect targets a
+    ///   `redmargin-server-<newversion>` path the host has never had. No number
+    ///   of bare reconnects can fix this; only laying the binary down can.
+    ///
+    /// Callers reset their attempt counter after a `.redeploy` so backoff (and
+    /// this schedule) restart from scratch.
+    public enum ReconnectEscalation: Equatable {
+        case none
+        case killDaemon
+        case redeploy
+    }
+
+    public static func escalation(forAttempt attempt: Int) -> ReconnectEscalation {
+        if attempt >= redeployAfterAttempts { return .redeploy }
+        if attempt == killDaemonAfterAttempts { return .killDaemon }
+        return .none
+    }
+
     /// Full-jitter backoff: a delay drawn uniformly from `0...min(maxDelay, 2^attempt)`.
     /// `randomFraction` (clamped to `0...1`) makes the draw deterministic for tests.
     public static func backoffDelay(

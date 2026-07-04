@@ -98,10 +98,16 @@ extension SSHConnection {
 
             reconnectAttempts += 1
 
-            // After 3 failed attempts the remote daemon is likely hung.
-            // Kill it so the next SSH session starts a fresh daemon,
-            // and reset attempts so backoff restarts from scratch.
-            if reconnectAttempts >= 3 {
+            // Escalate when a bare `proxy --reconnect` keeps failing. Killing a
+            // wedged daemon is cheap and handles the common case; if that does
+            // not help, the versioned binary is likely missing or stale (version
+            // skew after an app update), which a bare reconnect can never fix, so
+            // redeploy it. Without this the loop hammers a nonexistent binary
+            // forever — the reconnect storm behind slow refreshes.
+            switch RemoteConnectRetry.escalation(forAttempt: reconnectAttempts) {
+            case .none:
+                break
+            case .killDaemon:
                 #if canImport(os)
                 sshLog.info("Reconnect attempt \(self.reconnectAttempts) — killing remote daemon")
                 #endif
@@ -111,6 +117,12 @@ extension SSHConnection {
                                 "pkill -f redmargin-server 2>/dev/null || true"],
                     timeout: 15
                 )
+            case .redeploy:
+                #if canImport(os)
+                sshLog.info("Reconnect attempt \(self.reconnectAttempts) — redeploying remote server")
+                #endif
+                await redeployServerForReconnect()
+                // Reset so backoff and the escalation schedule restart from scratch.
                 reconnectAttempts = 0
             }
 

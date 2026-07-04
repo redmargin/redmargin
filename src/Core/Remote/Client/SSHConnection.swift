@@ -154,6 +154,20 @@ public actor SSHConnection {
         try await connect(onProgress: nil)
     }
 
+    /// Lays down a fresh, correct-version server binary during a failing reconnect
+    /// loop and refreshes `remoteBinaryPath`. A bare `proxy --reconnect` can never
+    /// recover from a missing or stale binary (version skew after an app update),
+    /// so the reconnect escalation calls this instead of looping forever. Best
+    /// effort: a deploy failure (host unreachable) is swallowed so the loop keeps
+    /// retrying with backoff. Lives here because `deployer` and `remoteBinaryPath`
+    /// are file-private.
+    func redeployServerForReconnect() async {
+        await deployer.removeDeployedServer(host: host)
+        if let path = try? await deployer.ensureServerDeployed(host: host, onProgress: nil) {
+            remoteBinaryPath = path
+        }
+    }
+
     private func resetTransportForReconnect() {
         stderrPipe?.fileHandleForReading.readabilityHandler = nil
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil

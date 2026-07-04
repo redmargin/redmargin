@@ -70,6 +70,28 @@ final class RemoteConnectRetryPolicyTests: XCTestCase {
         }
     }
 
+    func testReconnectEscalatesToKillThenRedeploy() {
+        // Early attempts just keep retrying the bare reconnect.
+        XCTAssertEqual(RemoteConnectRetry.escalation(forAttempt: 1), .none)
+        XCTAssertEqual(RemoteConnectRetry.escalation(forAttempt: 2), .none)
+        // A wedged daemon is the cheap, common case: kill it first.
+        XCTAssertEqual(RemoteConnectRetry.escalation(forAttempt: 3), .killDaemon)
+        XCTAssertEqual(RemoteConnectRetry.escalation(forAttempt: 4), .none)
+        XCTAssertEqual(RemoteConnectRetry.escalation(forAttempt: 5), .none)
+        // Still failing after a kill means a missing/stale binary — redeploy.
+        // Without this the loop would hammer a nonexistent binary forever.
+        XCTAssertEqual(RemoteConnectRetry.escalation(forAttempt: 6), .redeploy)
+        XCTAssertEqual(RemoteConnectRetry.escalation(forAttempt: 7), .redeploy)
+    }
+
+    func testReconnectEscalationThresholdsAreOrdered() {
+        XCTAssertLessThan(
+            RemoteConnectRetry.killDaemonAfterAttempts,
+            RemoteConnectRetry.redeployAfterAttempts,
+            "Kill the daemon before escalating to the heavier redeploy"
+        )
+    }
+
     func testServerDeployerClassifiesUnreachableStderr() {
         assertCase(parseSSHStderr("ssh: connect to host x port 22: No route to host", host: "h"),
                    matches: "hostUnreachable")
