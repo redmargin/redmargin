@@ -84,6 +84,26 @@ final class RemoteConnectRetryPolicyTests: XCTestCase {
         XCTAssertEqual(RemoteConnectRetry.escalation(forAttempt: 7), .redeploy)
     }
 
+    func testReconnectGivesUpOnTerminalErrors() {
+        // Failures a reconnect can never fix on its own: the loop must park, not
+        // hammer the host forever.
+        XCTAssertTrue(RemoteConnectRetry.reconnectShouldGiveUp(.authenticationFailed(host: "h")))
+        XCTAssertTrue(RemoteConnectRetry.reconnectShouldGiveUp(.connectionRefused(host: "h")))
+        XCTAssertTrue(RemoteConnectRetry.reconnectShouldGiveUp(.hostUnreachable(host: "h")))
+        XCTAssertTrue(RemoteConnectRetry.reconnectShouldGiveUp(.connectionTimeout(host: "h")))
+    }
+
+    func testReconnectKeepsGoingOnMissingBinaryAndTransient() {
+        // sshProcessFailed is how a missing/stale binary surfaces ("no such
+        // file"); the loop must keep going to reach the redeploy escalation.
+        XCTAssertFalse(RemoteConnectRetry.reconnectShouldGiveUp(.sshProcessFailed(host: "h", stderr: "no such file")))
+        XCTAssertFalse(RemoteConnectRetry.reconnectShouldGiveUp(.operationTimeout(operation: "read")))
+        XCTAssertFalse(RemoteConnectRetry.reconnectShouldGiveUp(.handshakeTimeout(host: "h")))
+        XCTAssertFalse(RemoteConnectRetry.reconnectShouldGiveUp(.serverNotResponding(host: "h")))
+        XCTAssertFalse(RemoteConnectRetry.reconnectShouldGiveUp(.helperStartupTimeout(host: "h", stderr: "")))
+        XCTAssertFalse(RemoteConnectRetry.reconnectShouldGiveUp(.unexpectedDisconnect))
+    }
+
     func testReconnectEscalationThresholdsAreOrdered() {
         XCTAssertLessThan(
             RemoteConnectRetry.killDaemonAfterAttempts,

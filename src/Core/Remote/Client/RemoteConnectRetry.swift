@@ -63,6 +63,25 @@ public enum RemoteConnectRetry {
         return .none
     }
 
+    /// Whether a background reconnect loop should stop and park in `.disconnected`
+    /// rather than keep retrying. True for failures a reconnect can never fix on
+    /// its own — auth denied, connection refused, host unreachable — so the loop
+    /// does not hammer a host that will not recover without user action or the
+    /// network coming back (a user focus/refresh or wake-from-sleep re-arms it).
+    ///
+    /// `sshProcessFailed` is deliberately excluded: it is how a missing or stale
+    /// binary surfaces ("no such file"), which the redeploy escalation fixes, so
+    /// the loop must keep going long enough to reach that escalation.
+    public static func reconnectShouldGiveUp(_ error: SSHConnectionError) -> Bool {
+        switch error {
+        case .authenticationFailed, .connectionRefused, .hostUnreachable, .connectionTimeout:
+            return true
+        case .sshProcessFailed, .operationTimeout, .handshakeTimeout,
+             .serverNotResponding, .helperStartupTimeout, .unexpectedDisconnect:
+            return false
+        }
+    }
+
     /// Full-jitter backoff: a delay drawn uniformly from `0...min(maxDelay, 2^attempt)`.
     /// `randomFraction` (clamped to `0...1`) makes the draw deterministic for tests.
     public static func backoffDelay(

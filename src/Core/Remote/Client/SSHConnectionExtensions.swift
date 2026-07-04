@@ -114,7 +114,7 @@ extension SSHConnection {
                 _ = try? await ProcessRunner.run(
                     executable: "ssh",
                     arguments: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host,
-                                "pkill -f redmargin-server 2>/dev/null || true"],
+                                "pkill -f redmargin-server-\(AppVersion.current) 2>/dev/null || true"],
                     timeout: 15
                 )
             case .redeploy:
@@ -141,6 +141,19 @@ extension SSHConnection {
                 )
             } catch {
                 guard !Task.isCancelled else { return }
+                // Terminal failure (auth denied, connection refused, host
+                // unreachable): stop instead of retrying a host that cannot
+                // recover on its own. Parking in .disconnected (leaving
+                // isIntentionallyDisconnected false) lets a user focus/refresh or
+                // wake-from-sleep re-arm the loop via forceReconnect.
+                if let sshError = error as? SSHConnectionError,
+                   RemoteConnectRetry.reconnectShouldGiveUp(sshError) {
+                    state = .disconnected
+                    #if canImport(os)
+                    sshLog.error("Reconnect giving up (terminal): \(error.localizedDescription, privacy: .public)")
+                    #endif
+                    return
+                }
                 state = .reconnecting
                 #if canImport(os)
                 sshLog.error("Reconnection failed: \(error.localizedDescription, privacy: .public)")

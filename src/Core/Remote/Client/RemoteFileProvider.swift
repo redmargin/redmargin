@@ -47,12 +47,17 @@ public actor RemoteFileProvider: FileProvider {
         await connection.idleTime()
     }
 
-    /// Quick ping to check if the connection is responsive
+    /// Quick ping to check if the connection is responsive. A timeout must NOT
+    /// tear down the transport: this is the liveness probe on the interactive
+    /// path, and on a slow-but-healthy link a >timeout ping would otherwise
+    /// force-disconnect a working connection. Report not-alive and let the caller
+    /// decide.
     public func ping(timeout: TimeInterval = 3) async -> Bool {
         do {
             let hello = HelloPayload(clientVersion: AppVersion.current, protocolVersion: 1)
             _ = try await connection.send(
-                type: RPCMessageType.hello.rawValue, payload: hello, timeout: timeout
+                type: RPCMessageType.hello.rawValue, payload: hello,
+                timeout: timeout, disconnectOnTimeout: false
             )
             return true
         } catch {
@@ -82,16 +87,32 @@ public actor RemoteFileProvider: FileProvider {
     private var directoryWatchers: [WatchToken: DirectoryWatchCallback] = [:]
     private var directoryRemoteTokens: [WatchToken: String] = [:]
 
+    /// The push-event listener, cancelled in deinit. `connection`'s event stream
+    /// only finishes at connection teardown (the connection is cached per host
+    /// for the app's life), so an unowned listener would park forever holding the
+    /// connection, leaking one task per document opened. Only init writes it and
+    /// only deinit reads it, never concurrently, so nonisolated(unsafe) is safe
+    /// and keeps the nonisolated init free of an actor-isolation warning.
+    private nonisolated(unsafe) var eventListenerTask: Task<Void, Never>?
+
     public init(connection: SSHConnection) {
         self.connection = connection
 
-        // Start listening for push events
-        Task { [weak self] in
-            for await eventData in connection.events {
-                guard let self = self else { break }
+        // Start listening for push events. Iterate the stream off the captured
+        // connection; dispatch through weak self so a closed provider stops
+        // driving callbacks and the task can be cancelled from deinit.
+        let conn = connection
+        eventListenerTask = Task { [weak self] in
+            for await eventData in conn.events {
+                if Task.isCancelled { break }
+                guard let self else { break }
                 await self.handlePushEvent(eventData)
             }
         }
+    }
+
+    deinit {
+        eventListenerTask?.cancel()
     }
 
     public func readFile(at path: String) async throws -> String {
