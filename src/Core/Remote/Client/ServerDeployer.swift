@@ -86,21 +86,32 @@ public actor ServerDeployer {
             timeout: sshTimeout
         )
 
+        // Upload to a temp path, then chmod + atomically mv into place. Writing
+        // straight to the canonical path meant an scp interrupted by the timeout
+        // left a truncated binary exactly where establishConnection execs
+        // `proxy --reconnect`; the mv makes the final path appear only once the
+        // whole binary is present and executable.
+        let tmpPath = "~/.redmargin-server/.redmargin-server-\(version).tmp"
         let scpResult = try await ProcessRunner.run(
             executable: "scp",
-            arguments: ["-o", "BatchMode=yes"] + [localBinaryURL.path, "\(host):\(remoteBinaryPath)"],
+            arguments: ["-o", "BatchMode=yes"] + [localBinaryURL.path, "\(host):\(tmpPath)"],
             timeout: scpTimeout
         )
         if scpResult.exitCode != 0 {
             throw ServerDeployerError.uploadFailed(scpResult.stderr)
         }
 
-        // 6. Set executable permissions
-        _ = try await ProcessRunner.run(
+        // 6. Set executable permissions and move into place atomically. A failed
+        // chmod must fail the deploy, not ship a non-exec binary the connect path
+        // then loops trying to exec.
+        let installResult = try await ProcessRunner.run(
             executable: "ssh",
-            arguments: sshOptions + [host, "chmod +x \(remoteBinaryPath)"],
+            arguments: sshOptions + [host, "chmod +x \(tmpPath) && mv -f \(tmpPath) \(remoteBinaryPath)"],
             timeout: sshTimeout
         )
+        if installResult.exitCode != 0 {
+            throw ServerDeployerError.uploadFailed(installResult.stderr)
+        }
 
         // 7. Clean up old version binaries
         await cleanupOldVersions(host: host)
@@ -108,26 +119,12 @@ public actor ServerDeployer {
         return remoteBinaryPath
     }
 
-    private func detectRemotePlatform(host: String) async throws -> (osName: String, arch: String) {
-        let result = try await ProcessRunner.run(
-            executable: "ssh",
-            arguments: sshOptions + [host, "uname -sm"],
-            timeout: sshTimeout
-        )
-        if result.exitCode != 0 {
-            throw ServerDeployerError.connectionFailed(result.stderr)
-        }
-        let uname = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        let parts = uname.split(separator: " ")
-        guard parts.count >= 2 else {
-            throw ServerDeployerError.unsupportedArchitecture(uname)
-        }
-        return (String(parts[0]), String(parts[1]))
-    }
-
     private func killOldProcesses(host: String) async {
-        // Kill any running daemon/proxy processes so they restart with new binary
-        let killCmd = "pkill -f redmargin-server 2>/dev/null || true"
+        // Kill only THIS version's daemon/proxy so we can overwrite its binary.
+        // A bare `pkill -f redmargin-server` also kills every other version and
+        // every other live session for this user on the host, dropping a
+        // concurrent window mid-use; scoping to the versioned name avoids that.
+        let killCmd = "pkill -f redmargin-server-\(version) 2>/dev/null || true"
         _ = try? await ProcessRunner.run(
             executable: "ssh",
             arguments: sshOptions + [host, killCmd],
@@ -182,40 +179,20 @@ public actor ServerDeployer {
     }
 
     private func cleanupOldVersions(host: String) async {
-        // Remove old version binaries (keep only current version)
+        // Remove old version binaries (keep only current version). This is awaited
+        // before ensureServerDeployed returns, so it must carry the same BatchMode
+        // + timeout as every other SSH call; without them a stall here hangs a
+        // fully-uploaded deploy indefinitely.
         let cleanupCmd = """
             find ~/.redmargin-server -name 'redmargin-server-*' \
             ! -name 'redmargin-server-\(version)' -type f -delete 2>/dev/null || true
             """
-        _ = try? await ProcessRunner.run(executable: "ssh", arguments: [host, cleanupCmd])
-        RemoteLog.info("[ServerDeployer] Cleaned up old versions")
-    }
-
-    /// Check if local binary is newer than deployed binary by comparing MD5 hashes
-    private func binaryNeedsUpdate(host: String, remotePath: String, localURL: URL) async -> Bool {
-        // Get local file hash
-        guard let localHash = md5Hash(of: localURL) else {
-            RemoteLog.info("[ServerDeployer] Could not hash local binary, will redeploy")
-            return true
-        }
-
-        // Get remote file hash
-        let hashCmd = "md5sum \(remotePath) 2>/dev/null | cut -d' ' -f1"
-        guard let result = try? await ProcessRunner.run(
+        _ = try? await ProcessRunner.run(
             executable: "ssh",
-            arguments: sshOptions + [host, hashCmd],
+            arguments: sshOptions + [host, cleanupCmd],
             timeout: sshTimeout
-        ), result.exitCode == 0 else {
-            RemoteLog.info("[ServerDeployer] Could not get remote hash, will redeploy")
-            return true
-        }
-
-        let remoteHash = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        let needsUpdate = localHash != remoteHash
-        if needsUpdate {
-            RemoteLog.info("[ServerDeployer] Hash mismatch: local=\(localHash) remote=\(remoteHash)")
-        }
-        return needsUpdate
+        )
+        RemoteLog.info("[ServerDeployer] Cleaned up old versions")
     }
 
     /// Calculate MD5 hash of a file using system md5 command
@@ -242,21 +219,21 @@ public actor ServerDeployer {
         }
     }
 
-    /// Remove the deployed server binary to force re-deployment
+    /// Remove this version's deployed server binary to force re-deployment.
+    /// Scoped to the current version so a self-heal or forced restart does not
+    /// kill other versions' daemons or `rm -rf` the shared directory out from
+    /// under a concurrent session on the same host.
     public func removeDeployedServer(host: String) async {
-        // Kill any running daemon/proxy processes first
-        let killCmd = "pkill -f redmargin-server 2>/dev/null || true"
+        let binaryPath = "~/.redmargin-server/redmargin-server-\(version)"
+        // Kill only this version's processes, then remove its binary (and any
+        // stale temp upload). Other versions and their live sessions are left be.
+        let cmd = """
+            pkill -f redmargin-server-\(version) 2>/dev/null; \
+            rm -f \(binaryPath) ~/.redmargin-server/.redmargin-server-\(version).tmp 2>/dev/null || true
+            """
         _ = try? await ProcessRunner.run(
             executable: "ssh",
-            arguments: sshOptions + [host, killCmd],
-            timeout: sshTimeout
-        )
-
-        // Remove the server directory
-        let removeCmd = "rm -rf ~/.redmargin-server"
-        _ = try? await ProcessRunner.run(
-            executable: "ssh",
-            arguments: sshOptions + [host, removeCmd],
+            arguments: sshOptions + [host, cmd],
             timeout: sshTimeout
         )
         RemoteLog.info("[ServerDeployer] Killed processes and removed server on \(host)")
