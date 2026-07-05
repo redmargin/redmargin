@@ -471,7 +471,10 @@ class RemoteDocumentState {
                 let newContent = try await readRemoteDocumentContent(
                     fileProvider: fileProvider,
                     path: path,
-                    pingFirst: true
+                    pingFirst: true,
+                    interactive: true,
+                    fullTimeout: RemoteOperationSupport.interactiveFullTimeout,
+                    reconnectWaitTimeout: RemoteOperationSupport.interactiveReconnectWaitTimeout
                 )
                 guard !Task.isCancelled else { return }
                 let applied = await MainActor.run { self.applyServerContent(newContent, for: path) }
@@ -514,13 +517,21 @@ class RemoteDocumentState {
         refreshTask = nil
         reloadTask?.cancel()
         reloadTask = nil
-        isRefreshing = false
+
+        // Show the spinner while the sidebar selection loads. Without it a wedged
+        // connection left the old document on screen with no feedback, so the
+        // window looked hung. Interactive timeouts bound the wait; the spinner
+        // always clears.
+        isRefreshing = true
+        defer { isRefreshing = false }
 
         let newContent = try await readRemoteDocumentContent(
             fileProvider: fileProvider,
             path: path,
             pingFirst: true,
-            reconnectWaitTimeout: RemoteOperationSupport.reconnectWaitTimeout
+            interactive: true,
+            fullTimeout: RemoteOperationSupport.interactiveFullTimeout,
+            reconnectWaitTimeout: RemoteOperationSupport.interactiveReconnectWaitTimeout
         )
 
         // Update location and content

@@ -7,6 +7,13 @@ public enum RemoteOperationSupport {
     public static let fullDirectoryTimeout: TimeInterval = 30
     public static let detectGitRepoTimeout: TimeInterval = 20
     public static let reconnectWaitTimeout: TimeInterval = 20
+
+    /// Tighter bounds for operations driven by a direct user gesture (refresh,
+    /// opening a file from the sidebar). A wedged connection should fail the
+    /// gesture in a bounded time and let the background reconnect heal, not stack
+    /// timeouts into a 50-80s stall.
+    public static let interactiveFullTimeout: TimeInterval = 15
+    public static let interactiveReconnectWaitTimeout: TimeInterval = 8
 }
 
 public func waitForRemoteConnection(
@@ -24,10 +31,18 @@ public func waitForRemoteConnection(
     return false
 }
 
+/// Reads a remote document.
+///
+/// `interactive` marks a user-driven gesture: on that path the deep-fallback
+/// server redeploy (kill + scp, tens of seconds) is NOT run inline, because it
+/// freezes the UI. Instead a background reconnect is kicked (it self-heals,
+/// redeploy included) and the operation fails fast so the caller can show a
+/// "reconnecting" state and the user can retry.
 public func readRemoteDocumentContent(
     fileProvider: RemoteFileProvider,
     path: String,
     pingFirst: Bool = true,
+    interactive: Bool = false,
     probeTimeout: TimeInterval = RemoteOperationSupport.probeTimeout,
     fullTimeout: TimeInterval = RemoteOperationSupport.fullReadTimeout,
     reconnectWaitTimeout: TimeInterval = RemoteOperationSupport.reconnectWaitTimeout
@@ -35,6 +50,7 @@ public func readRemoteDocumentContent(
     try await performResponsiveRemoteOperation(
         fileProvider: fileProvider,
         pingFirst: pingFirst,
+        interactive: interactive,
         probeTimeout: probeTimeout,
         fullTimeout: fullTimeout,
         reconnectWaitTimeout: reconnectWaitTimeout,
@@ -55,6 +71,7 @@ public func listRemoteDirectoryEntries(
     fileProvider: RemoteFileProvider,
     path: String,
     pingFirst: Bool = true,
+    interactive: Bool = false,
     probeTimeout: TimeInterval = RemoteOperationSupport.probeTimeout,
     fullTimeout: TimeInterval = RemoteOperationSupport.fullDirectoryTimeout,
     reconnectWaitTimeout: TimeInterval = RemoteOperationSupport.reconnectWaitTimeout
@@ -62,6 +79,7 @@ public func listRemoteDirectoryEntries(
     try await performResponsiveRemoteOperation(
         fileProvider: fileProvider,
         pingFirst: pingFirst,
+        interactive: interactive,
         probeTimeout: probeTimeout,
         fullTimeout: fullTimeout,
         reconnectWaitTimeout: reconnectWaitTimeout,
@@ -82,6 +100,7 @@ public func detectRemoteGitRepo(
     fileProvider: RemoteFileProvider,
     path: String,
     pingFirst: Bool = true,
+    interactive: Bool = false,
     probeTimeout: TimeInterval = RemoteOperationSupport.probeTimeout,
     fullTimeout: TimeInterval = RemoteOperationSupport.detectGitRepoTimeout,
     reconnectWaitTimeout: TimeInterval = RemoteOperationSupport.reconnectWaitTimeout
@@ -89,6 +108,7 @@ public func detectRemoteGitRepo(
     try await performResponsiveRemoteOperation(
         fileProvider: fileProvider,
         pingFirst: pingFirst,
+        interactive: interactive,
         probeTimeout: probeTimeout,
         fullTimeout: fullTimeout,
         reconnectWaitTimeout: reconnectWaitTimeout,
@@ -108,6 +128,7 @@ public func detectRemoteGitRepo(
 private func performResponsiveRemoteOperation<T>(
     fileProvider: RemoteFileProvider,
     pingFirst: Bool,
+    interactive: Bool,
     probeTimeout: TimeInterval,
     fullTimeout: TimeInterval,
     reconnectWaitTimeout: TimeInterval,
@@ -119,6 +140,7 @@ private func performResponsiveRemoteOperation<T>(
         if !alive {
             return try await reconnectAndRunRemoteOperation(
                 fileProvider: fileProvider,
+                interactive: interactive,
                 fullTimeout: fullTimeout,
                 reconnectWaitTimeout: reconnectWaitTimeout,
                 fullOperation: fullOperation
@@ -140,8 +162,9 @@ private func performResponsiveRemoteOperation<T>(
             if alive {
                 return try await fullOperation(fullTimeout)
             }
-            return try await hardRestartAndRunRemoteOperation(
+            return try await recoverRemoteOperation(
                 fileProvider: fileProvider,
+                interactive: interactive,
                 fullTimeout: fullTimeout,
                 fullOperation: fullOperation
             )
@@ -152,6 +175,7 @@ private func performResponsiveRemoteOperation<T>(
 
     return try await reconnectAndRunRemoteOperation(
         fileProvider: fileProvider,
+        interactive: interactive,
         fullTimeout: fullTimeout,
         reconnectWaitTimeout: reconnectWaitTimeout,
         fullOperation: fullOperation
@@ -160,6 +184,7 @@ private func performResponsiveRemoteOperation<T>(
 
 private func reconnectAndRunRemoteOperation<T>(
     fileProvider: RemoteFileProvider,
+    interactive: Bool,
     fullTimeout: TimeInterval,
     reconnectWaitTimeout: TimeInterval,
     fullOperation: (TimeInterval) async throws -> T
@@ -170,8 +195,9 @@ private func reconnectAndRunRemoteOperation<T>(
         timeout: reconnectWaitTimeout
     )
     guard connected else {
-        return try await hardRestartAndRunRemoteOperation(
+        return try await recoverRemoteOperation(
             fileProvider: fileProvider,
+            interactive: interactive,
             fullTimeout: fullTimeout,
             fullOperation: fullOperation
         )
@@ -180,19 +206,30 @@ private func reconnectAndRunRemoteOperation<T>(
         return try await fullOperation(fullTimeout)
     } catch let error as SSHConnectionError {
         guard shouldRecoverRemoteOperation(from: error) else { throw error }
-        return try await hardRestartAndRunRemoteOperation(
+        return try await recoverRemoteOperation(
             fileProvider: fileProvider,
+            interactive: interactive,
             fullTimeout: fullTimeout,
             fullOperation: fullOperation
         )
     }
 }
 
-private func hardRestartAndRunRemoteOperation<T>(
+/// Last-resort recovery. Off the interactive path this is a full server redeploy
+/// (removeDeployedServer + connect), which is correct but slow. ON the
+/// interactive path that redeploy would freeze the UI for tens of seconds, so
+/// instead kick the background reconnect (it self-heals, redeploy included) and
+/// fail fast; the caller surfaces "reconnecting" and the user retries.
+private func recoverRemoteOperation<T>(
     fileProvider: RemoteFileProvider,
+    interactive: Bool,
     fullTimeout: TimeInterval,
     fullOperation: (TimeInterval) async throws -> T
 ) async throws -> T {
+    if interactive {
+        await fileProvider.forceReconnect()
+        throw SSHConnectionError.operationTimeout(operation: "interactive remote operation")
+    }
     try await fileProvider.forceRestartRemoteServer()
     return try await fullOperation(fullTimeout)
 }
