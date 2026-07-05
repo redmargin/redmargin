@@ -26,6 +26,11 @@ public enum RPCError: Error {
 public class RPCStreamHandler {
     private var buffer = Data()
 
+    /// Upper bound on a single frame. No legitimate message approaches this; a
+    /// larger declared length means the stream is corrupt or desynced, so buffering
+    /// toward it would grow memory without bound (a trivial OOM from a bad prefix).
+    private static let maxFrameLength: UInt32 = 64 * 1024 * 1024 // 64 MB
+
     public init() {}
 
     /// Discards any buffered partial data (call on reconnect to avoid corrupted framing).
@@ -43,8 +48,22 @@ public class RPCStreamHandler {
             // Need at least 4 bytes for length
             guard buffer.count >= 4 else { break }
 
-            let length = buffer.withUnsafeBytes { ptr in
-                ptr.load(as: UInt32.self).bigEndian
+            // Read the big-endian length prefix byte-wise. A `load(as: UInt32)`
+            // on the buffer's raw bytes can trap on a misaligned access after the
+            // front has been trimmed (Data storage is not guaranteed 4-byte
+            // aligned), particularly on aarch64.
+            let base = buffer.startIndex
+            let length = (UInt32(buffer[base]) << 24)
+                | (UInt32(buffer[base + 1]) << 16)
+                | (UInt32(buffer[base + 2]) << 8)
+                | UInt32(buffer[base + 3])
+
+            if length > Self.maxFrameLength {
+                // Framing is corrupt: drop the buffer so we do not buffer toward
+                // OOM or block a reader forever on bytes that will never arrive.
+                // A reset stream (reconnect) resyncs cleanly.
+                buffer.removeAll()
+                break
             }
 
             let totalLength = 4 + Int(length)
@@ -52,11 +71,11 @@ public class RPCStreamHandler {
             guard buffer.count >= totalLength else { break }
 
             // Extract message JSON
-            let messageData = buffer.subdata(in: 4..<totalLength)
+            let messageData = buffer.subdata(in: (base + 4)..<(base + totalLength))
             messages.append(messageData)
 
             // Advance buffer
-            buffer.removeSubrange(0..<totalLength)
+            buffer.removeSubrange(base..<(base + totalLength))
         }
 
         return messages

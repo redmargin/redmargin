@@ -34,6 +34,26 @@ func socketWrite(fileDesc: Int32, buffer: UnsafeRawPointer, count: Int) -> Int {
     return systemWrite(fileDesc, buffer, count)
 }
 
+/// Writes the whole buffer, looping until every byte is sent. A single write()
+/// can short-write on a full send buffer (a large git diff or base64 asset);
+/// dropping the remainder truncates the length-prefixed frame and desyncs the
+/// client's stream permanently. Returns false if the socket is closed or errors.
+func socketWriteAll(fileDesc: Int32, buffer: UnsafeRawPointer, count: Int) -> Bool {
+    var offset = 0
+    while offset < count {
+        let n = systemWrite(fileDesc, buffer + offset, count - offset)
+        if n > 0 {
+            offset += n
+            continue
+        }
+        if n < 0 && (errno == EINTR || errno == EAGAIN) {
+            continue
+        }
+        return false
+    }
+    return true
+}
+
 class UnixSocketListener {
     let path: String
     private var fileDescriptor: Int32 = -1

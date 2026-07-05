@@ -76,6 +76,25 @@ final class RemoteProtocolTests: XCTestCase {
         XCTAssertThrowsError(try JSONDecoder().decode(RPCMessage<String>.self, from: messages[0]))
     }
 
+    func testOversizeFramePrefixIsDroppedNotBuffered() throws {
+        let handler = RPCStreamHandler()
+
+        // A length prefix well over the 64 MB cap (here ~4 GB) with a couple of
+        // trailing bytes. The handler must drop it, not buffer toward that length.
+        var corrupt = Data([0xFF, 0xFF, 0xFF, 0xFF])
+        corrupt.append(contentsOf: [0x01, 0x02])
+        let dropped = handler.receive(data: corrupt)
+        XCTAssertTrue(dropped.isEmpty, "Oversize frame yields no messages")
+
+        // The buffer was cleared, so a subsequent valid frame parses cleanly
+        // rather than being mis-framed against leftover corrupt bytes.
+        let good = try RPCStreamHandler.encode(id: 7, type: "Test", payload: "after reset")
+        let messages = handler.receive(data: good)
+        XCTAssertEqual(messages.count, 1)
+        let decoded = try JSONDecoder().decode(RPCMessage<String>.self, from: messages[0])
+        XCTAssertEqual(decoded.payload, "after reset")
+    }
+
     func testHelloHandshake() throws {
         let payload = HelloPayload(clientVersion: "1.0.0", protocolVersion: 1)
         let data = try RPCStreamHandler.encode(id: 1, type: RPCMessageType.hello.rawValue, payload: payload)

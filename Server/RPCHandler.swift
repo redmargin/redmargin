@@ -216,11 +216,10 @@ class RPCHandler {
         )
     }
 
-    /// Releases every watcher held by this daemon. Called when a client
-    /// connection drops: watchers live on shared actors for the daemon's whole
-    /// life, so without this their inotify FDs accumulate across reconnects until
-    /// the descriptor limit is hit. A fresh connection re-establishes the watches
-    /// it needs.
+    /// Releases every watcher held by THIS connection's handler. Each connection
+    /// gets its own RPCHandler, so this is called when the connection drops to
+    /// free its inotify FDs without touching any other live connection's watchers.
+    /// A fresh connection re-establishes the watches it needs.
     func stopAllWatchers() async {
         await fileOperations.stopAllWatchers()
         await gitOperations.stopAllWatchers()

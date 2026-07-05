@@ -29,10 +29,6 @@ enum Daemon {
             exit(1)
         }
 
-        // 3. Initialize RPC handler BEFORE listening
-        // This ensures no delay between socket ready and accept loop
-        let rpcHandler = RPCHandler()
-
         // 4. Listen on RPC socket
         // We use stdinSocket path as the main RPC channel
         let listener = UnixSocketListener(path: stdinSocket)
@@ -49,20 +45,38 @@ enum Daemon {
         while true {
             let clientFD = listener.acceptConnection()
             if clientFD < 0 {
+                // Classify the accept() failure instead of spinning. A bare
+                // `continue` pegs a CPU core forever when the error is
+                // persistent (descriptor exhaustion, or a dead listener FD).
+                let err = errno
+                if err == EBADF || err == EINVAL || err == ENOTSOCK {
+                    fputs("accept() fatal (errno \(err)); exiting accept loop\n", stderr)
+                    break
+                }
+                if err == EMFILE || err == ENFILE {
+                    // Out of descriptors: back off so we do not busy-spin while
+                    // whatever leaked them is (hopefully) released.
+                    fputs("accept() out of descriptors (errno \(err)); backing off\n", stderr)
+                    usleep(100_000) // 100ms
+                }
+                // EINTR / ECONNABORTED / EAGAIN: transient, retry immediately.
                 continue
             }
 
             fputs("Accepted connection\n", stderr)
 
-            // Handle connection concurrently - each connection gets its own stream handler
+            // Handle each connection concurrently with its OWN RPC handler and
+            // stream handler. A shared handler let a second connection overwrite
+            // the first's event routing and let either disconnect tear down every
+            // client's watchers; a per-connection handler isolates event routing
+            // and scopes watcher teardown to the connection that is closing.
             DispatchQueue.global().async {
+                let rpcHandler = RPCHandler()
                 let streamHandler = RPCStreamHandler()
                 handleClient(clientFD: clientFD, rpcHandler: rpcHandler, streamHandler: streamHandler)
                 _ = systemClose(clientFD)
-                // Release every watcher this session registered. Watchers live on
-                // the shared RPCHandler for the daemon's whole life, so without
-                // this their inotify FDs accumulate across reconnects until the
-                // daemon exhausts its descriptors. A new connection re-watches.
+                // Release only this connection's watchers so their inotify FDs do
+                // not accumulate; other live connections keep theirs.
                 let teardown = DispatchSemaphore(value: 0)
                 Task {
                     await rpcHandler.stopAllWatchers()
@@ -86,7 +100,7 @@ enum Daemon {
             writeQueue.async {
                 data.withUnsafeBytes { ptr in
                     if let baseAddress = ptr.baseAddress {
-                        _ = socketWrite(fileDesc: clientFD, buffer: baseAddress, count: data.count)
+                        _ = socketWriteAll(fileDesc: clientFD, buffer: baseAddress, count: data.count)
                     }
                 }
             }
