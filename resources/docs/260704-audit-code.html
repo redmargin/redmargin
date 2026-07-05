@@ -67,8 +67,8 @@
   <h1>Remote Subsystem Audit</h1>
   <div class="sub">2026-07-04 &middot; hostile multi-agent pass</div>
   <div class="posture">
-    <div class="grade" id="posture-grade">C</div>
-    <div class="why" id="posture-why">One cross-client event defect and a cluster of hang, storm, and leak defects in the remote path beyond the reconnect bug already fixed. Core flows work; they degrade badly under reconnect, concurrency, slow links, and long sessions.</div>
+    <div class="grade" id="posture-grade">A-</div>
+    <div class="why" id="posture-why">The critical cross-client defect, all eight important hang/storm/leak/stall defects, and the safe cleanups are fixed and covered by tests. Four low-severity items remain by choice: orphan-daemon self-exit, watch re-arm on reconnect, a reconnect backoff-reset interaction, and synchronous cache reads at launch. None can hang, storm, or leak.</div>
   </div>
   <div class="bar"><i id="progress"></i></div>
   <div class="barlabel"><span id="donecount">0</span> of <span id="total">0</span> resolved</div>
@@ -95,77 +95,77 @@
 </div>
 <script>
 const F = [
-  { id:"S1", sev:"Critical", cat:"server", conf:80, status:"open",
+  { id:"S1", sev:"Critical", cat:"server", conf:80, status:"fixed",
     title:"Daemon shares one RPCHandler across all connections; connects overwrite the event handler and any disconnect stops every watcher",
     loc:"Server/Daemon.swift:34, 58-73, 99-100",
     desc:"The daemon builds a single RPCHandler once, then every handleClient calls setEventHandler(sendData), overwriting the prior connection's write closure. On any client disconnect it calls stopAllWatchers() globally.",
     scenario:"Two overlapping connections to one daemon (a reconnect race, wake-from-sleep forceReconnectAll, or a second Mac): the newer connect redirects the older client's file/git watch events to the newer socket, so the older window's gutter and preview stop updating. Either disconnect then tears down every client's watches, silencing a still-connected window until manual refresh.",
     fix:"Give each connection its own event routing (per-connection handler map keyed by clientFD), and scope watcher teardown to the connection that is closing rather than stopAllWatchers()." },
 
-  { id:"D1", sev:"Important", cat:"deploy", conf:82, status:"open",
+  { id:"D1", sev:"Important", cat:"deploy", conf:82, status:"fixed",
     title:"cleanupOldVersions runs an SSH call with no timeout and no BatchMode, awaited before deploy returns",
     loc:"src/Core/Remote/Client/ServerDeployer.swift:190",
     desc:"Every other SSH call passes sshOptions (BatchMode=yes, ConnectTimeout=5) and an explicit timeout. This one passes neither, and ProcessRunner's default timeout is nil (no timeout).",
     scenario:"The binary uploads successfully, then cleanup stalls (network hiccup, or an interactive prompt with no BatchMode). With no timeout the call blocks forever, and ensureServerDeployed awaits it at line 106, so a completed deploy never returns and the connect hangs indefinitely.",
     fix:"Pass sshOptions + timeout: sshTimeout to the cleanupOldVersions ProcessRunner.run call, matching every other SSH invocation." },
 
-  { id:"F1", sev:"Important", cat:"retry-storm", conf:78, status:"open",
+  { id:"F1", sev:"Important", cat:"retry-storm", conf:78, status:"fixed",
     title:"scheduleReconnect reschedules on every failure with no terminal-error check and no attempt cap",
     loc:"src/Core/Remote/Client/SSHConnectionExtensions.swift:130-137",
     desc:"The reconnect loop recurses scheduleReconnect() unconditionally on failure. It never consults RemoteConnectRetry.isRetryable, so terminal failures are retried the same as transient ones, forever.",
     scenario:"A live session drops and the reconnect gets a terminal error (SSH key removed, host decommissioned, connection refused). The loop retries every ~30s forever, and the escalation ladder fires a full redeploy (rm -rf + scp against the dead/broken host) every sixth attempt indefinitely. Same class as the bug just fixed.",
     fix:"On failure, fast-fail terminal errors via RemoteConnectRetry.isRetryable and park in .disconnected after a bounded number of cycles, so a permanently-broken host stops the background loop instead of hammering it. Keep retrying genuinely transient/unreachable states." },
 
-  { id:"S2", sev:"Important", cat:"server", conf:75, status:"open",
+  { id:"S2", sev:"Important", cat:"server", conf:75, status:"fixed",
     title:"Accept loop busy-spins at 100% CPU on a persistent accept() failure",
     loc:"Server/Daemon.swift:49-53",
     desc:"while true { let fd = acceptConnection(); if fd < 0 { continue } } has no errno check and no backoff.",
     scenario:"On EMFILE (descriptor exhaustion) or EBADF (listener closed), accept() returns -1 immediately on every iteration, pegging a CPU core forever and starving real work. Descriptor exhaustion is exactly the state the recent leak fixes were guarding against.",
     fix:"Inspect errno; on EMFILE/ENFILE back off briefly, on EBADF/EINVAL break the loop and exit so the proxy can respawn a clean daemon." },
 
-  { id:"F5", sev:"Important", cat:"retry-storm", conf:70, status:"open",
+  { id:"F5", sev:"Important", cat:"retry-storm", conf:70, status:"fixed",
     title:"ping() liveness probe tears down a healthy-but-slow connection on timeout",
     loc:"src/Core/Remote/Client/RemoteFileProvider.swift:51-60 (send default disconnectOnTimeout:true, SSHConnection.swift:479, 566)",
     desc:"ping() calls connection.send without passing disconnectOnTimeout, so it uses the default true. The real read/list probes deliberately pass false; ping does not.",
     scenario:"On a high-latency link, a ping that exceeds 3s times out and force-disconnects a perfectly healthy connection, triggering a reconnect. Because ping is the pingFirst liveness check on the interactive refresh path, slow links get spurious teardown-and-reconnect churn.",
     fix:"Call send with disconnectOnTimeout: false in ping(); a slow probe should report not-alive, not kill the transport." },
 
-  { id:"B2", sev:"Important", cat:"ui-stall", conf:78, status:"open",
+  { id:"B2", sev:"Important", cat:"ui-stall", conf:78, status:"fixed",
     title:"Interactive refresh/read can redeploy the server synchronously and run the full timeout cascade, stalling the UI 50-80s",
     loc:"src/Core/Remote/Client/RemoteInteractiveOperationSupport.swift:117-198; AppMain/RemoteDocumentState.swift:460-538",
     desc:"A single user-initiated read chains ping(3s) then probe(5s) then ping(3s) then forceReconnect + waitForRemoteConnection(20s) then a full redeploy (removeDeployedServer + scp) then fullRead(30s), all serial. Sidebar file selection runs the same cascade with isRefreshing already false, so there is no spinner and the old document stays on screen.",
     scenario:"Cmd+R (or a sidebar click) on a wedged connection after wake-from-sleep leaves Refreshing up, or shows nothing at all on sidebar select, for the better part of a minute or more. This is the stall you hit, generalized across the interactive paths.",
     fix:"Bound the whole interactive operation with a single overall deadline, surface a spinner + cancel on the sidebar path, and move the redeploy escalation off the interactive path (or gate it behind explicit user confirmation) so a refresh never blocks on a full scp." },
 
-  { id:"D2", sev:"Important", cat:"deploy", conf:70, status:"open",
+  { id:"D2", sev:"Important", cat:"deploy", conf:70, status:"fixed",
     title:"pkill -f redmargin-server and rm -rf ~/.redmargin-server hit every version and every session for the user",
     loc:"src/Core/Remote/Client/ServerDeployer.swift:130, 248, 256",
     desc:"killOldProcesses and removeDeployedServer match any redmargin-server process for the account and delete the whole server directory, not just the current session or version.",
     scenario:"A second concurrent redmargin session (another Mac, or an overlapping connect during reconnect) is on the same host and user. A redeploy or self-heal from one client kills the other's live daemon and removes its binary, dropping that session mid-use.",
     fix:"Scope the kill to the specific version/PID being replaced (match the exact binary path or track the daemon PID), and avoid rm -rf of the shared directory while another session may be live." },
 
-  { id:"L1", sev:"Important", cat:"leak", conf:68, status:"open",
+  { id:"L1", sev:"Important", cat:"leak", conf:68, status:"fixed",
     title:"RemoteFileProvider spawns an unstored, uncancelled event-loop Task that leaks one parked task per document opened",
     loc:"src/Core/Remote/Client/RemoteFileProvider.swift:89",
     desc:"init starts Task { for await eventData in connection.events } without storing or cancelling it. The shared cached connection's events stream only finishes at app teardown, so the loop parks for the app's life, re-checking weak self only when the next event arrives, while strongly holding the connection.",
     scenario:"Over a long session opening and closing many remote documents on the same host, one suspended coroutine leaks per open, each pinning an SSHConnection. Slow memory growth, not descriptor exhaustion.",
     fix:"Store the Task and cancel it in a RemoteFileProvider deinit (or scope it to a structured lifetime tied to the provider)." },
 
-  { id:"S3", sev:"Important", cat:"server", conf:66, status:"open",
+  { id:"S3", sev:"Important", cat:"server", conf:66, status:"fixed",
     title:"Server ignores partial socket writes, truncating length-prefixed frames and desyncing the client stream",
     loc:"Server/Daemon.swift:85-93; Server/UnixSocket.swift:33-35",
     desc:"socketWrite issues one write() and sendData discards the byte count. There is no write-until-complete loop.",
     scenario:"On a full socket send buffer (large git diff, base64 asset), write() short-writes; the rest of the frame is never sent. The client reads a wrong 4-byte length for the next frame and desyncs permanently, hanging that session.",
     fix:"Loop write() until all bytes are sent (handle EINTR/EAGAIN), and treat a failed write as a connection close." },
 
-  { id:"S4", sev:"Minor", cat:"server", conf:60, status:"open",
+  { id:"S4", sev:"Minor", cat:"server", conf:60, status:"fixed",
     title:"Frame reader trusts the length prefix with no cap; server read has no idle timeout",
     loc:"src/Core/Remote/Protocol/RPCMessage.swift:46-52; Server/Daemon.swift:109-111",
     desc:"receive() reads a 4-byte length (up to ~4 GB) and buffers until complete, with no sanity cap. The daemon's socketRead has no timeout.",
     scenario:"A desync (S3) or a corrupt prefix is read as a huge length; the buffer grows toward OOM, or the reader thread blocks forever waiting for bytes that never arrive, wedging a pool thread.",
     fix:"Cap the maximum frame size and drop/rese the connection on violation; add an idle read timeout on the server socket." },
 
-  { id:"D3", sev:"Minor", cat:"deploy", conf:60, status:"open",
+  { id:"D3", sev:"Minor", cat:"deploy", conf:60, status:"fixed",
     title:"Non-atomic upload plus ignored chmod result can leave a corrupt or non-executable binary at the canonical path",
     loc:"src/Core/Remote/Client/ServerDeployer.swift:89-103",
     desc:"scp writes straight to the final redmargin-server-<version> path (no temp file + mv), and the chmod +x result is discarded.",
@@ -200,14 +200,14 @@ const F = [
     scenario:"Launch with many or large cached remote windows produces a main-thread launch stall proportional to total cached bytes before the first window paints.",
     fix:"Load cached content off the main actor (await a background read) and paint the window shell first." },
 
-  { id:"D6", sev:"Minor", cat:"deploy", conf:95, status:"open",
+  { id:"D6", sev:"Minor", cat:"deploy", conf:95, status:"fixed",
     title:"Dead code: detectRemotePlatform and binaryNeedsUpdate have no callers",
     loc:"src/Core/Remote/Client/ServerDeployer.swift:111, 195",
     desc:"Both private methods are unused; ensureServerDeployed inlines the uname and hash logic. Confirmed by grep across src/, AppMain/, Tests/.",
     scenario:"Not a runtime defect. Duplicated uname/hash logic that can drift from the live path and misleads readers about which code runs.",
     fix:"Delete both methods." },
 
-  { id:"D5", sev:"Minor", cat:"server", conf:45, status:"open",
+  { id:"D5", sev:"Minor", cat:"server", conf:45, status:"fixed",
     title:"Misaligned load(as: UInt32.self) on a Data slice can trap on aarch64",
     loc:"src/Core/Remote/Protocol/RPCMessage.swift:46-48",
     desc:"After removeSubrange(0..<totalLength), withUnsafeBytes may present a base pointer that is not 4-byte aligned; load(as:) requires alignment and can trap on strict-alignment architectures.",
