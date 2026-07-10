@@ -31,7 +31,7 @@ targets += [
     ),
     .testTarget(
         name: "RedmarginTests",
-        dependencies: ["Redmargin", "RedmarginLib", "RedmarginCore"],
+        dependencies: ["Redmargin", "RedmarginLib", "RedmarginCore", "redmargin-server"],
         path: "Tests",
         exclude: ["Fixtures", "Scripts", "TEST_LOG.md", "Linux", "UITests"]
     )

@@ -1,6 +1,18 @@
 import Foundation
 import RedmarginCore
 
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
+
+// A write to a socket whose peer has gone away raises SIGPIPE, whose default
+// disposition kills the process. Both the daemon and the proxy write to sockets
+// that a client can close at any moment, so take the EPIPE return value instead
+// and let the write paths treat it as a closed connection.
+signal(SIGPIPE, SIG_IGN)
+
 func printUsage() {
     print("""
     Usage: redmargin-server <command> [options]

@@ -7,6 +7,88 @@ import Glibc
 import Darwin
 #endif
 
+/// Owns one accepted client connection: its descriptor, the serial queue that
+/// writes to it, and the request tasks it spawned.
+///
+/// Everything that can outlive the read loop (queued writes, in-flight request
+/// tasks, watcher events) is routed through here, so it can all be shut off
+/// *before* the descriptor is closed. Without that gate a late response writes
+/// through a descriptor number that `accept()` has already handed to the next
+/// client, corrupting its framing and leaking the previous response to it.
+final class ClientSession {
+    private let clientFD: Int32
+    private let writeQueue: DispatchQueue
+
+    /// Touched only on `writeQueue`, which serializes it against every write.
+    private var isClosed = false
+
+    private let taskLock = NSLock()
+    private var requestTasks: [UUID: Task<Void, Never>] = [:]
+    private var acceptsNewTasks = true
+
+    /// The descriptor to read from. Valid only until `close()` returns.
+    var fileDescriptor: Int32 { clientFD }
+
+    init(clientFD: Int32) {
+        self.clientFD = clientFD
+        self.writeQueue = DispatchQueue(label: "com.redmargin.server.write.\(clientFD)")
+    }
+
+    /// Queues a frame for this connection. Frames submitted after `close()` are
+    /// dropped: the descriptor may already belong to another client.
+    func send(_ data: Data) {
+        writeQueue.async { [self] in
+            guard !isClosed else { return }
+            let delivered = data.withUnsafeBytes { raw -> Bool in
+                guard let base = raw.baseAddress else { return true }
+                return socketWriteAll(fileDesc: clientFD, buffer: base, count: data.count)
+            }
+            if !delivered {
+                // Peer hung up (EPIPE/ECONNRESET). Stop writing to this client.
+                isClosed = true
+            }
+        }
+    }
+
+    /// Runs a request handler as a tracked task so teardown can cancel it.
+    /// The registry is mutated under `taskLock`, which the task's own
+    /// completion path also takes, so a handler that finishes immediately
+    /// cannot remove its entry before it is inserted.
+    func spawnRequest(_ body: @escaping @Sendable () async -> Void) {
+        let id = UUID()
+        taskLock.lock()
+        defer { taskLock.unlock() }
+        guard acceptsNewTasks else { return }
+        requestTasks[id] = Task { [self] in
+            await body()
+            finishRequest(id)
+        }
+    }
+
+    private func finishRequest(_ id: UUID) {
+        taskLock.lock()
+        requestTasks.removeValue(forKey: id)
+        taskLock.unlock()
+    }
+
+    /// Stops new work, cancels what is still running, drains queued writes, and
+    /// only then closes the descriptor.
+    func close() {
+        taskLock.lock()
+        acceptsNewTasks = false
+        let inFlight = Array(requestTasks.values)
+        requestTasks.removeAll()
+        taskLock.unlock()
+        for task in inFlight { task.cancel() }
+
+        // Barrier. This block runs after every write already queued, so nothing
+        // is mid-write when it returns; every write queued after it observes
+        // `isClosed` and drops. Only now is the descriptor safe to release.
+        writeQueue.sync { isClosed = true }
+        _ = systemClose(clientFD)
+    }
+}
+
 enum Daemon {
     @_silgen_name("fork")
     static func c_fork() -> Int32
@@ -73,8 +155,11 @@ enum Daemon {
             DispatchQueue.global().async {
                 let rpcHandler = RPCHandler()
                 let streamHandler = RPCStreamHandler()
-                handleClient(clientFD: clientFD, rpcHandler: rpcHandler, streamHandler: streamHandler)
-                _ = systemClose(clientFD)
+                let session = ClientSession(clientFD: clientFD)
+                handleClient(session: session, rpcHandler: rpcHandler, streamHandler: streamHandler)
+                // Cancel this connection's request tasks and drain its queued
+                // writes before the descriptor is released back to accept().
+                session.close()
                 // Release only this connection's watchers so their inotify FDs do
                 // not accumulate; other live connections keep theirs.
                 let teardown = DispatchSemaphore(value: 0)
@@ -89,22 +174,11 @@ enum Daemon {
     }
 
     static func handleClient(
-        clientFD: Int32,
+        session: ClientSession,
         rpcHandler: RPCHandler,
         streamHandler: RPCStreamHandler
     ) {
-        let writeQueue = DispatchQueue(label: "com.redmargin.server.write")
-
-        // Helper to write data safely
-        let sendData: (Data) -> Void = { data in
-            writeQueue.async {
-                data.withUnsafeBytes { ptr in
-                    if let baseAddress = ptr.baseAddress {
-                        _ = socketWriteAll(fileDesc: clientFD, buffer: baseAddress, count: data.count)
-                    }
-                }
-            }
-        }
+        let sendData: (Data) -> Void = { data in session.send(data) }
 
         // Setup event handlers SYNCHRONOUSLY before processing any requests
         // This prevents race condition where watchFile request is processed before handlers are set
@@ -121,16 +195,16 @@ enum Daemon {
         defer { buffer.deallocate() }
 
         while true {
-            let readCount = socketRead(fileDesc: clientFD, buffer: buffer, count: bufferSize)
+            let readCount = socketRead(fileDesc: session.fileDescriptor, buffer: buffer, count: bufferSize)
             if readCount <= 0 { break }
 
             let data = Data(bytes: buffer, count: readCount)
             let messages = streamHandler.receive(data: data)
 
             for msgData in messages {
-                Task {
+                session.spawnRequest {
                     if let response = await rpcHandler.handle(msgData) {
-                        sendData(response)
+                        session.send(response)
                     }
                 }
             }

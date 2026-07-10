@@ -38,6 +38,10 @@ func socketWrite(fileDesc: Int32, buffer: UnsafeRawPointer, count: Int) -> Int {
 /// can short-write on a full send buffer (a large git diff or base64 asset);
 /// dropping the remainder truncates the length-prefixed frame and desyncs the
 /// client's stream permanently. Returns false if the socket is closed or errors.
+///
+/// A peer that disappears mid-write yields EPIPE rather than a fatal SIGPIPE
+/// (suppressed at startup in main.swift), and surfaces here as `false` so the
+/// caller stops sending to that client.
 func socketWriteAll(fileDesc: Int32, buffer: UnsafeRawPointer, count: Int) -> Bool {
     var offset = 0
     while offset < count {

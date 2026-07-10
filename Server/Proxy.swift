@@ -145,8 +145,10 @@ enum Proxy {
         while true {
             let count = socketRead(fileDesc: sourceFD, buffer: buffer, count: bufferSize)
             if count <= 0 { break }
-            let written = socketWrite(fileDesc: destFD, buffer: buffer, count: count)
-            if written < 0 { break }
+            // A single write() can satisfy only part of the buffer. Dropping the
+            // remainder truncates a length-prefixed RPC frame and desynchronizes
+            // the bridge permanently, so loop until every byte is delivered.
+            guard socketWriteAll(fileDesc: destFD, buffer: buffer, count: count) else { break }
         }
     }
 

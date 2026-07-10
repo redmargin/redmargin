@@ -1,6 +1,14 @@
 # Changelog
 <!-- markdownlint-disable MD022 MD032 -->
 
+## Unreleased
+
+### Fixed
+
+- Fixed a remote helper defect where a response from a closed connection could be written into the next client's session, corrupting its message framing and exposing the previous session's response contents. Each connection now owns its writes and in-flight requests, which are shut down before its socket is released.
+- Fixed the remote helper terminating outright when a slow client disconnected while the helper was still writing to it.
+- Fixed the remote helper's proxy silently truncating large messages (big diffs, embedded images) when the operating system accepted only part of a write, which desynchronized the connection until reconnect.
+
 ## v1.5.2 (2026-06-29)
 
 ### Added
