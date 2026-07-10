@@ -11,6 +11,7 @@ final class FolderWindowTests: XCTestCase {
     private var savedLegacyRecentFolders: [String]?
     private var savedLegacyRecentRemoteFolders: Data?
     private var savedFolderSelectedFiles: [String: String]?
+    private var savedMigrationVersion: Any?
 
     private let recentWorkspacesKey = "RedMargin.RecentWorkspaces"
     private let corruptRecentWorkspacesKey = "RedMargin.RecentWorkspaces.Corrupt"
@@ -28,6 +29,10 @@ final class FolderWindowTests: XCTestCase {
         savedLegacyRecentFolders = UserDefaults.standard.stringArray(forKey: legacyRecentFoldersKey)
         savedLegacyRecentRemoteFolders = UserDefaults.standard.data(forKey: legacyRecentRemoteFoldersKey)
         savedFolderSelectedFiles = UserDefaults.standard.dictionary(forKey: folderSelectedFilesKey) as? [String: String]
+        // The legacy migration now records that it ran instead of deleting its source
+        // keys. Clear that record so each test's seeded legacy keys are still read.
+        savedMigrationVersion = UserDefaults.standard.object(forKey: RecentWorkspaceMigrator.migrationVersionKey)
+        UserDefaults.standard.removeObject(forKey: RecentWorkspaceMigrator.migrationVersionKey)
         UserDefaults.standard.removeObject(forKey: recentWorkspacesKey)
         UserDefaults.standard.removeObject(forKey: corruptRecentWorkspacesKey)
         UserDefaults.standard.removeObject(forKey: legacyMixedRecentsKey)
@@ -52,6 +57,7 @@ final class FolderWindowTests: XCTestCase {
         restoreUserDefaults(savedLegacyRecentFolders, forKey: legacyRecentFoldersKey)
         restoreUserDefaults(savedLegacyRecentRemoteFolders, forKey: legacyRecentRemoteFoldersKey)
         restoreUserDefaults(savedFolderSelectedFiles, forKey: folderSelectedFilesKey)
+        restoreUserDefaults(savedMigrationVersion, forKey: RecentWorkspaceMigrator.migrationVersionKey)
     }
 
     private func restoreUserDefaults(_ value: Any?, forKey key: String) {
@@ -132,7 +138,7 @@ final class FolderWindowTests: XCTestCase {
     }
 
     @MainActor
-    func testLegacyDocumentRecentsMigrateToWorkspaceFilesAndClearLegacyKey() throws {
+    func testLegacyDocumentRecentsMigrateToWorkspaceFilesAndKeepLegacyKey() throws {
         let standaloneFile = tempDir.appendingPathComponent("standalone.md")
         try "# Standalone".write(to: standaloneFile, atomically: true, encoding: .utf8)
         UserDefaults.standard.set(
@@ -144,7 +150,9 @@ final class FolderWindowTests: XCTestCase {
 
         XCTAssertEqual(appDelegate.recentWorkspaces.items.first?.kind, .localFile)
         XCTAssertEqual(appDelegate.recentWorkspaces.items.first?.localURL, standaloneFile.standardizedFileURL)
-        XCTAssertNil(UserDefaults.standard.object(forKey: legacyMixedRecentsKey))
+        // Forward migrations never delete data: the legacy key stays readable so an
+        // older build still finds the recents it wrote.
+        XCTAssertNotNil(UserDefaults.standard.object(forKey: legacyMixedRecentsKey))
     }
 
     @MainActor

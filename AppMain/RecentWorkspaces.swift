@@ -300,12 +300,19 @@ final class RecentWorkspaceStore: ObservableObject {
 
     private func migrateLegacyItemsIfNeeded() {
         let migrator = RecentWorkspaceMigrator(defaults: defaults)
-        let migrated = migrator.migratedItems()
-        guard !migrated.isEmpty else { return }
+        guard !migrator.hasCompletedMigration else { return }
 
-        items.append(contentsOf: migrated)
-        normalizeAndPersist()
-        migrator.removeLegacyKeys()
+        let migrated = migrator.migratedItems()
+        if !migrated.isEmpty {
+            items.append(contentsOf: migrated)
+            normalizeAndPersist()
+        }
+
+        // Recorded even when nothing was found, so the legacy keys are read exactly
+        // once. Tracking completion separately is what lets the migration keep its
+        // own source: deleting the legacy keys was the only way it could otherwise
+        // avoid re-importing them on the next launch.
+        migrator.markMigrationCompleted()
     }
 }
 
@@ -327,8 +334,22 @@ struct RecentWorkspaceMigrator {
     private let legacyRecentFolderURLsKey = "RedMargin.RecentFolderURLs"
     private let legacyRecentRemoteLocationsKey = "RedMargin.RecentRemoteLocations"
 
+    /// Records that the legacy keys have been folded in. Tracking completion here
+    /// means the migration never deletes its own source: the legacy keys stay
+    /// readable, so an older build still finds the recents it wrote.
+    static let migrationVersionKey = "RedMargin.RecentWorkspaces.LegacyMigrationVersion"
+    static let currentMigrationVersion = 1
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+    }
+
+    var hasCompletedMigration: Bool {
+        defaults.integer(forKey: Self.migrationVersionKey) >= Self.currentMigrationVersion
+    }
+
+    func markMigrationCompleted() {
+        defaults.set(Self.currentMigrationVersion, forKey: Self.migrationVersionKey)
     }
 
     func migratedItems(now: Date = Date()) -> [RecentWorkspaceItem] {
@@ -338,13 +359,6 @@ struct RecentWorkspaceMigrator {
         result.append(contentsOf: migrateLocalPaths(forKey: legacyRecentFolderURLsKey, kind: .localFolder, now: now))
         result.append(contentsOf: migrateLegacyRemoteLocations(now: now))
         return result
-    }
-
-    func removeLegacyKeys() {
-        defaults.removeObject(forKey: recentFoldersKey)
-        defaults.removeObject(forKey: legacyRecentURLsKey)
-        defaults.removeObject(forKey: legacyRecentFolderURLsKey)
-        defaults.removeObject(forKey: legacyRecentRemoteLocationsKey)
     }
 
     private func migrateRecentFolders(now: Date) -> [RecentWorkspaceItem] {

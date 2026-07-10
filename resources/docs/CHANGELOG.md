@@ -22,6 +22,10 @@
 - Fixed a file opened from the remote sidebar not being available offline until the next reconnect.
 - Fixed opening the remote panel for a server that already has windows creating a second, untracked connection. Those windows stopped reconnecting after the machine woke from sleep and were not closed cleanly on quit. All windows on a server now share one connection.
 
+### Changed
+
+- Upgrading no longer erases the recent-workspace data an older version of the app reads, so downgrading keeps its recents list.
+
 ### Security
 
 - Restricted the remote helper's working directory and its command socket to the owning account. On hosts with a permissive umask another local user could previously connect to the socket and read or write files as the connecting user, without authenticating. The helper now also refuses connections from any other account and fails to start rather than run with weakened permissions.

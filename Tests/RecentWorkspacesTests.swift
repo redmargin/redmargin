@@ -72,7 +72,8 @@ final class RecentWorkspacesTests: XCTestCase {
 
         XCTAssertEqual(store.items.first?.kind, .localFolder)
         XCTAssertEqual(store.items.first?.localURL, folder.standardizedFileURL)
-        XCTAssertNil(defaults.object(forKey: "RedMargin.RecentFolders"))
+        // Forward migrations never delete data; the legacy source key survives.
+        XCTAssertNotNil(defaults.object(forKey: "RedMargin.RecentFolders"))
     }
 
     func testRecentWorkspaceStoreMigratesLegacyMixedRecents() throws {
@@ -85,8 +86,9 @@ final class RecentWorkspacesTests: XCTestCase {
 
         XCTAssertTrue(store.items.contains { $0.kind == .localFile && $0.localURL == file.standardizedFileURL })
         XCTAssertTrue(store.items.contains { $0.kind == .localFolder && $0.localURL == folder.standardizedFileURL })
-        XCTAssertNil(defaults.object(forKey: "RedMargin.RecentDocumentURLs"))
-        XCTAssertNil(defaults.object(forKey: "RedMargin.RecentFolderURLs"))
+        // Forward migrations never delete data; the legacy source keys survive.
+        XCTAssertNotNil(defaults.object(forKey: "RedMargin.RecentDocumentURLs"))
+        XCTAssertNotNil(defaults.object(forKey: "RedMargin.RecentFolderURLs"))
     }
 
     func testRecentWorkspaceStoreMigratesLegacyRemoteRecents() throws {
@@ -97,7 +99,8 @@ final class RecentWorkspacesTests: XCTestCase {
 
         XCTAssertEqual(store.items.first?.kind, .remoteFolder)
         XCTAssertEqual(store.items.first?.remoteLocation?.path, "/srv/app/")
-        XCTAssertNil(defaults.object(forKey: "RedMargin.RecentRemoteLocations"))
+        // Forward migrations never delete data; the legacy source key survives.
+        XCTAssertNotNil(defaults.object(forKey: "RedMargin.RecentRemoteLocations"))
     }
 
     func testRecentWorkspaceStoreLeavesRecentRemoteConnectionsAlone() throws {
