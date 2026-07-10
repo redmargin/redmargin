@@ -1,4 +1,5 @@
 import XCTest
+@testable import RedmarginCore
 @testable import redmargin_server
 
 #if canImport(Darwin)
@@ -19,6 +20,65 @@ final class ServerSecurityTests: XCTestCase {
 
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: tempDir)
+    }
+
+    // MARK: - Document reads
+
+    func testReadFileReturnsRegularFile() async throws {
+        let doc = tempDir.appendingPathComponent("note.md")
+        try "# Title\n".write(to: doc, atomically: true, encoding: .utf8)
+
+        let response = await FileOperations().readFile(path: doc.path)
+
+        XCTAssertNil(response.error)
+        XCTAssertEqual(response.content, "# Title\n")
+    }
+
+    /// A document path arrives from the client. Pointing it at a FIFO would park
+    /// the actor on an open() that never returns, wedging the whole connection.
+    func testReadFileRejectsNonRegularFile() async throws {
+        let fifo = tempDir.appendingPathComponent("pipe.md")
+        try XCTSkipIf(mkfifo(fifo.path, 0o600) != 0, "mkfifo unavailable: errno \(errno)")
+
+        let response = await FileOperations().readFile(path: fifo.path)
+
+        XCTAssertNil(response.content)
+        XCTAssertEqual(response.error, "Not a regular file")
+    }
+
+    /// Oversized documents are refused from the stat, before any bytes are loaded.
+    func testReadFileRejectsOversizedFile() async throws {
+        let doc = tempDir.appendingPathComponent("huge.md")
+        FileManager.default.createFile(atPath: doc.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: doc)
+        // Sparse: costs no disk, but reports a size past the limit.
+        try handle.truncate(atOffset: UInt64(FileOperations.maxDocumentBytes) + 1)
+        try handle.close()
+
+        let response = await FileOperations().readFile(path: doc.path)
+
+        XCTAssertNil(response.content)
+        XCTAssertEqual(response.error, "File exceeds \(FileOperations.maxDocumentBytes) bytes")
+    }
+
+    /// A symlink to a FIFO must be judged by its target, not by the link.
+    func testReadFileRejectsSymlinkToNonRegularFile() async throws {
+        let fifo = tempDir.appendingPathComponent("pipe")
+        try XCTSkipIf(mkfifo(fifo.path, 0o600) != 0, "mkfifo unavailable: errno \(errno)")
+        let link = tempDir.appendingPathComponent("link.md")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: fifo)
+
+        let response = await FileOperations().readFile(path: link.path)
+
+        XCTAssertNil(response.content)
+        XCTAssertEqual(response.error, "Not a regular file")
+    }
+
+    func testReadFileReportsMissingFile() async throws {
+        let response = await FileOperations().readFile(path: tempDir.appendingPathComponent("absent.md").path)
+
+        XCTAssertNil(response.content)
+        XCTAssertEqual(response.errorCode, FileErrorCode.fileNotFound.rawValue)
     }
 
     // MARK: - Asset reads

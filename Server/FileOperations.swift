@@ -93,9 +93,33 @@ actor FileOperations {
         return FindMarkdownFilesResponsePayload(files: files, error: nil)
     }
 
+    /// A document is delivered whole inside one JSON frame, so anything past this
+    /// could never reach the client anyway. Reading it would only cost both hosts
+    /// the memory first. Sits below `RPCStreamHandler.maxFrameLength` to leave
+    /// room for the JSON envelope around the content.
+    static let maxDocumentBytes = 32 * 1024 * 1024
+
     func readFile(path: String) -> ReadFileResponsePayload {
+        // Resolve first: the checks below must describe the file we actually open,
+        // not a symlink standing in front of it.
+        let url = URL(fileURLWithPath: expandTilde(in: path))
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+
+        // A stat failure is left to the read below, which reports whether the file
+        // is missing or unreadable. Only a successful stat can rule the file out.
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let fileType = attributes[.type] as? FileAttributeType {
+            // A FIFO or device node would block this actor for the life of the daemon.
+            guard fileType == .typeRegular else {
+                return ReadFileResponsePayload(content: nil, error: "Not a regular file")
+            }
+            if let size = (attributes[.size] as? NSNumber)?.int64Value, size > Self.maxDocumentBytes {
+                return ReadFileResponsePayload(content: nil, error: "File exceeds \(Self.maxDocumentBytes) bytes")
+            }
+        }
+
         do {
-            let url = URL(fileURLWithPath: expandTilde(in: path))
             let content = try String(contentsOf: url, encoding: .utf8)
             return ReadFileResponsePayload(content: content, error: nil)
         } catch {
