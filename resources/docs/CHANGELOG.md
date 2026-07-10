@@ -13,6 +13,7 @@
 
 - Restricted the remote helper's working directory and its command socket to the owning account. On hosts with a permissive umask another local user could previously connect to the socket and read or write files as the connecting user, without authenticating. The helper now also refuses connections from any other account and fails to start rather than run with weakened permissions.
 - Bounded the size and kind of files the remote helper will load as images: a document can no longer point it at a huge file or a device node and exhaust memory or stall the connection.
+- Stopped a repository's own Git configuration from running commands when Redmargin inspects it. Opening a file inside a repository obtained from an untrusted source could previously execute code as the current user through Git's fsmonitor, external-diff, and textconv settings.
 
 ## v1.5.2 (2026-06-29)
 

@@ -49,7 +49,7 @@ public actor GitStatusProvider {
         do {
             let result = try await ProcessRunner.run(
                 executable: "git",
-                arguments: ["-C", directory.path, "rev-parse", "--show-toplevel"],
+                arguments: GitCommand.arguments(["-C", directory.path, "rev-parse", "--show-toplevel"]),
                 timeout: 5
             )
             guard result.exitCode == 0 else { return nil }
@@ -65,7 +65,7 @@ public actor GitStatusProvider {
         do {
             let result = try await ProcessRunner.run(
                 executable: "git",
-                arguments: ["-C", repoRoot.path, "status", "--porcelain", "-uall"],
+                arguments: GitCommand.arguments(["-C", repoRoot.path, "status", "--porcelain", "-uall"]),
                 timeout: 10
             )
             guard result.exitCode == 0 else { return [:] }

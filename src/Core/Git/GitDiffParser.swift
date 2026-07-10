@@ -47,7 +47,7 @@ public enum GitDiffParser {
     private static func isFileTracked(relativePath: String, repoRoot: URL) async throws -> Bool {
         let result = try await ProcessRunner.run(
             executable: "git",
-            arguments: ["ls-files", "--error-unmatch", "--", relativePath],
+            arguments: GitCommand.arguments(["ls-files", "--error-unmatch", "--", relativePath]),
             workingDirectory: repoRoot,
             timeout: 10
         )
@@ -60,7 +60,7 @@ public enum GitDiffParser {
     private static func isFileIgnored(relativePath: String, repoRoot: URL) async throws -> Bool {
         let result = try await ProcessRunner.run(
             executable: "git",
-            arguments: ["check-ignore", "--quiet", "--", relativePath],
+            arguments: GitCommand.arguments(["check-ignore", "--quiet", "--", relativePath]),
             workingDirectory: repoRoot,
             timeout: 10
         )
@@ -73,7 +73,9 @@ public enum GitDiffParser {
     private static func runGitDiff(relativePath: String, repoRoot: URL) async throws -> String {
         let result = try await ProcessRunner.run(
             executable: "git",
-            arguments: ["diff", "--unified=0", "HEAD", "--", relativePath],
+            arguments: GitCommand.arguments(
+                ["diff"] + GitCommand.diffSafetyOptions + ["--unified=0", "HEAD", "--", relativePath]
+            ),
             workingDirectory: repoRoot,
             timeout: 10
         )
