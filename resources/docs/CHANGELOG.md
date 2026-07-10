@@ -20,6 +20,7 @@
 - Fixed a remote window on an IPv6 host never being restored as the frontmost window.
 - Fixed a remote document that had been emptied on the server still showing its old contents when reopened offline.
 - Fixed a file opened from the remote sidebar not being available offline until the next reconnect.
+- Fixed opening the remote panel for a server that already has windows creating a second, untracked connection. Those windows stopped reconnecting after the machine woke from sleep and were not closed cleanly on quit. All windows on a server now share one connection.
 
 ### Security
 

@@ -46,6 +46,10 @@ struct OpenRemoteSheet: View {
     let onFileSelected: (SSHConnection, String) async throws -> Void
     let onFolderSelected: ((SSHConnection, String) async throws -> Void)?
     let onDismiss: () -> Void
+    /// Asks the owner to drop the host's connection if nothing else is using it.
+    /// The sheet shares its connection with any open window on that host, so it
+    /// must never disconnect one itself.
+    let onReleaseConnection: (String) async -> Void
 
     enum NavDirection { case upward, downward }
 
@@ -54,13 +58,15 @@ struct OpenRemoteSheet: View {
         onServerConnected: @escaping (String) -> Void,
         onFileSelected: @escaping (SSHConnection, String) async throws -> Void,
         onFolderSelected: ((SSHConnection, String) async throws -> Void)? = nil,
-        onDismiss: @escaping () -> Void
+        onDismiss: @escaping () -> Void,
+        onReleaseConnection: @escaping (String) async -> Void
     ) {
         self._recentServers = recentServers
         self.onServerConnected = onServerConnected
         self.onFileSelected = onFileSelected
         self.onFolderSelected = onFolderSelected
         self.onDismiss = onDismiss
+        self.onReleaseConnection = onReleaseConnection
     }
 
     var body: some View {

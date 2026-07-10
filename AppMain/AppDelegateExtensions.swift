@@ -66,6 +66,9 @@ extension AppDelegate {
                           let parent = hostCtrl.view.window?.sheetParent {
                     parent.endSheet(hostCtrl.view.window!)
                 }
+            },
+            onReleaseConnection: { [weak self] host in
+                await self?.releaseRemoteConnectionIfUnused(host: host)
             }
         )
         hostingController = NSHostingController(rootView: sheet)
@@ -83,6 +86,17 @@ extension AppDelegate {
         }
 
         keyWindow.contentViewController?.presentAsSheet(hostingController!)
+    }
+
+    /// Drops a host's connection once nothing is using it. Called when the remote
+    /// open sheet is cancelled: its connection is the manager's, shared with every
+    /// window on that host, so it can only be closed when no window remains.
+    func releaseRemoteConnectionIfUnused(host: String) async {
+        let stillInUse = await MainActor.run {
+            self.remoteDocumentWindows.keys.contains { $0.host == host }
+        }
+        guard !stillInUse else { return }
+        await SSHConnectionManager.shared.disconnect(host: host)
     }
 
     func openRemoteDocument(connection: SSHConnection, path: String) async throws {

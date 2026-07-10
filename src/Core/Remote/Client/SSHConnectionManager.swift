@@ -79,8 +79,28 @@ public actor SSHConnectionManager {
         return connection
     }
 
-    public func registerConnection(_ connection: SSHConnection, for host: String) {
+    /// Adopts `connection` as the connection for `host`.
+    ///
+    /// Refuses to displace a different connection that is still usable. Windows
+    /// already hold the old object, and overwriting the entry would strand them on
+    /// a connection this manager no longer reconnects on wake or shuts down on
+    /// quit. A connection that was intentionally disconnected is not usable, so it
+    /// is closed and replaced.
+    ///
+    /// Returns whether `connection` is now the registered one.
+    @discardableResult
+    public func registerConnection(_ connection: SSHConnection, for host: String) async -> Bool {
+        if let existing = connections[host], existing !== connection {
+            if await existing.isReusable {
+                #if canImport(os)
+                logger.error("Refusing to replace the live connection for \(host, privacy: .public)")
+                #endif
+                return false
+            }
+            await existing.disconnect()
+        }
         connections[host] = connection
+        return true
     }
 
     /// Returns the cached connection for `host`, or creates a fresh, not-yet-connected
@@ -104,7 +124,10 @@ public actor SSHConnectionManager {
     /// than racing the deploy/handshake. The thrown `SSHConnectionError` is
     /// propagated to every caller and the in-flight entry cleared.
     @discardableResult
-    public func ensureConnected(for host: String) async throws -> SSHConnection {
+    public func ensureConnected(
+        for host: String,
+        onProgress: (@Sendable (String) -> Void)? = nil
+    ) async throws -> SSHConnection {
         if let existing = connections[host], await existing.isAlive() {
             return existing
         }
@@ -118,7 +141,7 @@ public actor SSHConnectionManager {
 
         connectStartCount += 1
         let task = Task<Void, Error> {
-            try await connection.connect()
+            try await connection.connect(onProgress: onProgress)
         }
         inFlightConnects[host] = task
         defer { inFlightConnects[host] = nil }

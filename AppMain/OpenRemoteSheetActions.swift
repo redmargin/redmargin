@@ -94,12 +94,18 @@ extension OpenRemoteSheet {
 
         Task {
             do {
-                let conn = SSHConnection(host: host)
                 await MainActor.run { onServerConnected(host) }
 
-                try await conn.connect(onProgress: { status in
-                    Task { @MainActor in self.connectionStatus = status }
-                })
+                // Take the host's connection from the manager rather than building
+                // one here. A second connection for a host that already has windows
+                // would displace the manager's entry, leaving those windows on an
+                // object that global reconnect and shutdown no longer reach.
+                let conn = try await SSHConnectionManager.shared.ensureConnected(
+                    for: host,
+                    onProgress: { status in
+                        Task { @MainActor in self.connectionStatus = status }
+                    }
+                )
 
                 let homeDir = try await conn.getHomeDirectory()
                 let result = await tryLoadInitialDirectory(conn, homeDir: homeDir)
@@ -150,7 +156,7 @@ extension OpenRemoteSheet {
     func disconnectAndGoBack() {
         directoryLoadTask?.cancel()
         directoryLoadGeneration += 1
-        Task { await connection?.disconnect() }
+        releaseConnection()
         connection = nil
         entries = []
         currentPath = ""
@@ -162,8 +168,17 @@ extension OpenRemoteSheet {
     func dismissSheet() {
         directoryLoadTask?.cancel()
         directoryLoadGeneration += 1
-        Task { await connection?.disconnect() }
+        releaseConnection()
         onDismiss()
+    }
+
+    /// The connection belongs to `SSHConnectionManager`, and open windows may be
+    /// sharing it, so the sheet asks to release it rather than disconnecting it
+    /// itself. The host keeps its connection if any window still needs it.
+    private func releaseConnection() {
+        guard let conn = connection else { return }
+        let release = onReleaseConnection
+        Task { await release(conn.getHost()) }
     }
 }
 
