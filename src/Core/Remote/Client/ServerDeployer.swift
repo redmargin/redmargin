@@ -2,15 +2,72 @@ import Foundation
 
 public actor ServerDeployer {
     private var version: String { AppVersion.current }
-    private let sshTimeout: TimeInterval = 15 // seconds
-    private let scpTimeout: TimeInterval = 120 // seconds for upload (67MB binary)
+
+    /// Every SSH call this actor makes is bounded. `cleanupOldVersions` in
+    /// particular is awaited before a deploy returns, so an unbounded call there
+    /// would hang a fully-uploaded deploy indefinitely.
+    static let sshTimeout: TimeInterval = 15 // seconds
+    static let scpTimeout: TimeInterval = 120 // seconds for upload (67MB binary)
+
+    private var sshTimeout: TimeInterval { Self.sshTimeout }
+    private var scpTimeout: TimeInterval { Self.scpTimeout }
 
     public init() {}
 
     /// SSH options for non-interactive mode. A 5s connect timeout fast-fails
     /// unreachable hosts during restore/warm without holding up other windows.
-    private var sshOptions: [String] {
-        ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
+    static let sshOptions: [String] = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
+
+    private var sshOptions: [String] { Self.sshOptions }
+
+    // MARK: - Remote paths and commands
+    //
+    // Built as pure functions so their scope can be asserted without a host: each
+    // one names exactly which files it is allowed to touch, and every one of them
+    // is version-scoped so a deploy never disturbs another version's live session.
+
+    static func remoteBinaryPath(version: String) -> String {
+        "~/.redmargin-server/redmargin-server-\(version)"
+    }
+
+    static func remoteTempPath(version: String) -> String {
+        "~/.redmargin-server/.redmargin-server-\(version).tmp"
+    }
+
+    /// Kills only this version's processes, never another version's live session.
+    ///
+    /// The pattern is bracketed because `pkill -f` matches against whole command
+    /// lines, including the remote shell running this very command. Unbracketed,
+    /// that shell matches itself and is killed, so anything after the pkill in the
+    /// same command line never runs. `[r]edmargin-server-…` matches the daemon but
+    /// not the literal `[r]…` text in this shell's own command line.
+    static func killCommand(version: String) -> String {
+        "pkill -f '[r]edmargin-server-\(version)' 2>/dev/null || true"
+    }
+
+    /// chmod then atomic rename, so the canonical path appears only once the whole
+    /// binary is present and executable. A failed chmod must fail the deploy.
+    static func installCommand(version: String) -> String {
+        "chmod +x \(remoteTempPath(version: version)) && mv -f \(remoteTempPath(version: version)) "
+            + remoteBinaryPath(version: version)
+    }
+
+    /// Deletes other versions' binaries only: the current version, the temp upload
+    /// (dot-prefixed), the RPC socket, and the pid file all fall outside the glob.
+    static func cleanupCommand(version: String) -> String {
+        """
+        find ~/.redmargin-server -name 'redmargin-server-*' \
+        ! -name 'redmargin-server-\(version)' -type f -delete 2>/dev/null || true
+        """
+    }
+
+    /// Removes this version's binary and its temp upload, leaving other versions be.
+    ///
+    /// Sent as its own command, separate from the kill: these paths contain the
+    /// process pattern, so a pkill sharing this command line would match the shell
+    /// and stop it before the `rm` ever ran.
+    static func removeCommand(version: String) -> String {
+        "rm -f \(remoteBinaryPath(version: version)) \(remoteTempPath(version: version)) 2>/dev/null || true"
     }
 
     public func ensureServerDeployed(
@@ -19,7 +76,7 @@ public actor ServerDeployer {
     ) async throws -> String {
         // 1. Single SSH call to detect platform, check binary, and get hash
         onProgress?("Checking")
-        let remoteBinaryPath = "~/.redmargin-server/redmargin-server-\(version)"
+        let remoteBinaryPath = Self.remoteBinaryPath(version: version)
         let combinedCmd = """
             uname -sm; \
             test -x \(remoteBinaryPath) && echo EXISTS || echo MISSING; \
@@ -94,7 +151,7 @@ public actor ServerDeployer {
         // left a truncated binary exactly where establishConnection execs
         // `proxy --reconnect`; the mv makes the final path appear only once the
         // whole binary is present and executable.
-        let tmpPath = "~/.redmargin-server/.redmargin-server-\(version).tmp"
+        let tmpPath = Self.remoteTempPath(version: version)
         let scpResult = try await ProcessRunner.run(
             executable: "scp",
             arguments: ["-o", "BatchMode=yes"] + [localBinaryURL.path, "\(host):\(tmpPath)"],
@@ -109,7 +166,7 @@ public actor ServerDeployer {
         // then loops trying to exec.
         let installResult = try await ProcessRunner.run(
             executable: "ssh",
-            arguments: sshOptions + [host, "chmod +x \(tmpPath) && mv -f \(tmpPath) \(remoteBinaryPath)"],
+            arguments: sshOptions + [host, Self.installCommand(version: version)],
             timeout: sshTimeout
         )
         if installResult.exitCode != 0 {
@@ -127,10 +184,9 @@ public actor ServerDeployer {
         // A bare `pkill -f redmargin-server` also kills every other version and
         // every other live session for this user on the host, dropping a
         // concurrent window mid-use; scoping to the versioned name avoids that.
-        let killCmd = "pkill -f redmargin-server-\(version) 2>/dev/null || true"
         _ = try? await ProcessRunner.run(
             executable: "ssh",
-            arguments: sshOptions + [host, killCmd],
+            arguments: sshOptions + [host, Self.killCommand(version: version)],
             timeout: sshTimeout
         )
         RemoteLog.info("[ServerDeployer] Killed old server processes on \(host)")
@@ -186,13 +242,9 @@ public actor ServerDeployer {
         // before ensureServerDeployed returns, so it must carry the same BatchMode
         // + timeout as every other SSH call; without them a stall here hangs a
         // fully-uploaded deploy indefinitely.
-        let cleanupCmd = """
-            find ~/.redmargin-server -name 'redmargin-server-*' \
-            ! -name 'redmargin-server-\(version)' -type f -delete 2>/dev/null || true
-            """
         _ = try? await ProcessRunner.run(
             executable: "ssh",
-            arguments: sshOptions + [host, cleanupCmd],
+            arguments: sshOptions + [host, Self.cleanupCommand(version: version)],
             timeout: sshTimeout
         )
         RemoteLog.info("[ServerDeployer] Cleaned up old versions")
@@ -227,16 +279,14 @@ public actor ServerDeployer {
     /// kill other versions' daemons or `rm -rf` the shared directory out from
     /// under a concurrent session on the same host.
     public func removeDeployedServer(host: String) async {
-        let binaryPath = "~/.redmargin-server/redmargin-server-\(version)"
-        // Kill only this version's processes, then remove its binary (and any
-        // stale temp upload). Other versions and their live sessions are left be.
-        let cmd = """
-            pkill -f redmargin-server-\(version) 2>/dev/null; \
-            rm -f \(binaryPath) ~/.redmargin-server/.redmargin-server-\(version).tmp 2>/dev/null || true
-            """
+        // Kill only this version's processes, then remove its binary (and any stale
+        // temp upload). Two calls, not one: the paths in the remove command contain
+        // the process pattern, so a pkill in the same command line would match the
+        // remote shell and kill it before the removal ran.
+        await killOldProcesses(host: host)
         _ = try? await ProcessRunner.run(
             executable: "ssh",
-            arguments: sshOptions + [host, cmd],
+            arguments: sshOptions + [host, Self.removeCommand(version: version)],
             timeout: sshTimeout
         )
         RemoteLog.info("[ServerDeployer] Killed processes and removed server on \(host)")

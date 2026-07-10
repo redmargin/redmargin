@@ -24,6 +24,11 @@ final class FakeRemoteHost: @unchecked Sendable {
     private var writeDelays: [String: TimeInterval] = [:]
     /// Every `WriteFile` the client issued, in order.
     private var writes: [(path: String, content: String)] = []
+    /// When false the host receives requests but never answers, standing in for a
+    /// helper that has stopped responding.
+    private var answersRequests = true
+    /// Every request type the client sent, in order.
+    private var requests: [String] = []
 
     init() async {
         connection = SSHConnection(host: "harness.invalid")
@@ -41,10 +46,23 @@ final class FakeRemoteHost: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// Stops answering, as a wedged helper would.
+    func goSilent() {
+        lock.lock()
+        answersRequests = false
+        lock.unlock()
+    }
+
     var recordedWrites: [(path: String, content: String)] {
         lock.lock()
         defer { lock.unlock() }
         return writes
+    }
+
+    var recordedRequests: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests
     }
 
     func contents(of path: String) -> String? {
@@ -70,6 +88,12 @@ final class FakeRemoteHost: @unchecked Sendable {
         guard let header = try? JSONDecoder().decode(RPCHeader.self, from: frame),
               let id = header.id,
               let type = RPCMessageType(rawValue: header.type) else { return }
+
+        lock.lock()
+        requests.append(header.type)
+        let willAnswer = answersRequests
+        lock.unlock()
+        guard willAnswer else { return }
 
         switch type {
         case .hello:

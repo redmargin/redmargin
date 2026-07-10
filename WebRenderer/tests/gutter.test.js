@@ -1,7 +1,16 @@
 /**
- * Tests for SourcePosMap and Gutter modules.
+ * Tests for the shipped SourcePosMap and Gutter modules.
  * Run with: node WebRenderer/tests/gutter.test.js
+ *
+ * These load ../src/sourcepos-map.js and ../src/gutter.js into JSDOM, the same
+ * way sourcepos.test.js, lineNumbers.test.js, and appHarness.js load the modules
+ * they cover. An earlier version of this suite reimplemented both modules inline;
+ * the copies drifted from the shipped code (they returned every overlapping
+ * element rather than the most specific one, and exposed Gutter as a class), so
+ * production regressions could not fail these tests.
  */
+
+const { JSDOM } = require('jsdom');
 
 // Test utilities
 let passed = 0;
@@ -45,466 +54,374 @@ function assertFalse(value, msg = '') {
     }
 }
 
-// Mock DOM for Node.js environment
-const mockElements = [];
-let mockGutterContainer = null;
-let mockGitGutter = null;
-let mockContentContainer = null;
-
-function setupMockDOM() {
-    mockElements.length = 0;
-    mockGutterContainer = {
-        getBoundingClientRect: () => ({ top: 0, left: 0, width: 44, height: 1000 })
-    };
-    mockGitGutter = {
-        innerHTML: '',
-        appendChild: (el) => {},
-        children: []
-    };
-    mockContentContainer = {
-        querySelectorAll: (selector) => mockElements
-    };
-
-    global.document = {
-        getElementById: (id) => {
-            if (id === 'gutter-container') return mockGutterContainer;
-            if (id === 'git-gutter') return mockGitGutter;
-            if (id === 'content-container') return mockContentContainer;
-            return null;
-        },
-        createElement: (tag) => ({
-            className: '',
-            style: {},
-            appendChild: () => {}
-        }),
-        createDocumentFragment: () => ({
-            appendChild: () => {}
-        })
-    };
-
-    global.window = {
-        addEventListener: () => {},
-        requestAnimationFrame: (fn) => fn()
-    };
+function assertNull(value, msg = '') {
+    if (value !== null) {
+        throw new Error(`${msg}\n  Expected: null\n  Actual: ${value}`);
+    }
 }
 
-function addMockElement(sourcepos, top, height) {
-    mockElements.push({
-        getAttribute: (attr) => attr === 'data-sourcepos' ? sourcepos : null,
-        getBoundingClientRect: () => ({ top, height, left: 0, width: 100 })
+function stubRect(element, { top = 0, height = 0, left = 0, width = 100 }) {
+    element.getBoundingClientRect = () => ({
+        top, height, left, width, right: left + width, bottom: top + height
     });
 }
 
-// Load modules after mocking
-setupMockDOM();
+/**
+ * Builds a fresh DOM and loads the production modules into it.
+ *
+ * JSDOM reports a zero rect for every element, so each block's rect is stubbed to
+ * the geometry a test wants; the gutter still reads those positions through
+ * getBoundingClientRect exactly as it does in the app.
+ */
+function setupDOM() {
+    const dom = new JSDOM(
+        '<!DOCTYPE html><html><body>' +
+        '<div id="gutter-container"><div id="git-gutter"></div></div>' +
+        '<div id="content-container"></div>' +
+        '</body></html>',
+        { pretendToBeVisual: true, url: 'https://example.com' }
+    );
 
-// Inline the parseSourcepos and rangesOverlap functions for testing
-function parseSourcepos(sourcepos) {
-    if (!sourcepos) return null;
-    const match = sourcepos.match(/^(\d+):\d+-(\d+):\d+$/);
-    if (!match) return null;
-    return {
-        start: parseInt(match[1], 10),
-        end: parseInt(match[2], 10)
-    };
+    const { window } = dom;
+    global.window = window;
+    global.document = window.document;
+    global.requestAnimationFrame = window.requestAnimationFrame.bind(window);
+    global.setTimeout = window.setTimeout.bind(window);
+    global.clearTimeout = window.clearTimeout.bind(window);
+
+    stubRect(window.document.getElementById('gutter-container'), { top: 0, height: 1000 });
+
+    delete require.cache[require.resolve('../src/sourcepos-map.js')];
+    delete require.cache[require.resolve('../src/gutter.js')];
+    require('../src/sourcepos-map.js');
+    require('../src/gutter.js');
+
+    return window;
 }
 
-function rangesOverlap(aStart, aEnd, bStart, bEnd) {
-    return aStart <= bEnd && bStart <= aEnd;
+/**
+ * Appends a block carrying `data-sourcepos` to #content-container. Passing
+ * `parent` nests it, which is how the shipped map distinguishes a list item from
+ * the list containing it.
+ */
+function addBlock(sourcepos, { top = 0, height = 20, tag = 'p', parent = null } = {}) {
+    const element = document.createElement(tag);
+    element.setAttribute('data-sourcepos', sourcepos);
+    stubRect(element, { top, height });
+    (parent || document.getElementById('content-container')).appendChild(element);
+    return element;
 }
 
-// SourcePosMap implementation for testing
-function SourcePosMap() {
-    this.entries = [];
+function markers() {
+    return Array.from(document.getElementById('git-gutter').children);
 }
 
-SourcePosMap.prototype.build = function() {
-    this.entries = [];
-    const content = document.getElementById('content-container');
-    if (!content) return;
+function markerTypes() {
+    return markers().map((marker) => marker.className.replace('gutter-marker gutter-marker--', ''));
+}
 
-    const elements = content.querySelectorAll('[data-sourcepos]');
-    elements.forEach((el) => {
-        const sourcepos = el.getAttribute('data-sourcepos');
-        const range = parseSourcepos(sourcepos);
-        if (range) {
-            this.entries.push({
-                element: el,
-                start: range.start,
-                end: range.end
-            });
-        }
-    });
-    this.entries.sort((a, b) => a.start - b.start);
-};
+console.log('\nRunning gutter tests (against the shipped modules)...\n');
 
-SourcePosMap.prototype.getElementsForLineRange = function(start, end) {
-    var results = [];
-    for (var i = 0; i < this.entries.length; i++) {
-        var entry = this.entries[i];
-        if (entry.start > end) break;
-        if (rangesOverlap(entry.start, entry.end, start, end)) {
-            results.push(entry);
-        }
-    }
-    return results;
-};
+// ---------------------------------------------------------------------------
+// parseSourcepos / rangesOverlap — exported by the shipped module for testing
+// ---------------------------------------------------------------------------
 
-SourcePosMap.prototype.getElementAtOrAfterLine = function(line) {
-    for (var i = 0; i < this.entries.length; i++) {
-        if (this.entries[i].start >= line) {
-            return this.entries[i];
-        }
-    }
-    if (this.entries.length > 0) {
-        return this.entries[this.entries.length - 1];
-    }
-    return null;
-};
-
-// Tests
-console.log('\nRunning gutter tests...\n');
-
-// parseSourcepos tests
 test('testParseSourceposValid', () => {
-    const result = parseSourcepos('5:0-10:0');
+    setupDOM();
+    const result = window.SourcePosMap.parseSourcepos('5:0-10:0');
     assertEqual(result.start, 5, 'Start line should be 5');
     assertEqual(result.end, 10, 'End line should be 10');
 });
 
 test('testParseSourceposSingleLine', () => {
-    const result = parseSourcepos('7:0-7:0');
-    assertEqual(result.start, 7, 'Start line should be 7');
-    assertEqual(result.end, 7, 'End line should be 7');
+    setupDOM();
+    const result = window.SourcePosMap.parseSourcepos('3:1-3:20');
+    assertEqual(result.start, 3, 'Start line should be 3');
+    assertEqual(result.end, 3, 'End line should be 3');
 });
 
 test('testParseSourceposNull', () => {
-    const result = parseSourcepos(null);
-    assertEqual(result, null, 'Should return null for null input');
+    setupDOM();
+    assertNull(window.SourcePosMap.parseSourcepos(null), 'Null input should return null');
+    assertNull(window.SourcePosMap.parseSourcepos(''), 'Empty input should return null');
 });
 
 test('testParseSourceposInvalid', () => {
-    const result = parseSourcepos('invalid');
-    assertEqual(result, null, 'Should return null for invalid input');
+    setupDOM();
+    assertNull(window.SourcePosMap.parseSourcepos('not-a-sourcepos'), 'Invalid input should return null');
+    assertNull(window.SourcePosMap.parseSourcepos('5-10'), 'Missing columns should return null');
 });
 
-// rangesOverlap tests
 test('testRangesOverlapFull', () => {
-    assertTrue(rangesOverlap(5, 10, 5, 10), 'Identical ranges should overlap');
+    setupDOM();
+    assertTrue(window.SourcePosMap.rangesOverlap(1, 10, 3, 5), 'Contained range should overlap');
 });
 
 test('testRangesOverlapPartial', () => {
-    assertTrue(rangesOverlap(5, 10, 7, 8), 'Inner range should overlap');
-    assertTrue(rangesOverlap(5, 10, 8, 15), 'Overlapping end should overlap');
-    assertTrue(rangesOverlap(5, 10, 1, 7), 'Overlapping start should overlap');
+    setupDOM();
+    assertTrue(window.SourcePosMap.rangesOverlap(1, 5, 3, 10), 'Partially overlapping ranges should overlap');
+    assertTrue(window.SourcePosMap.rangesOverlap(3, 10, 1, 5), 'Overlap is symmetric');
 });
 
 test('testRangesOverlapAdjacent', () => {
-    assertTrue(rangesOverlap(5, 10, 10, 15), 'Adjacent ranges (touching at end) should overlap');
-    assertTrue(rangesOverlap(5, 10, 1, 5), 'Adjacent ranges (touching at start) should overlap');
+    setupDOM();
+    assertTrue(window.SourcePosMap.rangesOverlap(1, 5, 5, 10), 'Ranges touching at one line overlap');
 });
 
 test('testRangesNoOverlap', () => {
-    assertFalse(rangesOverlap(5, 10, 15, 20), 'Non-overlapping ranges should not overlap');
-    assertFalse(rangesOverlap(5, 10, 1, 3), 'Non-overlapping ranges should not overlap');
+    setupDOM();
+    assertFalse(window.SourcePosMap.rangesOverlap(1, 5, 6, 10), 'Disjoint ranges should not overlap');
 });
 
-// SourcePosMap tests
-test('testSourcePosMapBuild', () => {
-    setupMockDOM();
-    addMockElement('1:0-3:0', 0, 50);
-    addMockElement('5:0-7:0', 60, 50);
-    addMockElement('9:0-12:0', 120, 80);
+// ---------------------------------------------------------------------------
+// SourcePosMap
+// ---------------------------------------------------------------------------
 
-    const map = new SourcePosMap();
+test('testSourcePosMapBuild', () => {
+    setupDOM();
+    addBlock('1:1-3:10');
+    addBlock('5:1-7:20');
+
+    const map = new window.SourcePosMap();
     map.build();
 
-    assertEqual(map.entries.length, 3, 'Should have 3 entries');
-    assertEqual(map.entries[0].start, 1, 'First entry should start at line 1');
-    assertEqual(map.entries[1].start, 5, 'Second entry should start at line 5');
-    assertEqual(map.entries[2].start, 9, 'Third entry should start at line 9');
+    const entries = map.getEntries();
+    assertEqual(entries.length, 2, 'Should have 2 entries');
+    assertEqual(entries[0].start, 1, 'First entry starts at line 1');
+    assertEqual(entries[0].end, 3, 'First entry ends at line 3');
+    assertEqual(entries[1].start, 5, 'Second entry starts at line 5');
+});
+
+test('testSourcePosMapSkipsElementsWithoutSourcepos', () => {
+    setupDOM();
+    addBlock('1:1-1:10');
+    document.getElementById('content-container').appendChild(document.createElement('p'));
+
+    const map = new window.SourcePosMap();
+    map.build();
+
+    assertEqual(map.getEntries().length, 1, 'Elements with no data-sourcepos are ignored');
 });
 
 test('testSourcePosMapOverlapFull', () => {
-    setupMockDOM();
-    addMockElement('5:0-10:0', 0, 100);
+    setupDOM();
+    addBlock('1:1-3:10');
 
-    const map = new SourcePosMap();
+    const map = new window.SourcePosMap();
     map.build();
 
-    const results = map.getElementsForLineRange(5, 10);
-    assertEqual(results.length, 1, 'Should find 1 element');
-    assertEqual(results[0].start, 5, 'Element should start at line 5');
+    assertEqual(map.getElementsForLineRange(1, 3).length, 1, 'Fully covered element should be returned');
 });
 
 test('testSourcePosMapOverlapPartial', () => {
-    setupMockDOM();
-    addMockElement('5:0-10:0', 0, 100);
+    setupDOM();
+    addBlock('1:1-5:10');
 
-    const map = new SourcePosMap();
+    const map = new window.SourcePosMap();
     map.build();
 
-    const results = map.getElementsForLineRange(7, 8);
-    assertEqual(results.length, 1, 'Should find 1 element for partial overlap');
+    assertEqual(map.getElementsForLineRange(3, 8).length, 1, 'Partially overlapping element should be returned');
 });
 
 test('testSourcePosMapNoOverlap', () => {
-    setupMockDOM();
-    addMockElement('5:0-10:0', 0, 100);
+    setupDOM();
+    addBlock('1:1-3:10');
 
-    const map = new SourcePosMap();
+    const map = new window.SourcePosMap();
     map.build();
 
-    const results = map.getElementsForLineRange(15, 20);
-    assertEqual(results.length, 0, 'Should find 0 elements for no overlap');
+    assertEqual(map.getElementsForLineRange(5, 8).length, 0, 'Disjoint range returns nothing');
 });
 
 test('testSourcePosMapMultipleElements', () => {
-    setupMockDOM();
-    addMockElement('1:0-5:0', 0, 50);
-    addMockElement('6:0-10:0', 60, 50);
-    addMockElement('11:0-15:0', 120, 50);
+    setupDOM();
+    addBlock('1:1-2:10');
+    addBlock('3:1-4:10');
+    addBlock('5:1-6:10');
 
-    const map = new SourcePosMap();
+    const map = new window.SourcePosMap();
     map.build();
 
-    const results = map.getElementsForLineRange(4, 12);
-    assertEqual(results.length, 3, 'Should find 3 elements overlapping range 4-12');
+    const found = map.getElementsForLineRange(2, 5);
+    assertEqual(found.length, 3, 'All three overlapping blocks should be returned');
+    assertDeepEqual(found.map((entry) => entry.start), [1, 3, 5], 'Returned in line order');
 });
 
-test('testDeletionAnchorMiddle', () => {
-    setupMockDOM();
-    addMockElement('1:0-5:0', 0, 50);
-    addMockElement('8:0-12:0', 60, 50);
-    addMockElement('15:0-20:0', 120, 50);
+/**
+ * The shipped map resolves each line to the single most specific element that
+ * covers it, so a nested list item wins over the list wrapping it. The old
+ * test-local copy returned every overlapping element instead.
+ */
+test('testSourcePosMapPrefersTheMostSpecificElementPerLine', () => {
+    setupDOM();
+    const list = addBlock('1:1-3:10', { tag: 'ul' });
+    const item = addBlock('2:1-2:10', { tag: 'li', parent: list });
 
-    const map = new SourcePosMap();
+    const map = new window.SourcePosMap();
     map.build();
 
-    const result = map.getElementAtOrAfterLine(10);
-    assertEqual(result.start, 15, 'Should find element starting at line 15 for anchor at 10');
+    const found = map.getElementsForLineRange(2, 2);
+    assertEqual(found.length, 1, 'One element per line');
+    assertTrue(found[0].element === item, 'The nested list item is more specific than its list');
+});
+
+test('testSourcePosMapDeduplicatesAcrossLines', () => {
+    setupDOM();
+    addBlock('1:1-4:10');
+
+    const map = new window.SourcePosMap();
+    map.build();
+
+    assertEqual(map.getElementsForLineRange(1, 4).length, 1, 'An element spanning the range appears once');
+});
+
+// ---------------------------------------------------------------------------
+// Deletion anchors
+// ---------------------------------------------------------------------------
+
+test('testDeletionAnchorMiddle', () => {
+    setupDOM();
+    addBlock('1:1-2:10');
+    addBlock('5:1-6:10');
+
+    const map = new window.SourcePosMap();
+    map.build();
+
+    assertEqual(map.getElementAtOrAfterLine(3).start, 5, 'Anchors to the next element at or after the line');
 });
 
 test('testDeletionAnchorStart', () => {
-    setupMockDOM();
-    addMockElement('5:0-10:0', 0, 50);
-    addMockElement('12:0-15:0', 60, 50);
+    setupDOM();
+    addBlock('3:1-4:10');
 
-    const map = new SourcePosMap();
+    const map = new window.SourcePosMap();
     map.build();
 
-    const result = map.getElementAtOrAfterLine(1);
-    assertEqual(result.start, 5, 'Should find first element for anchor at line 1');
+    assertEqual(map.getElementAtOrAfterLine(1).start, 3, 'Anchors to the first element');
 });
 
 test('testDeletionAnchorEnd', () => {
-    setupMockDOM();
-    addMockElement('1:0-5:0', 0, 50);
-    addMockElement('6:0-10:0', 60, 50);
+    setupDOM();
+    addBlock('1:1-2:10');
 
-    const map = new SourcePosMap();
+    const map = new window.SourcePosMap();
     map.build();
 
-    const result = map.getElementAtOrAfterLine(100);
-    assertEqual(result.start, 6, 'Should find last element for anchor beyond end');
+    assertEqual(map.getElementAtOrAfterLine(10).start, 1, 'Falls back to the last element');
 });
 
 test('testDeletionAnchorExactMatch', () => {
-    setupMockDOM();
-    addMockElement('1:0-5:0', 0, 50);
-    addMockElement('8:0-12:0', 60, 50);
+    setupDOM();
+    addBlock('1:1-2:10');
+    addBlock('5:1-6:10');
 
-    const map = new SourcePosMap();
+    const map = new window.SourcePosMap();
     map.build();
 
-    const result = map.getElementAtOrAfterLine(8);
-    assertEqual(result.start, 8, 'Should find element starting exactly at anchor line');
+    assertEqual(map.getElementAtOrAfterLine(5).start, 5, 'Exact start line matches its element');
 });
 
-// Gutter tests - need to track created markers
-let createdMarkers = [];
+test('testDeletionAnchorOnEmptyMapReturnsNull', () => {
+    setupDOM();
 
-function setupGutterMockDOM() {
-    setupMockDOM();
-    createdMarkers = [];
+    const map = new window.SourcePosMap();
+    map.build();
 
-    global.document.getElementById = (id) => {
-        if (id === 'gutter-container') return mockGutterContainer;
-        if (id === 'git-gutter') return {
-            innerHTML: '',
-            appendChild: (fragment) => {
-                // Track markers from fragment
-                if (fragment._markers) {
-                    createdMarkers.push(...fragment._markers);
-                }
-            }
-        };
-        if (id === 'content-container') return mockContentContainer;
-        return null;
-    };
+    assertNull(map.getElementAtOrAfterLine(1), 'No elements means no anchor');
+});
 
-    global.document.createDocumentFragment = () => {
-        const fragment = {
-            _markers: [],
-            appendChild: (el) => fragment._markers.push(el)
-        };
-        return fragment;
-    };
-
-    global.document.createElement = (tag) => ({
-        className: '',
-        style: {},
-        appendChild: () => {}
-    });
-}
-
-// Gutter implementation for testing
-function Gutter() {
-    this.sourceposMap = null;
-    this.cachedElements = [];
-}
-
-Gutter.prototype.update = function(changes) {
-    changes = changes || {};
-    const addedRanges = changes.addedRanges || [];
-    const modifiedRanges = changes.modifiedRanges || [];
-    const deletedAnchors = changes.deletedAnchors || [];
-
-    this.sourceposMap = new SourcePosMap();
-    this.sourceposMap.build();
-
-    this.cachedElements = [];
-
-    // Process added ranges
-    for (let i = 0; i < addedRanges.length; i++) {
-        const range = addedRanges[i];
-        const elements = this.sourceposMap.getElementsForLineRange(range[0], range[1]);
-        for (let j = 0; j < elements.length; j++) {
-            this.cachedElements.push({ element: elements[j].element, type: 'added' });
-        }
-    }
-
-    // Process modified ranges
-    for (let i = 0; i < modifiedRanges.length; i++) {
-        const range = modifiedRanges[i];
-        const elements = this.sourceposMap.getElementsForLineRange(range[0], range[1]);
-        for (let j = 0; j < elements.length; j++) {
-            this.cachedElements.push({ element: elements[j].element, type: 'modified' });
-        }
-    }
-
-    // Process deleted anchors
-    for (let k = 0; k < deletedAnchors.length; k++) {
-        const anchor = deletedAnchors[k];
-        const entry = this.sourceposMap.getElementAtOrAfterLine(anchor);
-        if (entry) {
-            this.cachedElements.push({ element: entry.element, type: 'deleted', anchorLine: anchor });
-        }
-    }
-
-    this.render();
-};
-
-Gutter.prototype.render = function() {
-    const container = document.getElementById('git-gutter');
-    const gutterContainer = document.getElementById('gutter-container');
-    if (!container || !gutterContainer) return;
-
-    container.innerHTML = '';
-    if (this.cachedElements.length === 0) return;
-
-    const gutterRect = gutterContainer.getBoundingClientRect();
-    const fragment = document.createDocumentFragment();
-
-    for (let i = 0; i < this.cachedElements.length; i++) {
-        const cached = this.cachedElements[i];
-        const rect = cached.element.getBoundingClientRect();
-        const top = rect.top - gutterRect.top;
-
-        const marker = document.createElement('div');
-        marker.className = 'gutter-marker gutter-marker--' + cached.type;
-        marker.style.top = top + 'px';
-        if (cached.type !== 'deleted') {
-            marker.style.height = rect.height + 'px';
-        }
-        fragment.appendChild(marker);
-    }
-
-    container.appendChild(fragment);
-};
+// ---------------------------------------------------------------------------
+// Gutter
+// ---------------------------------------------------------------------------
 
 test('testGutterMarkerCount', () => {
-    setupGutterMockDOM();
-    addMockElement('1:0-3:0', 0, 50);
-    addMockElement('5:0-7:0', 60, 50);
-    addMockElement('10:0-12:0', 130, 50);
+    setupDOM();
+    addBlock('1:1-2:10', { top: 0, height: 40 });
+    addBlock('5:1-6:10', { top: 100, height: 40 });
 
-    const gutter = new Gutter();
-    gutter.update({
-        addedRanges: [[1, 3], [10, 12]],
-        modifiedRanges: [[5, 7]],
-        deletedAnchors: []
-    });
+    window.Gutter.update({ addedRanges: [[1, 2]], modifiedRanges: [[5, 6]], deletedAnchors: [] });
 
-    assertEqual(createdMarkers.length, 3, 'Should create 3 markers for 3 ranges');
+    assertEqual(markers().length, 2, 'One marker per changed block');
+    assertDeepEqual(markerTypes(), ['added', 'modified'], 'Added markers render before modified');
 });
 
 test('testGutterMarkerPosition', () => {
-    setupGutterMockDOM();
-    addMockElement('5:0-7:0', 100, 60);
+    setupDOM();
+    addBlock('1:1-2:10', { top: 120, height: 40 });
 
-    const gutter = new Gutter();
-    gutter.update({
-        addedRanges: [[5, 7]],
-        modifiedRanges: [],
-        deletedAnchors: []
-    });
+    window.Gutter.update({ addedRanges: [[1, 2]], modifiedRanges: [], deletedAnchors: [] });
 
-    assertEqual(createdMarkers.length, 1, 'Should create 1 marker');
-    assertEqual(createdMarkers[0].style.top, '100px', 'Marker top should match element top');
-    assertEqual(createdMarkers[0].style.height, '60px', 'Marker height should match element height');
+    const marker = markers()[0];
+    assertEqual(marker.style.top, '120px', 'Marker is offset from the gutter container');
+    assertEqual(marker.style.height, '40px', 'Marker matches the block height');
+});
+
+test('testGutterMarkerPositionIsRelativeToTheGutterContainer', () => {
+    setupDOM();
+    stubRect(document.getElementById('gutter-container'), { top: 50, height: 1000 });
+    addBlock('1:1-2:10', { top: 120, height: 40 });
+
+    window.Gutter.update({ addedRanges: [[1, 2]], modifiedRanges: [], deletedAnchors: [] });
+
+    assertEqual(markers()[0].style.top, '70px', 'Container offset is subtracted');
 });
 
 test('testGutterDeletionMarker', () => {
-    setupGutterMockDOM();
-    addMockElement('1:0-5:0', 0, 50);
-    addMockElement('10:0-15:0', 80, 50);
+    setupDOM();
+    addBlock('1:1-2:10', { top: 0, height: 40 });
+    addBlock('5:1-6:10', { top: 100, height: 40 });
 
-    const gutter = new Gutter();
-    gutter.update({
-        addedRanges: [],
-        modifiedRanges: [],
-        deletedAnchors: [7]
-    });
+    window.Gutter.update({ addedRanges: [], modifiedRanges: [], deletedAnchors: [3] });
 
-    assertEqual(createdMarkers.length, 1, 'Should create 1 deletion marker');
-    assertTrue(createdMarkers[0].className.includes('deleted'), 'Marker should have deleted class');
+    assertDeepEqual(markerTypes(), ['deleted'], 'A deletion anchor renders one deleted marker');
+    assertEqual(markers()[0].style.top, '100px', 'Anchored to the following block');
+});
+
+test('testGutterCollapsesDeletionMarkersAtTheSamePosition', () => {
+    setupDOM();
+    addBlock('5:1-6:10', { top: 100, height: 40 });
+
+    window.Gutter.update({ addedRanges: [], modifiedRanges: [], deletedAnchors: [1, 2, 3] });
+
+    assertEqual(markers().length, 1, 'Deletions anchored to the same spot render one marker');
 });
 
 test('testGutterScrollUpdate', () => {
-    setupGutterMockDOM();
-    let elementTop = 100;
-    mockElements.length = 0;
-    mockElements.push({
-        getAttribute: (attr) => attr === 'data-sourcepos' ? '5:0-7:0' : null,
-        getBoundingClientRect: () => ({ top: elementTop, height: 60, left: 0, width: 100 })
-    });
+    setupDOM();
+    const block = addBlock('1:1-2:10', { top: 100, height: 40 });
 
-    const gutter = new Gutter();
-    gutter.update({
-        addedRanges: [[5, 7]],
-        modifiedRanges: [],
-        deletedAnchors: []
-    });
+    window.Gutter.update({ addedRanges: [[1, 2]], modifiedRanges: [], deletedAnchors: [] });
+    assertEqual(markers()[0].style.top, '100px', 'Initial position');
 
-    assertEqual(createdMarkers[0].style.top, '100px', 'Initial marker position');
+    // Scrolling moves the block; re-rendering must follow it.
+    stubRect(block, { top: 20, height: 40 });
+    window.Gutter.render();
 
-    // Simulate scroll by changing element's getBoundingClientRect
-    elementTop = 50;
-    createdMarkers = [];
-    gutter.render();
+    assertEqual(markers()[0].style.top, '20px', 'Marker follows the block after a scroll');
+});
 
-    assertEqual(createdMarkers[0].style.top, '50px', 'Marker should update position after scroll');
+test('testGutterClearRemovesMarkers', () => {
+    setupDOM();
+    addBlock('1:1-2:10', { top: 0, height: 40 });
+
+    window.Gutter.update({ addedRanges: [[1, 2]], modifiedRanges: [], deletedAnchors: [] });
+    assertEqual(markers().length, 1, 'Marker rendered');
+
+    window.Gutter.clear();
+    assertEqual(markers().length, 0, 'Markers cleared');
+
+    // Cleared state must survive a re-render.
+    window.Gutter.render();
+    assertEqual(markers().length, 0, 'Re-rendering after clear draws nothing');
+});
+
+test('testGutterUpdateWithNoChangesRendersNothing', () => {
+    setupDOM();
+    addBlock('1:1-2:10', { top: 0, height: 40 });
+
+    window.Gutter.update({ addedRanges: [], modifiedRanges: [], deletedAnchors: [] });
+
+    assertEqual(markers().length, 0, 'No changes means no markers');
 });
 
 // Summary

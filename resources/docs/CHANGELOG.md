@@ -22,9 +22,12 @@
 - Fixed a file opened from the remote sidebar not being available offline until the next reconnect.
 - Fixed opening the remote panel for a server that already has windows creating a second, untracked connection. Those windows stopped reconnecting after the machine woke from sleep and were not closed cleanly on quit. All windows on a server now share one connection.
 
+- Fixed the remote helper never being removed when Redmargin tried to reinstall it. The command that was supposed to delete it terminated its own remote shell first, so a helper left in a bad state, or one that no longer matched the app version, could not be repaired by reconnecting.
+
 ### Changed
 
 - Upgrading no longer erases the recent-workspace data an older version of the app reads, so downgrading keeps its recents list.
+- The gutter tests now exercise the shipped renderer modules rather than copies of them, so a regression in gutter positioning cannot pass unnoticed.
 
 ### Security
 

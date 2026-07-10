@@ -145,6 +145,121 @@ final class RemoteIntegrationTests: XCTestCase {
         XCTAssertEqual(state.content, "# Fast\n")
     }
 
+    /// Kills the remote helpers, in its own command.
+    ///
+    /// `pkill -f` matches whole command lines, so it matches the remote shell
+    /// running it if that command line mentions the pattern anywhere. Bracketing
+    /// hides the pattern in the pkill itself, but any *other* word on the same line
+    /// (`rm -rf ~/.redmargin-server`, `mkdir -p ~/.redmargin-server`) still matches
+    /// and the shell kills itself before reaching it. Hence: pkill alone.
+    private func stopRemoteHelpers() async throws {
+        _ = try await devtestShell("pkill -f '[r]edmargin-server' 2>/dev/null || true")
+    }
+
+    /// Runs `command` on devtest and returns its trimmed stdout.
+    private func devtestShell(_ command: String) async throws -> (stdout: String, exitCode: Int32) {
+        let result = try await ProcessRunner.run(
+            executable: "ssh",
+            arguments: ["-o", "BatchMode=yes", "devtest", command],
+            timeout: 20
+        )
+        return (result.stdout.trimmingCharacters(in: .whitespacesAndNewlines), result.exitCode)
+    }
+
+    /// A deploy that fails at the install step must leave the previously working
+    /// binary exactly where it was. The upload lands on a temp path, so nothing is
+    /// overwritten until the rename succeeds.
+    func testFailedInstallLeavesTheExistingBinaryIntact() async throws {
+        let version = AppVersion.current
+        let binaryPath = "~/.redmargin-server/redmargin-server-\(version)"
+        let tempPath = "~/.redmargin-server/.redmargin-server-\(version).tmp"
+        let deployer = ServerDeployer()
+
+        try await stopRemoteHelpers()
+        _ = try await devtestShell("mkdir -p ~/.redmargin-server")
+        // A sentinel standing in for a good, already-installed binary. Left
+        // non-executable so the deploy does not short-circuit on the `test -x` check.
+        _ = try await devtestShell("printf 'SENTINEL' > \(binaryPath) && chmod 644 \(binaryPath)")
+        // Make the rename fail: mv refuses to overwrite a file with a directory.
+        _ = try await devtestShell("rm -rf \(tempPath) && mkdir -p \(tempPath)")
+
+        defer {
+            Task {
+                _ = try? await self.devtestShell("rm -rf \(tempPath) \(binaryPath)")
+            }
+        }
+
+        do {
+            _ = try await deployer.ensureServerDeployed(host: "devtest")
+            XCTFail("Deploy should have failed at the install step")
+        } catch let error as ServerDeployerError {
+            guard case .uploadFailed = error else {
+                return XCTFail("Expected uploadFailed, got \(error)")
+            }
+        }
+
+        // The upload itself succeeded (scp wrote into the temp directory), so the
+        // deploy really did fail at the rename rather than earlier.
+        let uploaded = try await devtestShell("test -f \(tempPath)/redmargin-server-x86_64-linux")
+        XCTAssertEqual(uploaded.exitCode, 0, "The upload did not complete; this test never reached the install step")
+
+        let sentinel = try await devtestShell("cat \(binaryPath)")
+        XCTAssertEqual(sentinel.stdout, "SENTINEL", "A failed install replaced the working binary")
+    }
+
+    /// Cleanup after a deploy removes other versions' binaries and nothing else:
+    /// the running daemon's socket and pid file have to survive it.
+    func testCleanupRemovesOnlyOtherVersionBinaries() async throws {
+        let version = AppVersion.current
+        let deployer = ServerDeployer()
+
+        try await stopRemoteHelpers()
+        _ = try await devtestShell("rm -rf ~/.redmargin-server")
+        _ = try await devtestShell(
+            """
+            mkdir -p ~/.redmargin-server && \
+            printf 'old' > ~/.redmargin-server/redmargin-server-0.0.1 && \
+            printf 'old' > ~/.redmargin-server/redmargin-server-0.0.2 && \
+            printf 'pid' > ~/.redmargin-server/daemon.pid && \
+            printf 'log' > ~/.redmargin-server/daemon.stderr.log
+            """
+        )
+
+        _ = try await deployer.ensureServerDeployed(host: "devtest")
+
+        let survivors = try await devtestShell("ls -A ~/.redmargin-server | sort | tr '\\n' ' '")
+        XCTAssertFalse(survivors.stdout.contains("redmargin-server-0.0.1"), "An old version binary survived cleanup")
+        XCTAssertFalse(survivors.stdout.contains("redmargin-server-0.0.2"), "An old version binary survived cleanup")
+        XCTAssertTrue(survivors.stdout.contains("redmargin-server-\(version)"), "The deployed binary was deleted")
+        XCTAssertTrue(survivors.stdout.contains("daemon.pid"), "Cleanup deleted the daemon pid file")
+        XCTAssertTrue(survivors.stdout.contains("daemon.stderr.log"), "Cleanup deleted the daemon log")
+
+        // And the deploy left no partial upload behind.
+        let leftoverTemp = try await devtestShell("test -e ~/.redmargin-server/.redmargin-server-\(version).tmp")
+        XCTAssertNotEqual(leftoverTemp.exitCode, 0, "A temp upload was left behind")
+
+        let installed = try await devtestShell("test -x ~/.redmargin-server/redmargin-server-\(version)")
+        XCTAssertEqual(installed.exitCode, 0, "The installed binary is not executable")
+    }
+
+    /// `removeDeployedServer` is what the version-skew self-heal and the forced
+    /// restart rely on: if it does not actually delete the binary, the next deploy
+    /// sees a matching hash, short-circuits, and the stale daemon survives.
+    func testRemoveDeployedServerActuallyRemovesTheBinary() async throws {
+        let version = AppVersion.current
+        let binaryPath = "~/.redmargin-server/redmargin-server-\(version)"
+        let deployer = ServerDeployer()
+
+        _ = try await deployer.ensureServerDeployed(host: "devtest")
+        let installed = try await devtestShell("test -x \(binaryPath)")
+        XCTAssertEqual(installed.exitCode, 0, "Setup failed: the binary was not deployed")
+
+        await deployer.removeDeployedServer(host: "devtest")
+
+        let stillThere = try await devtestShell("test -e \(binaryPath)")
+        XCTAssertNotEqual(stillThere.exitCode, 0, "removeDeployedServer left the binary in place")
+    }
+
     func testServerDeployer() async throws {
         let deployer = ServerDeployer()
         print("[Test] Testing deployment to devtest...")
