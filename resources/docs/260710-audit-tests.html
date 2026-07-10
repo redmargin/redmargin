@@ -14,11 +14,11 @@
 <h1>Test audit</h1><div class="meta">Redmargin · 2026-07-10</div>
 <div id="filters"></div>
 </aside><main>
-<div class="posture"><div class="grade" id="grade">B</div><div><strong id="gradeline">Every finding is fixed. The rewritten PDF export test has not yet been executed.</strong><div class="muted" id="graderationale">The sanitizer bypass is closed, the verification command now runs both suites and fails on a red test, and the trust-boundary and coverage gaps are filled. Each new test was checked against the mutation it is meant to catch. The grade stops short of A only because the PDF export UI test needs <code>resources/scripts/uitest.sh</code>, which drives <code>xcodebuild</code> and takes over the screen, so it has not been run.</div></div></div>
+<div class="posture"><div class="grade" id="grade">C</div><div><strong id="gradeline">The eleven original findings are fixed. A recovered second pass found thirteen more, including a file of five tests that exercise macOS rather than Redmargin.</strong><div class="muted" id="graderationale">Five parallel audit agents finished after the first pass closed; their findings were recovered from their transcripts and verified individually. <code>GitStateWatcherTests</code> imports no Redmargin module at all. A remote path beginning with a bare tilde reaches a shell command unquoted. Several tests assert nothing. The green build is not a strong signal on these paths.</div></div></div>
 <details class="summary" open><summary><strong>Plain-language summary</strong></summary>
-<p>The suite was already largely genuine: most Swift tests drive real dependencies rather than stand-ins, and the remote transport harness runs production connection code over a pipe instead of faking it. The audit found eleven things worth fixing, and all eleven are now closed.</p>
-<p>The most serious was a real security defect, not merely a missing test. The HTML sanitizer is the only barrier between untrusted Markdown and script execution inside the embedded browser, and it read link schemes with a fixed length budget. A scheme padded with two or more tab or newline characters slipped past as a harmless relative link, and the browser then stripped the padding and ran the script. The sanitizer now reads URLs the way a browser does, and tests cover the padded forms. Writing the checkbox tests surfaced a second production defect that was not in the original findings: a text-selection drag ending on a checkbox left it visibly toggled while the file behind it was never changed. That is fixed too.</p>
-<p>The rest were process and coverage. The command the project designates for verification built the app without running a single test; it now runs both suites and fails the build on any red test. The remote helper's document read gained the regular-file and size guards its asset read already had. Three tests that quietly skipped themselves now fail instead, and the recycled-descriptor race is reproduced deterministically rather than left to the kernel. The PDF export test, which previously asserted nothing and deferred to a script that recommended checking by hand, now inspects the page count, the page text, and the darkness of the exported page. That last test is written but has not been executed here, because running it requires <code>xcodebuild</code> and control of the screen.</p>
+<p>This audit ran in two passes. The first closed eleven findings, including a real script-execution bypass in the Markdown sanitizer and a stray checkbox toggle, and made the project's verification command actually run its tests. Those eleven remain fixed and each was checked by reintroducing the defect and confirming the new test fails.</p>
+<p>The second pass recovered the work of five parallel audit agents whose results never reached the first pass. Every recovered claim was re-verified against the file before being recorded here, and one of their claims was found wrong and corrected. Thirteen survived.</p>
+<p>The most serious is that <code>GitStateWatcherTests</code> tests nothing belonging to this project. It imports only XCTest and Foundation, builds its own file-system event source, and asserts that macOS delivers write events and that Swift's <code>hasPrefix</code> works on a string the test just wrote. Five green tests, no production code. Four more tests in <code>FileWatcherTests</code> have the same shape. Separately, a remote folder path that begins with a tilde and contains no slash is interpolated into a shell command without quoting, and only the literal <code>~</code> is tested. Three tests assert nothing at all, one of them consisting solely of a comment explaining that it is covered elsewhere. Two test files hardcode <code>/Users/marco</code>, and the Linux test target has no runner in any script or workflow.</p>
 </details>
 <section class="stats"><strong>Progress</strong><div class="bar"><span id="progress"></span></div><div class="counts" id="counts"></div></section>
 <div class="controls"><input id="search" type="search" placeholder="Search findings, files, categories"></div>
@@ -87,7 +87,73 @@ const FINDINGS=[
 {sev:"Medium",cat:"error-path",type:"Missing",verdict:"Add-coverage",zombies:"E",conf:85,status:"fixed",
  file:"WebRenderer/src/scrollPosition.js",line:1,
  desc:"No test file requires <code>scrollPosition.js</code>. It restores the reader's scroll offset after a re-render, which is the behaviour a user notices on every file change the watcher picks up. <b>Resolution:</b> eight tests cover restore, restore-to-top, rejection of negative and non-numeric offsets, the save dedupe, and the scroll debounce. Three separate mutations were each confirmed to fail a test.",
- suggestion:"Render a document through the app harness, set a scroll offset, re-render, and assert the offset is restored rather than reset to the top."}
+ suggestion:"Render a document through the app harness, set a scroll offset, re-render, and assert the offset is restored rather than reset to the top."},
+{sev:"Critical",cat:"tests-the-os",type:"Broken",verdict:"Rewrite",conf:100,status:"open",
+ file:"Tests/GitStateWatcherTests.swift",line:1,
+ desc:"The whole file imports only <code>XCTest</code> and <code>Foundation</code>. It never references <code>GitRepoWatcher</code> (<code>src/Core/FileProvider/LocalFileProvider.swift:76</code>) or any other Redmargin symbol. <code>testParseHEADForBranchRef</code> and <code>testDetachedHEADHasNoRefPrefix</code> write a HEAD file and then assert <code>hasPrefix(\"ref: \")</code> and <code>dropFirst(5)</code> against the string they just wrote. The remaining three build their own <code>DispatchSource.makeFileSystemObjectSource</code> and assert that macOS delivers file events. Five tests, no production code. Name the mutation any of them would catch.",
+ cite:"Recovered from the parallel audit agents after the main pass; verified against the file."},
+
+{sev:"High",cat:"security-boundary",type:"Missing",verdict:"Add-coverage",zombies:"E",conf:90,status:"open",
+ file:"AppMain/AppDelegateExtensions.swift",line:401,
+ desc:"<code>shellArgPreservingTilde</code> single-quotes a path, except when it starts with <code>~</code> and contains no <code>/</code>: that branch returns the string untouched. The result is interpolated into <code>\"test -d \\(Self.shellArgPreservingTilde(location.path))\"</code> at line 423 and handed to a remote shell. A recent-workspace path such as <code>~;id</code> is passed through raw. <code>RemoteShellArgTests:18</code> covers only the literal <code>\"~\"</code>, which has nothing to escape.",
+ suggestion:"Assert shellArgPreservingTilde(\"~;id\"), \"~$(id)\", and \"~`id`\" are quoted or rejected, so no metacharacter survives into the command line.",
+ cite:"The only caller is the remote-folder existence check. Quoting a bare <code>~user</code> would suppress the tilde expansion it exists to preserve, so the fix needs a real decision, not just a test."},
+
+{sev:"High",cat:"tests-the-os",type:"Broken",verdict:"Rewrite",conf:95,status:"open",
+ file:"Tests/FileWatcherTests.swift",line:25,
+ desc:"The four <code>testDispatchSource*</code> tests open a descriptor and build their own <code>DispatchSource.makeFileSystemObjectSource</code>, asserting that macOS reports writes. The production <code>FileWatcher</code> (<code>src/Core/FileWatching/FileWatcher.swift:7</code>) is never constructed by them. The later tests in the same file do use it, so the type is not wholly uncovered, but these four would pass with <code>FileWatcher</code> deleted.",
+ cite:"Recovered from the parallel audit agents; verified. Their claim that the file never touches FileWatcher was wrong, and is corrected here."},
+
+{sev:"High",cat:"no-assertion",type:"Broken",verdict:"Delete",conf:100,status:"open",
+ file:"Tests/ServerTests.swift",line:198,
+ desc:"<code>testProxyConnectsToDaemon</code>'s entire body is the comment <code>// Implicitly tested in RemoteIntegrationTests via SSHConnection which uses the proxy</code>. It passes because it does nothing.",
+ cite:"Recovered from the parallel audit agents; verified against the file."},
+
+{sev:"High",cat:"no-assertion",type:"Broken",verdict:"Rewrite",conf:100,status:"open",
+ file:"Tests/SSHConnectionTests.swift",line:56,
+ desc:"<code>testAppNapActivityStartsWithRemoteDoc</code> calls <code>beginRemoteDocumentActivity()</code> twice and <code>endRemoteDocumentActivity()</code> three times, then ends. There is no assertion, and the counts do not balance, so the test neither checks the activity refcount nor notices that it went negative.",
+ cite:"Recovered from the parallel audit agents; verified against the file."},
+
+{sev:"High",cat:"no-assertion",type:"Broken",verdict:"Tighten",conf:95,status:"open",
+ file:"Tests/RemoteIntegrationTests.swift",line:329,
+ desc:"<code>testControlSocketReuse</code> opens two connections to <code>devtest</code>, prints four progress lines, and disconnects. Nothing asserts that the second connection reused the first one's control socket, which is the behaviour the test is named for. It fails only if <code>connect()</code> throws.",
+ suggestion:"Assert the control socket path exists after the first connect and that the second connect does not spawn a second ssh master process.",
+ cite:"Recovered from the parallel audit agents; verified against the file."},
+
+{sev:"High",cat:"hardcoded-path",type:"Convention",verdict:"Rewrite",conf:100,status:"open",
+ file:"Tests/ServerTests.swift",line:250,
+ desc:"<code>findServerBinary()</code> searches three absolute paths beginning <code>/Users/marco/dev/redmargin/.build/</code>. On any other machine or checkout every candidate misses and the daemon tests fail on the <code>XCTFail(\"Server binary not found\")</code> branch.",
+ cite:"Established pattern elsewhere in the suite is to locate resources relative to <code>#file</code>. See <code>Tests/TEST_LOG.md</code>: \"Tests use #file to locate WebRenderer from project source directory\"."},
+
+{sev:"High",cat:"error-path",type:"Missing",verdict:"Add-coverage",zombies:"E",conf:88,status:"open",
+ file:"Server/RPCHandler.swift",line:9,
+ desc:"<code>handle()</code> returns <code>nil</code> on an undecodable header, on an unrecognised <code>RPCMessageType</code>, and on any error thrown by <code>routeMessage</code>, printing to stdout in each case. No test drives any of the three, so a client sending a malformed or unknown frame has no covered contract.",
+ suggestion:"Feed handle() a garbage header, a valid header with an unknown type string, and a payload that makes routeMessage throw; assert nil each time and that the connection survives."},
+
+{sev:"Medium",cat:"dead-tests",type:"Convention",verdict:"Rewrite",conf:90,status:"open",
+ file:"Tests/Linux/LinuxWatcherTests.swift",line:1,
+ desc:"<code>LinuxServerTests</code> compiles only under <code>#if os(Linux)</code> (<code>Package.swift:38</code>). No script under <code>resources/scripts/</code> and no GitHub workflow invokes it: <code>build-linux.sh</code> builds the binary and runs no test. These two tests have no runner.",
+ cite:"<code>grep -rn 'Tests/Linux|LinuxServerTests' resources/scripts/ .github/</code> returns nothing."},
+
+{sev:"Medium",cat:"security-boundary",type:"Missing",verdict:"Add-coverage",zombies:"B",conf:85,status:"open",
+ file:"WebRenderer/src/sanitizer.js",line:300,
+ desc:"<code>sanitizeMermaidSvgAttributes</code> runs <code>isUnsafeSvgUrl</code> over <code>fill</code>, <code>stroke</code>, <code>mask</code>, <code>clip-path</code> and the three <code>marker-*</code> attributes, catching <code>url(javascript:...)</code> and <code>url(data:...)</code>. No test feeds any of those attributes such a value; the SVG tests cover <code>href</code>/<code>xlink:href</code> only. Distinct from the scheme bypass already fixed in this file.",
+ suggestion:"Sanitize an SVG with fill=\"url(javascript:alert(1))\" and clip-path=\"url(data:...)\"; assert both attributes are stripped."},
+
+{sev:"Medium",cat:"conditional-expect",type:"Broken",verdict:"Rewrite",conf:82,status:"open",
+ file:"Tests/BookmarkManagerTests.swift",line:108,
+ desc:"<code>testStopAccessingAll</code> wraps its setup in <code>if let resolved1 = ...</code> / <code>if let resolved2 = ...</code>. If either bookmark fails to resolve the branch is skipped and the test still passes, having exercised neither <code>startAccessing</code> nor the teardown it is named for.",
+ cite:"Recovered from the parallel audit agents; verified against the file."},
+
+{sev:"Medium",cat:"hardcoded-path",type:"Convention",verdict:"Rewrite",conf:100,status:"open",
+ file:"Tests/UITests/RedmarginUITests/RedmarginUITests/BaseUITest.swift",line:8,
+ desc:"<code>static let realHomeDir = \"/Users/marco\"</code>, with the comment \"hardcoded to avoid sandbox issues\". Every UI test path, including the Downloads directory the PDF assertions read, hangs off it.",
+ cite:"Recovered from the parallel audit agents; verified against the file."},
+
+{sev:"Medium",cat:"sleepy-test",type:"Smelly",verdict:"Rewrite",conf:82,status:"open",
+ file:"Tests/RemoteIntegrationTests.swift",line:316,
+ desc:"A fixed <code>500ms</code> wait stands in for confirming the remote watcher registered before the test writes the change it expects a callback for. On a slow link the write lands before the watcher exists and the expectation times out.",
+ cite:"Recovered from the parallel audit agents; verified against the file."}
 ];
 
 const SEVS=["Critical","High","Medium"];
