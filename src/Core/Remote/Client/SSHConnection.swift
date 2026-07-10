@@ -25,9 +25,16 @@ public actor SSHConnection {
     // Sync marker that server outputs after shell initialization - we discard everything before this
     private static let syncMarker = "REDMARGIN_SYNC_7f3d9a\n"
 
-    // Event stream
+    // Event stream. Single-consumer: each element goes to exactly one iterator,
+    // so windows sharing a connection must not iterate this directly. Production
+    // consumers subscribe via `addEventSubscriber()` instead.
     private var eventContinuation: AsyncStream<Data>.Continuation?
     public nonisolated let events: AsyncStream<Data>
+
+    /// Per-subscriber event streams. Connections are cached per host, so several
+    /// windows share one; a push event must reach every one of them rather than
+    /// being raffled to whichever provider's iterator happens to be waiting.
+    private var eventSubscribers: [UUID: AsyncStream<Data>.Continuation] = [:]
 
     // Connection state stream
     private var stateContinuation: AsyncStream<SSHConnectionState>.Continuation?
@@ -74,6 +81,26 @@ public actor SSHConnection {
 
         self.eventContinuation = eventCont
         self.stateContinuation = stateCont
+    }
+
+    /// Registers a subscriber that receives every push event. The caller must
+    /// pass the returned id to `removeEventSubscriber` when it stops listening,
+    /// or the connection retains its continuation for the app's lifetime.
+    public func addEventSubscriber() -> (id: UUID, stream: AsyncStream<Data>) {
+        let id = UUID()
+        let stream = AsyncStream<Data> { continuation in
+            eventSubscribers[id] = continuation
+        }
+        return (id, stream)
+    }
+
+    public func removeEventSubscriber(_ id: UUID) {
+        eventSubscribers.removeValue(forKey: id)?.finish()
+    }
+
+    /// Test seam: how many windows are currently receiving push events.
+    public func eventSubscriberCount() -> Int {
+        eventSubscribers.count
     }
 
     public func getHost() -> String {
@@ -500,6 +527,12 @@ public actor SSHConnection {
             throw SSHConnectionError.unexpectedDisconnect
         }
 
+        // Register before writing. The write below suspends this actor, which lets
+        // the read loop re-enter it and deliver the response; if the request is not
+        // yet pending, that response is discarded as unsolicited and this call waits
+        // out its whole timeout before tearing down a perfectly healthy connection.
+        registerPendingRequest(id: id)
+
         // Serialize writes on a dedicated queue so concurrent send() calls
         // (possible via actor reentrancy) don't interleave on the pipe.
         #if canImport(os)
@@ -523,6 +556,7 @@ public actor SSHConnection {
             #if canImport(os)
             sshLog.error("send() id=\(id): stdin write failed — \(writeError.localizedDescription, privacy: .public)")
             #endif
+            clearPendingRequest(id: id)
             handleDisconnect()
             throw SSHConnectionError.unexpectedDisconnect
         }
@@ -533,12 +567,10 @@ public actor SSHConnection {
 
         // Wait for response with timeout - poll-based to ensure timeout works
         let deadline = Date().addingTimeInterval(timeout)
-        registerPendingRequest(id: id)
 
         while Date() < deadline {
             if Task.isCancelled {
-                pendingRequestIds.remove(id)
-                completedResponses.removeValue(forKey: id)
+                clearPendingRequest(id: id)
                 throw CancellationError()
             }
 
@@ -546,23 +578,29 @@ public actor SSHConnection {
                 #if canImport(os)
                 sshLog.info("send() id=\(id): got response")
                 #endif
+                pendingRequestIds.remove(id)
                 return response
             }
 
             if state != .connected && state != .connecting {
-                pendingRequestIds.remove(id)
+                clearPendingRequest(id: id)
                 throw SSHConnectionError.unexpectedDisconnect
             }
 
-            try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+            do {
+                try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+            } catch {
+                // Sleep throws on cancellation; leave nothing pending behind.
+                clearPendingRequest(id: id)
+                throw error
+            }
         }
 
         // Timeout - connection is stale; force reconnect so it recovers
         #if canImport(os)
         sshLog.error("send() id=\(id): timeout after \(timeout)s — forcing reconnect")
         #endif
-        pendingRequestIds.remove(id)
-        completedResponses.removeValue(forKey: id)
+        clearPendingRequest(id: id)
         if disconnectOnTimeout {
             handleDisconnect()
         }
@@ -574,6 +612,13 @@ public actor SSHConnection {
 
     private func registerPendingRequest(id: Int) {
         pendingRequestIds.insert(id)
+    }
+
+    /// Drops every trace of a request that will never be returned to its caller,
+    /// so a late response cannot accumulate in `completedResponses` unclaimed.
+    private func clearPendingRequest(id: Int) {
+        pendingRequestIds.remove(id)
+        completedResponses.removeValue(forKey: id)
     }
 
     private func completeRequest(id: Int, data: Data) {
@@ -606,7 +651,7 @@ public actor SSHConnection {
         }
     }
 
-    private func processIncomingData(_ data: Data) {
+    func processIncomingData(_ data: Data) {
         let messages = streamHandler.receive(data: data)
         RemoteLog.info("[SSHConnection] Parsed \(messages.count) messages from incoming data")
         for msgData in messages {
@@ -622,6 +667,12 @@ public actor SSHConnection {
                 } else {
                     RemoteLog.info("[SSHConnection] Push event received")
                     eventContinuation?.yield(msgData)
+                    // Fan out to every window on this host. Yielding only to the
+                    // single-consumer stream above delivered a file, directory, or
+                    // git update to one arbitrary window and dropped it for the rest.
+                    for continuation in eventSubscribers.values {
+                        continuation.yield(msgData)
+                    }
                 }
             } else {
                 RemoteLog.info("[SSHConnection] ERROR: Failed to decode message header")
@@ -629,12 +680,16 @@ public actor SSHConnection {
         }
     }
 
-    /// Finish both async stream continuations so consumers' for-await loops exit cleanly.
+    /// Finish every async stream continuation so consumers' for-await loops exit cleanly.
     func finishContinuations() {
         eventContinuation?.finish()
         eventContinuation = nil
         stateContinuation?.finish()
         stateContinuation = nil
+        for continuation in eventSubscribers.values {
+            continuation.finish()
+        }
+        eventSubscribers.removeAll()
     }
 
     deinit {

@@ -98,12 +98,20 @@ public actor RemoteFileProvider: FileProvider {
     public init(connection: SSHConnection) {
         self.connection = connection
 
-        // Start listening for push events. Iterate the stream off the captured
-        // connection; dispatch through weak self so a closed provider stops
-        // driving callbacks and the task can be cancelled from deinit.
+        // Start listening for push events. Take a dedicated subscription rather
+        // than iterating `connection.events`: that stream is single-consumer, so
+        // when several windows share a host's connection each event would reach
+        // only one of them and the intended window would miss its update.
+        // Dispatch through weak self so a closed provider stops driving callbacks
+        // and the task can be cancelled from deinit.
         let conn = connection
         eventListenerTask = Task { [weak self] in
-            for await eventData in conn.events {
+            let subscription = await conn.addEventSubscriber()
+            // Release the subscription however this task ends: cancellation from
+            // deinit, provider deallocation, or connection teardown.
+            defer { Task { await conn.removeEventSubscriber(subscription.id) } }
+
+            for await eventData in subscription.stream {
                 if Task.isCancelled { break }
                 guard let self else { break }
                 await self.handlePushEvent(eventData)

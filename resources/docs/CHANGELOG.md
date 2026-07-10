@@ -8,6 +8,8 @@
 - Fixed a remote helper defect where a response from a closed connection could be written into the next client's session, corrupting its message framing and exposing the previous session's response contents. Each connection now owns its writes and in-flight requests, which are shut down before its socket is released.
 - Fixed the remote helper terminating outright when a slow client disconnected while the helper was still writing to it.
 - Fixed the remote helper's proxy silently truncating large messages (big diffs, embedded images) when the operating system accepted only part of a write, which desynchronized the connection until reconnect.
+- Fixed a fast remote reply being mistaken for an unsolicited message, which left the request to time out and disconnected a healthy connection.
+- Fixed file, folder, and Git updates reaching only one window when several windows are open on the same server; every window now receives the updates it is watching for.
 
 ### Security
 
