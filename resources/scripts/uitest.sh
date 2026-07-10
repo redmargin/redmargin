@@ -94,6 +94,7 @@ MARKDOWN
 
 echo "Running UI tests..."
 
+# shellcheck disable=SC2329  # invoked by the EXIT trap below
 cleanup() {
     rm -rf "$TEST_DIR"
 }
@@ -115,58 +116,6 @@ else
         -destination 'platform=macOS' || TEST_RESULT=$?
 fi
 
-# After tests, verify PDF output
-echo ""
-echo "Verifying PDF output..."
-
-PDF_FILE=$(ls -t "$DOWNLOADS_DIR"/test*.pdf 2>/dev/null | head -1)
-if [ -z "$PDF_FILE" ]; then
-    echo "ERROR: No PDF file created in Downloads"
-    exit 1
-fi
-
-echo "PDF created: $PDF_FILE"
-
-# Use Python to check for white line at top of first page
-python3 << PYTHON
-import subprocess
-import sys
-
-pdf_path = "$PDF_FILE"
-
-# Use sips to convert first page to PNG for analysis
-result = subprocess.run(
-    ["sips", "-s", "format", "png", pdf_path, "--out", "/tmp/test-pdf-page1.png"],
-    capture_output=True, text=True
-)
-
-if result.returncode != 0:
-    # sips can't read PDFs directly, use Preview/qlmanage instead
-    result = subprocess.run(
-        ["qlmanage", "-t", "-s", "1000", "-o", "/tmp", pdf_path],
-        capture_output=True, text=True
-    )
-
-# Read the generated thumbnail
-import os
-thumb_path = "/tmp/" + os.path.basename(pdf_path) + ".png"
-if not os.path.exists(thumb_path):
-    # Try alternative path
-    thumb_path = "/tmp/test-pdf-page1.png"
-
-if not os.path.exists(thumb_path):
-    print("Could not generate PDF thumbnail for verification")
-    sys.exit(0)  # Don't fail, just warn
-
-# Use sips to get pixel data from top row
-result = subprocess.run(
-    ["sips", "-g", "pixelHeight", "-g", "pixelWidth", thumb_path],
-    capture_output=True, text=True
-)
-print(f"Thumbnail info: {result.stdout}")
-
-# For now just report success - manual verification needed
-print("PDF export completed. Manual verification recommended.")
-PYTHON
-
+# The PDF is inspected by PDFExportUITests itself: page count, page text, and
+# the brightness of the top edge in dark theme. Nothing is verified here.
 exit $TEST_RESULT
