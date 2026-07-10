@@ -3,20 +3,20 @@
 ## Latest Run
 
 - Started: 2026-07-10
-- Commands: `./resources/scripts/build.sh --no-install`, which now runs the renderer suite and the Swift suite and fails the build on any test failure.
-- Status: ALL PASS. The renderer ran 133 tests and Swift executed 414, with 0 failures and 0 skips.
-- Notes: `build.sh` skips the live remote suites (`RemoteIntegrationTests`, `SSHConnectionTests`, and `SSHConnectionManagerTests.testEnsureConnectedCoalescesConcurrentCallers`), which need a reachable `devtest` host and are run separately with a timeout guard. UI tests run from `resources/scripts/uitest.sh`.
+- Commands: `./resources/scripts/build.sh --no-install`, which runs the renderer suite and the Swift suite and fails the build on any test failure; `./resources/scripts/test-linux.sh` for the Linux-only suite.
+- Status: ALL PASS. The renderer ran 136 tests, Swift executed 424, and the Linux suite ran 2, with 0 failures and 0 skips.
+- Notes: `build.sh` skips the live remote suites (`RemoteIntegrationTests`, `SSHConnectionTests`, and `SSHConnectionManagerTests.testEnsureConnectedCoalescesConcurrentCallers`), which need a reachable `devtest` host. UI tests run from `resources/scripts/uitest.sh`.
 
-### Test audit follow-up (2026-07-10)
+### Test audit, second pass (2026-07-10)
 
 | Suite | Status | Result | Last Run |
 | --- | --- | --- | --- |
-| WebRenderer (via `build.sh`) | PASS | Sourcepos 17, line number 2, sanitizer 36, sanitizer URL 17, gutter 29, checkbox handler 6, scroll position 8, integration 13, Mermaid 5 | 2026-07-10 |
-| Swift (via `build.sh`) | PASS | 414 tests, 0 failures, 0 skips | 2026-07-10 |
-| `./resources/scripts/build.sh --no-install` | PASS | Runs both suites, then builds the app bundle and bundled remote helpers | 2026-07-10 |
+| WebRenderer (via `build.sh`) | PASS | 136 tests across 9 files | 2026-07-10 |
+| Swift (via `build.sh`) | PASS | 424 tests, 0 failures, 0 skips | 2026-07-10 |
+| `LinuxWatcherTests` (via `test-linux.sh`) | PASS | 2 tests on `devtest`, no helper left behind | 2026-07-10 |
 | Skip marker sweep | PASS | No `XCTSkip` or `Skipping test` matches under `Tests`, `src`, or `Server` | 2026-07-10 |
 
-Notes on the audit fixes: the sanitizer now reads link schemes the way a browser does, so a scheme padded with tabs or newlines can no longer disguise `javascript:` as a relative link. `readFile` on the remote helper refuses non-regular files and oversized documents, as `readAsset` already did. The PDF export UI test inspects the exported PDF rather than deferring to a manual check. The recycled-descriptor test places the new connection on the retired descriptor with `dup2` instead of skipping when the kernel does not recycle it.
+The second pass replaced tests that exercised macOS rather than Redmargin. `GitStateWatcherTests` now drives `GitRepoWatcher` against a real repository, including the case where HEAD moves to another branch and the watcher must follow it onto the new ref. Four `FileWatcherTests` cases that built their own `DispatchSource` now drive `FileWatcher`, one of them pinning that it keeps reporting after an atomic write replaces the inode. `shellArgPreservingTilde` no longer lets a metacharacter through in a `~`-prefixed path, and `RPCHandler` has coverage for the three ways it can decline to answer. Every one of these was checked by reintroducing the defect and confirming the new test fails.
 
 ### Raw HTML fence rendering (2026-06-18)
 

@@ -1,11 +1,21 @@
 import XCTest
+import Foundation
 
 class BaseUITest: XCTestCase {
     var app: XCUIApplication!
 
-    /// Real user home directory - hardcoded to avoid sandbox issues
-    /// The uitest.sh script runs outside the sandbox and creates the test directory
-    static let realHomeDir = "/Users/marco"
+    /// Real user home directory. The test process is sandboxed, so `NSHomeDirectory()`
+    /// reports a container path rather than the account's home; `getpwuid` reports the
+    /// real one. uitest.sh runs outside the sandbox and creates the test directory there.
+    static let realHomeDir: String = {
+        if let override = ProcessInfo.processInfo.environment["REDMARGIN_UITEST_HOME"] {
+            return override
+        }
+        if let entry = getpwuid(getuid()), let dir = entry.pointee.pw_dir {
+            return String(cString: dir)
+        }
+        return NSHomeDirectory()
+    }()
 
     /// Test directory
     static let testDir = "\(realHomeDir)/RedmarginUITests-Temp"

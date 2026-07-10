@@ -29,7 +29,9 @@ For commits, use the repository/agent commit workflow. Do not run standalone `sw
 - For local verification, use `./resources/scripts/build.sh` unless Marco explicitly asks for a specific test command
 - `build.sh` runs the WebRenderer suite and the Swift suite, and fails the build on any test failure. Pass `--no-test` to build without them
 - The live remote suites (`RemoteIntegrationTests`, `SSHConnectionTests`, and `SSHConnectionManagerTests.testEnsureConnectedCoalescesConcurrentCallers`) drive real SSH sessions against `devtest` and are skipped by `build.sh`. Run them explicitly, with a timeout guard
+- The Linux-only suite runs on `devtest` via `./resources/scripts/test-linux.sh`, which syncs, runs `LinuxWatcherTests` under a timeout, and stops any helper left behind
 - UI tests run via `./resources/scripts/uitest.sh`, which drives `xcodebuild` and takes over the screen
+- A test that does not name a production symbol is not a test. Drive the real type, not a `DispatchSource` or a `String` method standing in for it
 - Never pipe output through `head`/`tail` - show full output
 - Never suggest browser cache as solution
 

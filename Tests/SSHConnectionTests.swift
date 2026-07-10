@@ -51,18 +51,6 @@ final class SSHConnectionTests: XCTestCase {
         await fulfillment(of: [eventsFinished, stateFinished], timeout: 3.0)
     }
 
-    // MARK: - App Nap Activity Tests
-
-    func testAppNapActivityStartsWithRemoteDoc() async throws {
-        let manager = SSHConnectionManager.shared
-
-        await manager.beginRemoteDocumentActivity()
-        await manager.beginRemoteDocumentActivity()
-        await manager.endRemoteDocumentActivity()
-        await manager.endRemoteDocumentActivity()
-        await manager.endRemoteDocumentActivity()
-    }
-
     // MARK: - Connection Tests
 
     func testConnectDevtest() async throws {

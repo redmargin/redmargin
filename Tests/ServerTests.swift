@@ -194,11 +194,6 @@ final class ServerTests: XCTestCase {
         XCTAssertEqual(writtenContent, "# Written via tilde\n")
     }
 
-    /// Test that proxy connects to daemon and properly bridges
-    func testProxyConnectsToDaemon() async throws {
-        // Implicitly tested in RemoteIntegrationTests via SSHConnection which uses the proxy
-    }
-
     /// Test that daemon survives proxy disconnect
     func testDaemonSurvivesProxyDisconnect() async throws {
         let pidFile = tempDir.appendingPathComponent("daemon.pid").path
@@ -245,13 +240,19 @@ final class ServerTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// Locates the built helper relative to this source file, so the tests run from any
+    /// checkout rather than only from one developer's home directory.
     private func findServerBinary() -> String? {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // Tests/
+            .deletingLastPathComponent()   // repo root
+        let buildDir = repoRoot.appendingPathComponent(".build")
         let possiblePaths = [
-            "/Users/marco/dev/redmargin/.build/debug/redmargin-server",
-            "/Users/marco/dev/redmargin/.build/release/redmargin-server",
-            "/Users/marco/dev/redmargin/.build/Build/Products/Debug/redmargin-server"
+            buildDir.appendingPathComponent("debug/redmargin-server"),
+            buildDir.appendingPathComponent("release/redmargin-server"),
+            buildDir.appendingPathComponent("Build/Products/Debug/redmargin-server")
         ]
-        return possiblePaths.first { FileManager.default.isExecutableFile(atPath: $0) }
+        return possiblePaths.map(\.path).first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     private func startDaemon(

@@ -22,141 +22,88 @@ final class FileWatcherTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempDir)
     }
 
-    func testDispatchSourceDetectsWrite() async throws {
-        let expectation = XCTestExpectation(description: "Write detected")
+    /// A plain in-place write must reach onChange.
+    func testWatcherReportsNonAtomicWrite() async throws {
+        let changed = XCTestExpectation(description: "Write reported")
+        changed.assertForOverFulfill = false
 
-        let fileDesc = open(testFile.path, O_EVTONLY)
-        XCTAssertGreaterThanOrEqual(fileDesc, 0, "Failed to open file")
-
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fileDesc,
-            eventMask: [.write, .rename, .delete, .attrib],
-            queue: .main
-        )
-
-        source.setEventHandler {
-            expectation.fulfill()
+        let watcher = FileWatcher(url: testFile, observeWakeNotifications: false) {
+            changed.fulfill()
         }
+        XCTAssertNotNil(watcher, "FileWatcher should start on an existing file")
 
-        source.setCancelHandler {
-            close(fileDesc)
-        }
-
-        source.resume()
-
-        // Write to file using echo append (like shell)
         try "appended".write(to: testFile, atomically: false, encoding: .utf8)
 
-        await fulfillment(of: [expectation], timeout: 2.0)
-        source.cancel()
+        await fulfillment(of: [changed], timeout: 5.0)
     }
 
-    func testDispatchSourceDetectsAtomicWrite() async throws {
-        let expectation = XCTestExpectation(description: "Atomic write detected")
+    /// An atomic write replaces the file by rename, which is what most editors do.
+    func testWatcherReportsAtomicWrite() async throws {
+        let changed = XCTestExpectation(description: "Atomic write reported")
+        changed.assertForOverFulfill = false
 
-        let fileDesc = open(testFile.path, O_EVTONLY)
-        XCTAssertGreaterThanOrEqual(fileDesc, 0, "Failed to open file")
-
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fileDesc,
-            eventMask: [.write, .rename, .delete, .attrib],
-            queue: .main
-        )
-
-        source.setEventHandler {
-            expectation.fulfill()
+        let watcher = FileWatcher(url: testFile, observeWakeNotifications: false) {
+            changed.fulfill()
         }
+        XCTAssertNotNil(watcher)
 
-        source.setCancelHandler {
-            close(fileDesc)
-        }
-
-        source.resume()
-
-        // Atomic write (like most editors)
         try "atomic content".write(to: testFile, atomically: true, encoding: .utf8)
 
-        await fulfillment(of: [expectation], timeout: 2.0)
-        source.cancel()
+        await fulfillment(of: [changed], timeout: 5.0)
     }
 
-    func testDispatchSourceDetectsMultipleWrites() async throws {
-        var writeCount = 0
-        let expectation = XCTestExpectation(description: "Multiple writes detected")
-        expectation.expectedFulfillmentCount = 3
+    /// Every write in a burst is reported, not just the first.
+    func testWatcherReportsMultipleWrites() async throws {
+        let changed = XCTestExpectation(description: "Three writes reported")
+        changed.expectedFulfillmentCount = 3
+        changed.assertForOverFulfill = false
 
-        let fileDesc = open(testFile.path, O_EVTONLY)
-        XCTAssertGreaterThanOrEqual(fileDesc, 0, "Failed to open file")
-
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fileDesc,
-            eventMask: [.write, .rename, .delete, .attrib],
-            queue: .main
-        )
-
-        source.setEventHandler {
-            writeCount += 1
-            expectation.fulfill()
+        let watcher = FileWatcher(url: testFile, observeWakeNotifications: false) {
+            changed.fulfill()
         }
+        XCTAssertNotNil(watcher)
 
-        source.setCancelHandler {
-            close(fileDesc)
-        }
-
-        source.resume()
-
-        // Rapid non-atomic writes
         for idx in 1...3 {
             try "write \(idx)".write(to: testFile, atomically: false, encoding: .utf8)
-            try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+            try await Task.sleep(nanoseconds: 80_000_000)
         }
 
-        await fulfillment(of: [expectation], timeout: 5.0)
-        source.cancel()
-
-        XCTAssertGreaterThanOrEqual(writeCount, 3, "Should detect at least 3 writes")
+        await fulfillment(of: [changed], timeout: 8.0)
     }
 
-    func testDispatchSourceAfterAtomicWriteNeedsRestart() async throws {
-        // This test demonstrates that after an atomic write (rename),
-        // the file descriptor becomes stale and new writes are missed
+    /// An atomic write leaves the original descriptor pointing at an unlinked inode, so
+    /// a watcher that does not rebuild it goes deaf. `FileWatcher` recreates the source;
+    /// this pins that, because a stale descriptor still reports the rename that killed it.
+    func testWatcherKeepsReportingAfterAnAtomicWrite() async throws {
+        let firstChange = XCTestExpectation(description: "Atomic write reported")
+        firstChange.assertForOverFulfill = false
+        let secondChange = XCTestExpectation(description: "Write after the atomic write reported")
+        secondChange.assertForOverFulfill = false
 
-        var events: [DispatchSource.FileSystemEvent] = []
-        let firstExpectation = XCTestExpectation(description: "First event")
+        let lock = NSLock()
+        var sawAtomicWrite = false
 
-        let fileDesc = open(testFile.path, O_EVTONLY)
-        XCTAssertGreaterThanOrEqual(fileDesc, 0, "Failed to open file")
-
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fileDesc,
-            eventMask: [.write, .rename, .delete, .attrib],
-            queue: .main
-        )
-
-        source.setEventHandler {
-            events.append(source.data)
-            firstExpectation.fulfill()
+        let watcher = FileWatcher(url: testFile, observeWakeNotifications: false) {
+            lock.lock()
+            let isFirst = !sawAtomicWrite
+            sawAtomicWrite = true
+            lock.unlock()
+            if isFirst {
+                firstChange.fulfill()
+            } else {
+                secondChange.fulfill()
+            }
         }
+        XCTAssertNotNil(watcher)
 
-        source.setCancelHandler {
-            close(fileDesc)
-        }
-
-        source.resume()
-
-        // First: atomic write
         try "atomic 1".write(to: testFile, atomically: true, encoding: .utf8)
-        await fulfillment(of: [firstExpectation], timeout: 2.0)
+        await fulfillment(of: [firstChange], timeout: 5.0)
 
-        // Should have received rename or delete event
-        XCTAssertFalse(events.isEmpty, "Should receive event for atomic write")
-        let firstEvent = events.first!
-        XCTAssertTrue(
-            firstEvent.contains(.rename) || firstEvent.contains(.delete),
-            "Atomic write should trigger rename or delete, got: \(firstEvent)"
-        )
+        // Give the watcher time to rebuild its source on the new inode.
+        try await Task.sleep(nanoseconds: 400_000_000)
 
-        source.cancel()
+        try "after the rename".write(to: testFile, atomically: false, encoding: .utf8)
+        await fulfillment(of: [secondChange], timeout: 5.0)
     }
 
     // MARK: - writeOnly (attribute) Regression

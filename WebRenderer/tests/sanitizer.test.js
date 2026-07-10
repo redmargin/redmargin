@@ -365,6 +365,42 @@ test('testSanitizeMermaidSvgRemovesForeignObjectAndUnsafeHrefs', () => {
     assertNotContains(output, 'data:text/html', 'Unsafe xlink:href values should be removed');
 });
 
+// `fill`, `stroke`, `mask`, `clip-path` and the marker-* attributes take a `url(...)`
+// reference, which is another way to name a script. isUnsafeSvgUrl guards them.
+test('testSanitizeMermaidSvgRemovesScriptUrlsFromPaintAttributes', () => {
+    const attrs = ['fill', 'stroke', 'mask', 'clip-path', 'marker-start', 'marker-mid', 'marker-end'];
+    for (const attr of attrs) {
+        const input = '<svg xmlns="http://www.w3.org/2000/svg">' +
+            `<rect ${attr}="url(javascript:alert(1))"></rect>` +
+            '</svg>';
+        const output = sanitizeMermaidSvg(input);
+        assertNotContains(output, 'javascript:', `${attr}="url(javascript:...)" should be removed`);
+        assertNotContains(output, attr + '=', `${attr} should not survive with an unsafe url()`);
+    }
+});
+
+test('testSanitizeMermaidSvgRemovesDataUrlsFromPaintAttributes', () => {
+    const input = '<svg xmlns="http://www.w3.org/2000/svg">' +
+        '<rect fill="url(data:text/html,evil)" clip-path="url( \'data:text/html,evil\' )"></rect>' +
+        '</svg>';
+    const output = sanitizeMermaidSvg(input);
+
+    assertNotContains(output, 'data:text/html', 'data: url() references should be removed');
+    assertNotContains(output, 'fill=', 'fill with a data: url() should not survive');
+    assertNotContains(output, 'clip-path=', 'clip-path with a data: url() should not survive');
+});
+
+test('testSanitizeMermaidSvgKeepsSafeFragmentUrlPaint', () => {
+    // Mermaid genuinely uses url(#id) to reference its own markers and gradients.
+    const input = '<svg xmlns="http://www.w3.org/2000/svg">' +
+        '<path d="M0 0 L1 1" marker-end="url(#arrow)" fill="url(#grad)"></path>' +
+        '</svg>';
+    const output = sanitizeMermaidSvg(input);
+
+    assertContains(output, 'marker-end="url(#arrow)"', 'Fragment marker references must be preserved');
+    assertContains(output, 'fill="url(#grad)"', 'Fragment paint references must be preserved');
+});
+
 test('testSanitizeMermaidSvgKeepsSafeShapesAndText', () => {
     const input = '<svg xmlns="http://www.w3.org/2000/svg">' +
         '<g transform="translate(10,20)">' +

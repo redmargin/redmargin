@@ -28,6 +28,13 @@ public actor SSHConnectionManager {
 
     private init() {}
 
+    /// The App Nap refcount, and whether the activity token is currently held. Internal
+    /// so tests can assert on the refcounting rather than only that the calls do not trap.
+    var remoteDocumentActivityCount: Int { remoteDocumentCount }
+    #if os(macOS)
+    var isHoldingAppNapActivity: Bool { appNapActivity != nil }
+    #endif
+
     /// Call when a remote document opens. Prevents App Nap while any remote document is open.
     public func beginRemoteDocumentActivity() {
         remoteDocumentCount += 1

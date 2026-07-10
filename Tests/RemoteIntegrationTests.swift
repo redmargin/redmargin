@@ -312,8 +312,9 @@ final class RemoteIntegrationTests: XCTestCase {
             expectation.fulfill()
         }
 
-        // Wait for watcher to register
-        try await Task.sleep(nanoseconds: 500_000_000)
+        // No wait here: watchFile only returns once the helper has answered the WatchFile
+        // request, so the remote watcher is already registered by the time the token is
+        // in hand. Sleeping for it hid whether that was true.
 
         // Trigger change
         try await provider.writeFile(at: tempPath, content: "Changed content")
@@ -326,21 +327,37 @@ final class RemoteIntegrationTests: XCTestCase {
         await connection.disconnect()
     }
 
-    func testControlSocketReuse() async throws {
+    /// ControlMaster is deliberately disabled (`SSHConnection.swift:353`), so two
+    /// connections to one host are independent ssh sessions rather than a multiplexed
+    /// pair. Each must work on its own, and closing one must leave the other usable.
+    func testTwoConnectionsToTheSameHostAreIndependent() async throws {
         let conn1 = SSHConnection(host: "devtest")
         let conn2 = SSHConnection(host: "devtest")
-
-        print("[Test] Testing SSH control socket reuse (multiplexing)...")
+        addTeardownBlock {
+            await conn1.disconnect()
+            await conn2.disconnect()
+        }
 
         try await conn1.connect()
-        print("[Test] Connection 1 established (primary)")
-
         try await conn2.connect()
-        print("[Test] Connection 2 established (multiplexed)")
 
+        var firstAlive = await conn1.isAlive()
+        var secondAlive = await conn2.isAlive()
+        XCTAssertTrue(firstAlive, "First connection should be alive")
+        XCTAssertTrue(secondAlive, "Second connection to the same host should be alive")
+
+        // Closing one must not take the other down with it.
         await conn1.disconnect()
-        await conn2.disconnect()
-        print("[Test] Connections closed.")
+
+        firstAlive = await conn1.isAlive()
+        secondAlive = await conn2.isAlive()
+        XCTAssertFalse(firstAlive, "A disconnected connection must not report alive")
+        XCTAssertTrue(secondAlive, "Closing one connection must not close the other")
+
+        // And the survivor still serves requests.
+        let provider = RemoteFileProvider(connection: conn2)
+        let entries = try await provider.listDirectory(at: "/tmp")
+        XCTAssertFalse(entries.isEmpty, "The surviving connection should still answer RPCs")
     }
 
     func testRemoteDirectoryWatchRecoversAfterReconnect() async throws {

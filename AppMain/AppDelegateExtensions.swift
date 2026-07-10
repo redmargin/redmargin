@@ -398,8 +398,20 @@ extension AppDelegate {
             "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
         }
         guard path.hasPrefix("~") else { return singleQuoted(path) }
+
+        // Only a genuine tilde prefix may travel unquoted: `~`, or `~` followed by a
+        // login name. Everything that reaches the remote shell unquoted has to be
+        // spelled out here, or a path like `~;id` or `~a;id/notes` carries a command
+        // into `test -d`. A path that merely starts with `~` is quoted whole; it
+        // would not have expanded to a home directory anyway.
+        let userPart = path.dropFirst().prefix { $0 != "/" }
+        let isLoginName = userPart.allSatisfy { char in
+            char.isASCII && (char.isLetter || char.isNumber || char == "_" || char == "-" || char == ".")
+        }
+        guard isLoginName else { return singleQuoted(path) }
+
         guard let slash = path.firstIndex(of: "/") else {
-            // Bare `~` or `~user` with no path component: leave as-is to expand.
+            // Bare `~` or `~user` with no path component: safe to expand.
             return path
         }
         // Keep the `~`/`~user` prefix and the separating slash unquoted; quote the rest.

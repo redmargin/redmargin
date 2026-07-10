@@ -91,6 +91,12 @@ public class BookmarkManager {
         activeAccess.removeAll()
     }
 
+    /// The set of URLs currently held open. Internal so tests can assert that access is
+    /// tracked and released, rather than only that the calls do not trap.
+    var activeAccessCount: Int { activeAccess.count }
+
+    func isAccessing(_ url: URL) -> Bool { activeAccess[url] == true }
+
     // MARK: - Bookmark Storage
 
     private func saveBookmarkData(_ data: Data, for url: URL) {

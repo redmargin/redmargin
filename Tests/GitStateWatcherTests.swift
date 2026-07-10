@@ -1,160 +1,154 @@
 import XCTest
 import Foundation
+@testable import RedmarginCore
 
-/// Tests for git state watching behavior
-/// Verifies that HEAD and branch ref changes are detected
+/// Covers `GitRepoWatcher` (`src/Core/FileProvider/LocalFileProvider.swift:76`), which
+/// tells the gutter to refresh when the repository moves underneath the open document.
+/// It watches `.git/index`, `.git/HEAD`, and whichever branch ref HEAD points at,
+/// re-pointing that last watcher whenever HEAD changes.
 final class GitStateWatcherTests: XCTestCase {
 
-    var tempDir: URL!
-    var gitDir: URL!
+    private var helper: GitTestHelper!
+    private var repoURL: URL!
 
-    override func setUp() async throws {
-        tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("GitStateWatcherTests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    /// The watcher's `onChange` is fixed at construction, so route it through a box
+    /// the test can re-target between phases.
+    private let handlerLock = NSLock()
+    private var changeHandler: (() -> Void)?
 
-        // Create a fake .git directory structure
-        gitDir = tempDir.appendingPathComponent(".git")
-        try FileManager.default.createDirectory(at: gitDir, withIntermediateDirectories: true)
-
-        let refsDir = gitDir.appendingPathComponent("refs/heads")
-        try FileManager.default.createDirectory(at: refsDir, withIntermediateDirectories: true)
-
-        // Create HEAD pointing to main branch
-        let headFile = gitDir.appendingPathComponent("HEAD")
-        try "ref: refs/heads/main\n".write(to: headFile, atomically: true, encoding: .utf8)
-
-        // Create main branch ref
-        let mainRef = refsDir.appendingPathComponent("main")
-        try "abc123def456\n".write(to: mainRef, atomically: true, encoding: .utf8)
+    private func setHandler(_ handler: (() -> Void)?) {
+        handlerLock.lock()
+        changeHandler = handler
+        handlerLock.unlock()
     }
 
-    override func tearDown() async throws {
-        try? FileManager.default.removeItem(at: tempDir)
+    private func fireHandler() {
+        handlerLock.lock()
+        let handler = changeHandler
+        handlerLock.unlock()
+        handler?()
     }
 
-    func testWatcherDetectsHEADChange() async throws {
-        // Tests branch switch detection (git checkout)
-        let expectation = XCTestExpectation(description: "HEAD change detected")
-
-        let headFile = gitDir.appendingPathComponent("HEAD")
-        let fileDesc = open(headFile.path, O_EVTONLY)
-        XCTAssertGreaterThanOrEqual(fileDesc, 0, "Failed to open HEAD file")
-
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fileDesc,
-            eventMask: [.write, .rename, .delete],
-            queue: .main
-        )
-
-        source.setEventHandler {
-            expectation.fulfill()
-        }
-
-        source.setCancelHandler {
-            close(fileDesc)
-        }
-
-        source.resume()
-
-        // Simulate branch switch by changing HEAD
-        try "ref: refs/heads/feature\n".write(to: headFile, atomically: true, encoding: .utf8)
-
-        await fulfillment(of: [expectation], timeout: 2.0)
-        source.cancel()
+    override func setUpWithError() throws {
+        helper = GitTestHelper()
+        try helper.setUp()
+        repoURL = try helper.createRepo(named: "repo")
+        try helper.createFile(named: "note.md", content: "# Note\n", in: repoURL)
+        try helper.commit(message: "initial", in: repoURL)
     }
 
-    func testWatcherDetectsBranchRefChange() async throws {
-        // Tests commit detection (git commit)
-        let expectation = XCTestExpectation(description: "Branch ref change detected")
-
-        let mainRef = gitDir.appendingPathComponent("refs/heads/main")
-        let fileDesc = open(mainRef.path, O_EVTONLY)
-        XCTAssertGreaterThanOrEqual(fileDesc, 0, "Failed to open branch ref file")
-
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fileDesc,
-            eventMask: [.write, .rename, .delete],
-            queue: .main
-        )
-
-        source.setEventHandler {
-            expectation.fulfill()
-        }
-
-        source.setCancelHandler {
-            close(fileDesc)
-        }
-
-        source.resume()
-
-        // Simulate commit by updating the branch ref
-        try "def789ghi012\n".write(to: mainRef, atomically: true, encoding: .utf8)
-
-        await fulfillment(of: [expectation], timeout: 2.0)
-        source.cancel()
+    override func tearDownWithError() throws {
+        setHandler(nil)
+        helper.tearDown()
     }
 
-    func testParseHEADForBranchRef() throws {
-        // Tests parsing HEAD to find the current branch ref
-        let headFile = gitDir.appendingPathComponent("HEAD")
-        let headContent = try String(contentsOf: headFile, encoding: .utf8)
+    private var gitDir: URL { repoURL.appendingPathComponent(".git") }
+
+    /// Builds the watcher and gives its file sources a moment to arm.
+    private func makeWatcher() -> GitRepoWatcher {
+        let watcher = GitRepoWatcher(repoRoot: repoURL.path) { [weak self] in
+            self?.fireHandler()
+        }
+        Thread.sleep(forTimeInterval: 0.15)
+        return watcher
+    }
+
+    /// An expectation that survives the watcher firing more than once, which the
+    /// underlying file sources are free to do for a single write.
+    private func changeExpectation(_ description: String) -> XCTestExpectation {
+        let expectation = expectation(description: description)
+        expectation.assertForOverFulfill = false
+        setHandler { expectation.fulfill() }
+        return expectation
+    }
+
+    private func currentBranchRef() throws -> String {
+        let head = try String(contentsOf: gitDir.appendingPathComponent("HEAD"), encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        XCTAssertTrue(headContent.hasPrefix("ref: "), "HEAD should start with 'ref: '")
-
-        let refPath = String(headContent.dropFirst(5))
-        XCTAssertEqual(refPath, "refs/heads/main", "Should extract branch ref path")
-
-        // Verify the ref file exists
-        let branchRefURL = gitDir.appendingPathComponent(refPath)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: branchRefURL.path))
+        XCTAssertTrue(head.hasPrefix("ref: "), "A fresh repo should be on a branch, got \(head)")
+        return String(head.dropFirst(5))
     }
 
-    func testDetachedHEADHasNoRefPrefix() throws {
-        // Tests handling of detached HEAD (direct commit hash)
-        let headFile = gitDir.appendingPathComponent("HEAD")
-
-        // Simulate detached HEAD (direct commit hash, no ref:)
-        try "abc123def456789\n".write(to: headFile, atomically: true, encoding: .utf8)
-
-        let headContent = try String(contentsOf: headFile, encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        XCTAssertFalse(headContent.hasPrefix("ref: "), "Detached HEAD should not have ref: prefix")
+    private func overwrite(_ url: URL, with contents: String) throws {
+        try contents.write(to: url, atomically: false, encoding: .utf8)
     }
 
-    func testWatcherDetectsIndexChange() async throws {
-        // Tests staging/unstaging detection (git add/reset)
-        let expectation = XCTestExpectation(description: "Index change detected")
+    /// Staging a file rewrites `.git/index`. Without the index watcher, nothing fires.
+    func testWatcherReportsIndexChange() throws {
+        let watcher = makeWatcher()
+        let changed = changeExpectation("onChange fired for index")
 
-        // Create a fake index file
-        let indexFile = gitDir.appendingPathComponent("index")
-        try Data([0x44, 0x49, 0x52, 0x43]).write(to: indexFile) // DIRC header
+        let index = gitDir.appendingPathComponent("index")
+        try Data(contentsOf: index).write(to: index)
 
-        let fileDesc = open(indexFile.path, O_EVTONLY)
-        XCTAssertGreaterThanOrEqual(fileDesc, 0, "Failed to open index file")
+        wait(for: [changed], timeout: 5)
+        XCTAssertNotNil(watcher)
+    }
 
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fileDesc,
-            eventMask: [.write, .rename, .delete],
-            queue: .main
+    /// A branch switch rewrites HEAD.
+    func testWatcherReportsHeadChange() throws {
+        let watcher = makeWatcher()
+        let changed = changeExpectation("onChange fired for HEAD")
+
+        try overwrite(gitDir.appendingPathComponent("HEAD"), with: "ref: refs/heads/feature\n")
+
+        wait(for: [changed], timeout: 5)
+        XCTAssertNotNil(watcher)
+    }
+
+    /// A commit on the current branch rewrites `refs/heads/<branch>`.
+    func testWatcherReportsBranchRefChange() throws {
+        let ref = try currentBranchRef()
+        let watcher = makeWatcher()
+        let changed = changeExpectation("onChange fired for branch ref")
+
+        try overwrite(gitDir.appendingPathComponent(ref), with: String(repeating: "0", count: 40) + "\n")
+
+        wait(for: [changed], timeout: 5)
+        XCTAssertNotNil(watcher)
+    }
+
+    /// After HEAD moves to another branch the watcher must follow it, so writes to the
+    /// new ref are reported. This is what `updateRefWatcher` exists for, and what a
+    /// watcher that only ever watched the original ref would miss.
+    func testWatcherFollowsHeadOntoTheNewBranchRef() throws {
+        let newRef = "refs/heads/feature"
+        let newRefURL = gitDir.appendingPathComponent(newRef)
+        try FileManager.default.createDirectory(
+            at: newRefURL.deletingLastPathComponent(), withIntermediateDirectories: true
         )
+        try overwrite(newRefURL, with: String(repeating: "1", count: 40) + "\n")
 
-        source.setEventHandler {
-            expectation.fulfill()
-        }
+        let watcher = makeWatcher()
 
-        source.setCancelHandler {
-            close(fileDesc)
-        }
+        let headSeen = changeExpectation("onChange fired for HEAD")
+        try overwrite(gitDir.appendingPathComponent("HEAD"), with: "ref: \(newRef)\n")
+        wait(for: [headSeen], timeout: 5)
 
-        source.resume()
+        // The watcher has re-pointed at refs/heads/feature; writing it must report.
+        Thread.sleep(forTimeInterval: 0.2)
+        let refSeen = changeExpectation("onChange fired for the new branch ref")
+        try overwrite(newRefURL, with: String(repeating: "2", count: 40) + "\n")
 
-        // Simulate staging by modifying the index
-        try Data([0x44, 0x49, 0x52, 0x43, 0x00]).write(to: indexFile)
+        wait(for: [refSeen], timeout: 5)
+        XCTAssertNotNil(watcher)
+    }
 
-        await fulfillment(of: [expectation], timeout: 2.0)
-        source.cancel()
+    /// A detached HEAD names a commit, not a ref, so there is no branch ref to follow.
+    /// The watcher must report the HEAD write and survive having nothing to re-point at.
+    func testDetachedHeadIsReportedAndLeavesTheWatcherAlive() throws {
+        let watcher = makeWatcher()
+
+        let headSeen = changeExpectation("onChange fired for detached HEAD")
+        try overwrite(gitDir.appendingPathComponent("HEAD"), with: String(repeating: "3", count: 40) + "\n")
+        wait(for: [headSeen], timeout: 5)
+
+        // Still watching HEAD: a second write is reported too.
+        Thread.sleep(forTimeInterval: 0.2)
+        let secondSeen = changeExpectation("onChange fired for the next HEAD write")
+        try overwrite(gitDir.appendingPathComponent("HEAD"), with: "ref: refs/heads/main\n")
+
+        wait(for: [secondSeen], timeout: 5)
+        XCTAssertNotNil(watcher, "A detached HEAD must not tear the watcher down")
     }
 }

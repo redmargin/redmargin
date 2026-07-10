@@ -96,27 +96,41 @@ final class BookmarkManagerTests: XCTestCase {
         }
     }
 
-    func testStopAccessingAll() {
+    /// `stopAccessingAll` must release every URL it is holding. Resolving the bookmarks
+    /// is a precondition, not something to skip past: if either resolve fails the test
+    /// has not exercised the teardown it is named for.
+    func testStopAccessingAll() throws {
         let url1 = createTempFile()
         let tempDir = FileManager.default.temporaryDirectory
         let url2 = tempDir.appendingPathComponent("test2-\(UUID().uuidString).md")
-        try? "# Test 2".write(to: url2, atomically: true, encoding: .utf8)
+        try "# Test 2".write(to: url2, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url2) }
+
+        BookmarkManager.shared.stopAccessingAll()
+        XCTAssertEqual(BookmarkManager.shared.activeAccessCount, 0, "Precondition: nothing held")
 
         BookmarkManager.shared.createBookmark(for: url1)
         BookmarkManager.shared.createBookmark(for: url2)
 
-        if let resolved1 = BookmarkManager.shared.resolveBookmark(for: url1) {
-            BookmarkManager.shared.startAccessing(resolved1)
-        }
-        if let resolved2 = BookmarkManager.shared.resolveBookmark(for: url2) {
-            BookmarkManager.shared.startAccessing(resolved2)
-        }
+        let resolved1 = try XCTUnwrap(BookmarkManager.shared.resolveBookmark(for: url1))
+        let resolved2 = try XCTUnwrap(BookmarkManager.shared.resolveBookmark(for: url2))
 
-        // Should not crash
+        // Outside a sandbox `startAccessingSecurityScopedResource()` reports false, and
+        // nothing is tracked. Only URLs it granted are expected to be held.
+        let granted1 = BookmarkManager.shared.startAccessing(resolved1)
+        let granted2 = BookmarkManager.shared.startAccessing(resolved2)
+        let expectedHeld = (granted1 ? 1 : 0) + (granted2 ? 1 : 0)
+
+        XCTAssertEqual(BookmarkManager.shared.activeAccessCount, expectedHeld,
+                       "Every granted URL should be tracked as held")
+        XCTAssertEqual(BookmarkManager.shared.isAccessing(resolved1), granted1)
+        XCTAssertEqual(BookmarkManager.shared.isAccessing(resolved2), granted2)
+
         BookmarkManager.shared.stopAccessingAll()
 
-        // Cleanup
-        try? FileManager.default.removeItem(at: url2)
+        XCTAssertEqual(BookmarkManager.shared.activeAccessCount, 0, "Nothing may remain held")
+        XCTAssertFalse(BookmarkManager.shared.isAccessing(resolved1))
+        XCTAssertFalse(BookmarkManager.shared.isAccessing(resolved2))
     }
 
     func testCleanupStaleBookmarks() {
