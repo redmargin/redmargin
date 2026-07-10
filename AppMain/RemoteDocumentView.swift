@@ -21,6 +21,10 @@ struct RemoteDocumentWindowContent: View {
     @State private var showFindBar: Bool = false
     @State private var findBarFocusTrigger: UUID = UUID()
     @State private var isExporting: Bool = false
+    /// The in-flight sidebar selection, retained so a new click can cancel it, and
+    /// a stamp so an older response cannot install its document or its tracking.
+    @State private var selectionTask: Task<Void, Never>?
+    @State private var selectionGeneration = 0
     weak var appDelegate: AppDelegate?
 
     let location: RemoteLocation
@@ -417,9 +421,21 @@ struct RemoteDocumentWindowContent: View {
         let oldLocation = state.location
         guard selectedPath != oldLocation.path else { return }
 
-        Task {
+        // Clicking through the sidebar starts a load per click. Cancel the outgoing
+        // one and stamp this one: an older response landing last would restore its
+        // document over the newer one, and its window-tracking update would
+        // re-register the window under a location it no longer shows.
+        selectionTask?.cancel()
+        selectionGeneration += 1
+        let generation = selectionGeneration
+
+        selectionTask = Task {
             do {
                 try await state.loadFile(at: selectedPath)
+                guard !Task.isCancelled, generation == selectionGeneration else { return }
+                // loadFile drops a superseded read; confirm it installed this one.
+                guard state.location.path == selectedPath else { return }
+
                 isFolderMode = false  // Exit welcome view once a file is loaded
                 let newLocation = RemoteLocation(host: oldLocation.host, path: selectedPath)
                 appDelegate?.updateRemoteWindowTracking(from: oldLocation, to: newLocation)

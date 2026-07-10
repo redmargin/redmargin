@@ -31,6 +31,10 @@ struct OpenRemoteSheet: View {
     @State var pathInput: String = ""
     @State var entries: [DirectoryEntry] = []
     @State var isLoadingDirectory = false
+    /// The in-flight listing, retained so a new one can cancel it, and a stamp so
+    /// a slower older listing cannot overwrite the newer directory's state.
+    @State var directoryLoadTask: Task<Void, Never>?
+    @State var directoryLoadGeneration = 0
     @State var pathHistory: [String] = []
     @State var usePathEntry = false
     @State var manualPath: String = ""

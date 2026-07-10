@@ -10,6 +10,10 @@
 - Fixed the remote helper's proxy silently truncating large messages (big diffs, embedded images) when the operating system accepted only part of a write, which desynchronized the connection until reconnect.
 - Fixed a fast remote reply being mistaken for an unsolicited message, which left the request to time out and disconnected a healthy connection.
 - Fixed file, folder, and Git updates reaching only one window when several windows are open on the same server; every window now receives the updates it is watching for.
+- Fixed a checkbox toggle being written into whichever document was selected next when the save was still in flight, which could overwrite the newly opened file with the previous document's contents. Local and remote documents are both affected.
+- Fixed a slow file selection replacing the document opened after it, both in a folder window and in the remote sidebar.
+- Fixed a slow directory listing in the remote open panel overwriting the folder the user had already navigated to.
+- Fixed the find bar reporting a match count for a search that had already been changed or cleared.
 
 ### Security
 

@@ -148,6 +148,8 @@ extension OpenRemoteSheet {
     }
 
     func disconnectAndGoBack() {
+        directoryLoadTask?.cancel()
+        directoryLoadGeneration += 1
         Task { await connection?.disconnect() }
         connection = nil
         entries = []
@@ -158,6 +160,8 @@ extension OpenRemoteSheet {
     }
 
     func dismissSheet() {
+        directoryLoadTask?.cancel()
+        directoryLoadGeneration += 1
         Task { await connection?.disconnect() }
         onDismiss()
     }
@@ -201,16 +205,26 @@ extension OpenRemoteSheet {
     func loadDirectory(_ path: String) {
         guard let conn = connection else { return }
 
+        // Browsing is faster than a listing round trip, so several loads can be in
+        // flight at once. Cancel the outgoing one and stamp this request, or a
+        // slower older listing lands last and replaces the path, entries, error,
+        // and loading state of the directory the user is actually looking at.
+        directoryLoadTask?.cancel()
+        directoryLoadGeneration += 1
+        let generation = directoryLoadGeneration
+
         isLoadingDirectory = true
         errorMessage = nil
         selectedFileIndex = nil
 
-        Task {
+        directoryLoadTask = Task {
             do {
                 let dirEntries = try await withTimeout(seconds: 5) {
                     try await conn.listDirectory(path: path)
                 }
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
+                    guard generation == self.directoryLoadGeneration else { return }
                     self.currentPath = path
                     self.pathInput = path
                     self.entries = dirEntries
@@ -218,7 +232,9 @@ extension OpenRemoteSheet {
                     self.selectedFileIndex = nil
                 }
             } catch {
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
+                    guard generation == self.directoryLoadGeneration else { return }
                     self.isLoadingDirectory = false
                     if error is TimeoutError {
                         self.errorMessage = "Directory load timed out. The connection may be stale; try again."

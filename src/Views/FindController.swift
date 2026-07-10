@@ -12,6 +12,11 @@ public class FindController: ObservableObject {
     public weak var webView: WKWebView?
     private var lastSearchText: String = ""
 
+    /// Bumped by every `find` and `clearFind`. The match count is computed in the
+    /// web view and delivered asynchronously; a count for an older query would
+    /// otherwise describe text that is no longer being highlighted.
+    private var searchGeneration = 0
+
     public init() {}
 
     /// Find text in the web view
@@ -21,6 +26,8 @@ public class FindController: ObservableObject {
             return
         }
 
+        searchGeneration += 1
+        let generation = searchGeneration
         searchText = text
         lastSearchText = text
 
@@ -43,6 +50,8 @@ public class FindController: ObservableObject {
 
         webView.evaluateJavaScript(countScript) { [weak self] result, _ in
             guard let self = self else { return }
+            // The query changed (or was cleared) while the count was in flight.
+            guard generation == self.searchGeneration else { return }
             if let count = result as? Int {
                 self.matchCount = count
                 if count > 0 {
@@ -80,6 +89,8 @@ public class FindController: ObservableObject {
 
     /// Clear find highlights
     public func clearFind() {
+        // Invalidate any count still in flight, so it cannot repopulate the UI.
+        searchGeneration += 1
         matchCount = 0
         currentMatch = 0
         searchText = ""

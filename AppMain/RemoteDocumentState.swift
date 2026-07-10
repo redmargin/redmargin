@@ -80,6 +80,10 @@ class RemoteDocumentState {
     @ObservationIgnored private var repoRoot: String?
     @ObservationIgnored private var gitChangeTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
+    /// Bumped by every `loadFile`. A read that finishes after a newer sidebar
+    /// selection started must not install its content or location.
+    @ObservationIgnored private var loadGeneration = 0
+
     @ObservationIgnored private var reconnectObserver: Any?
     @ObservationIgnored private var connectRequestObserver: Any?
     @ObservationIgnored private var stateChangeObserver: Any?
@@ -258,8 +262,14 @@ class RemoteDocumentState {
     /// Persist confirmed server content to the local cache, fire-and-forget so it
     /// never blocks the UI. Empty content (folder windows) is not cached.
     func cacheContent(_ content: String) {
+        cacheContent(content, for: location)
+    }
+
+    /// Caches under an explicit location. Callers that resume after a suspension
+    /// must pass the location the content was read from, not `self.location`,
+    /// which navigation may already have moved on.
+    func cacheContent(_ content: String, for location: RemoteLocation) {
         guard !content.isEmpty else { return }
-        let location = self.location
         let cache = contentCache
         Task.detached(priority: .utility) {
             await cache.save(content, for: location)
@@ -513,6 +523,9 @@ class RemoteDocumentState {
 
     /// Loads a different file in the same window
     func loadFile(at path: String) async throws {
+        loadGeneration += 1
+        let generation = loadGeneration
+
         refreshTask?.cancel()
         refreshTask = nil
         reloadTask?.cancel()
@@ -521,9 +534,9 @@ class RemoteDocumentState {
         // Show the spinner while the sidebar selection loads. Without it a wedged
         // connection left the old document on screen with no feedback, so the
         // window looked hung. Interactive timeouts bound the wait; the spinner
-        // always clears.
+        // always clears. A superseded load leaves the spinner to the newer one.
         isRefreshing = true
-        defer { isRefreshing = false }
+        defer { if generation == loadGeneration { isRefreshing = false } }
 
         let newContent = try await readRemoteDocumentContent(
             fileProvider: fileProvider,
@@ -534,8 +547,13 @@ class RemoteDocumentState {
             reconnectWaitTimeout: RemoteOperationSupport.interactiveReconnectWaitTimeout
         )
 
+        // A newer selection started while this read was in flight. Installing it
+        // now would replace the newer document with this older one.
+        guard !Task.isCancelled, generation == loadGeneration else { return }
+
         // Update location and content
-        location = RemoteLocation(host: location.host, path: path)
+        let newLocation = RemoteLocation(host: location.host, path: path)
+        location = newLocation
         content = newContent
         lastKnownServerContent = newContent
         gitChanges = nil
@@ -543,8 +561,14 @@ class RemoteDocumentState {
         pendingToggle = nil
         refreshToken += 1
 
+        // Cache under the new location alongside the content and the baseline.
+        // Without this the persisted window restored empty or stale content until
+        // SSH reconnected.
+        cacheContent(newContent, for: newLocation)
+
         // Reset watchers for the new file
         await setupFileWatcher()
+        guard generation == loadGeneration else { return }
         await detectGitChanges()
     }
 
@@ -628,6 +652,13 @@ class RemoteDocumentState {
         isWritingFile = true
         content = newContent
 
+        // The toggle belongs to the document it was clicked in. Every step below
+        // suspends, and sidebar navigation can move `location` under them; writing
+        // to `location.path` afterwards would send this document's content to the
+        // newly selected file, and the baseline, cache, pending-toggle, and revert
+        // paths would all be applied to the wrong document.
+        let origin = location
+
         // Send to server
         Task {
             defer {
@@ -637,12 +668,14 @@ class RemoteDocumentState {
             }
 
             do {
-                try await fileProvider.writeFile(at: location.path, content: newContent)
+                try await fileProvider.writeFile(at: origin.path, content: newContent)
                 // Success - update last known server content
                 await MainActor.run {
+                    // The cache is keyed by location, so it is always safe to write.
+                    cacheContent(newContent, for: origin)
+                    guard self.location == origin else { return }
                     lastKnownServerContent = newContent
                     pendingToggle = nil
-                    cacheContent(newContent)
                 }
             } catch {
                 print("[RemoteDocumentState] Failed to save checkbox toggle: \(error)")
@@ -650,6 +683,7 @@ class RemoteDocumentState {
                 // Check if we're disconnected
                 let currentState = await fileProvider.getConnectionState()
                 await MainActor.run {
+                    guard self.location == origin else { return }
                     if currentState == .reconnecting || currentState == .disconnected {
                         // Cache the pending toggle for reconnection
                         print("[RemoteDocumentState] Caching pending toggle for reconnection")

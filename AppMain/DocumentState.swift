@@ -22,6 +22,11 @@ class DocumentState {
     @ObservationIgnored private var gitChangeTask: Task<Void, Never>?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
 
+    /// Bumped by every `loadFile`. A read that finishes after a newer selection
+    /// started must not install its document, watchers, or git state: cancelling
+    /// the caller's task does not stop an already-suspended read from committing.
+    @ObservationIgnored private var loadGeneration = 0
+
     init(content: String, fileURL: URL, fileProvider: FileProvider = LocalFileProvider()) {
         self.content = content
         self.fileURL = fileURL
@@ -103,8 +108,20 @@ class DocumentState {
 
     /// Loads a different file in the same window
     func loadFile(at url: URL) async throws {
+        loadGeneration += 1
+        let generation = loadGeneration
+
+        // An in-flight reload belongs to the outgoing file.
+        reloadTask?.cancel()
+        reloadTask = nil
+
         // Read the new file content
         let newContent = try await fileProvider.readFile(at: url.path)
+
+        // A newer selection started while this read was in flight, or the caller
+        // cancelled us. Either way this document is stale; committing it would
+        // replace the newest document and restore the abandoned selection.
+        guard !Task.isCancelled, generation == loadGeneration else { return }
 
         // Update file URL and content
         fileURL = url
@@ -115,6 +132,7 @@ class DocumentState {
 
         // Reset watchers for the new file
         await setupFileWatcher()
+        guard generation == loadGeneration else { return }
         await detectGitChanges()
     }
 
@@ -173,6 +191,11 @@ class DocumentState {
     func handleCheckboxToggle(line: Int, checked: Bool) {
         isWritingFile = true
 
+        // The toggle belongs to the document on screen when it was clicked. Both
+        // the read and the write below suspend, and `fileURL` can change under
+        // them, which would write one file's content into another.
+        let targetURL = fileURL
+
         Task {
             defer {
                 Task { @MainActor in
@@ -181,7 +204,7 @@ class DocumentState {
             }
 
             // Always read from disk first for safety
-            guard let fileContent = try? await fileProvider.readFile(at: fileURL.path) else {
+            guard let fileContent = try? await fileProvider.readFile(at: targetURL.path) else {
                 return
             }
 
@@ -200,9 +223,11 @@ class DocumentState {
 
             do {
                 // Write to disk FIRST
-                try await fileProvider.writeFile(at: fileURL.path, content: newContent)
-                // Only update in-memory content after successful write
+                try await fileProvider.writeFile(at: targetURL.path, content: newContent)
+                // Only update in-memory content after a successful write, and only
+                // while the toggled document is still the one on screen.
                 await MainActor.run {
+                    guard self.fileURL == targetURL else { return }
                     self.content = newContent
                 }
             } catch {
