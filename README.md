@@ -59,10 +59,11 @@ open /Applications/Redmargin.app
 The build script will:
 
 1. Rebuild the Linux remote server binary on `devtest` when server or core sources are newer
-2. Compile with Swift Package Manager
-3. Create the app bundle with WebRenderer assets and server binaries
-4. Install to /Applications
-5. Install `/usr/local/bin/redmargin` when `/usr/local/bin` is writable
+2. Run the WebRenderer and Swift test suites, failing the build on any test failure (pass `--no-test` to skip)
+3. Compile with Swift Package Manager
+4. Create the app bundle with WebRenderer assets and server binaries
+5. Install to /Applications
+6. Install `/usr/local/bin/redmargin` when `/usr/local/bin` is writable
 
 ## Command Line
 
@@ -125,7 +126,7 @@ redmargin/
 
 ## Status
 
-v1.5.1 - See `resources/docs/CHANGELOG.md` for version history.
+v1.5.2 - See `resources/docs/CHANGELOG.md` for version history.
 
 ## License
 

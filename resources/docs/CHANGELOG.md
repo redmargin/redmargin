@@ -24,6 +24,8 @@
 
 - Fixed the remote helper never being removed when Redmargin tried to reinstall it. The command that was supposed to delete it terminated its own remote shell first, so a helper left in a bad state, or one that no longer matched the app version, could not be repaired by reconnecting.
 
+- Fixed a task list checkbox appearing toggled when a text-selection drag ended on it, even though the underlying document was left unchanged.
+
 ### Changed
 
 - Upgrading no longer erases the recent-workspace data an older version of the app reads, so downgrading keeps its recents list.
@@ -32,7 +34,9 @@
 ### Security
 
 - Restricted the remote helper's working directory and its command socket to the owning account. On hosts with a permissive umask another local user could previously connect to the socket and read or write files as the connecting user, without authenticating. The helper now also refuses connections from any other account and fails to start rather than run with weakened permissions.
-- Bounded the size and kind of files the remote helper will load as images: a document can no longer point it at a huge file or a device node and exhaust memory or stall the connection.
+- Bounded the size and kind of files the remote helper will load, both the images a document references and the document itself: neither can now point it at a huge file or a device node and exhaust memory or stall the connection.
+- Closed a way to run scripts from a Markdown document. A link whose scheme was padded with tab or newline characters slipped past the HTML sanitizer as a harmless relative link, and the browser then treated it as a `javascript:` link. Link schemes are now read the way a browser reads them.
+- Quoted remote folder paths that begin with a tilde before checking them on the remote host, so a saved path containing shell metacharacters can no longer run a command there when its Open Recent entry is used.
 - Stopped a repository's own Git configuration from running commands when Redmargin inspects it. Opening a file inside a repository obtained from an untrusted source could previously execute code as the current user through Git's fsmonitor, external-diff, and textconv settings.
 
 ## v1.5.2 (2026-06-29)
