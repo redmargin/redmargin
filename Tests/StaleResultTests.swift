@@ -133,11 +133,13 @@ final class StaleResultTests: XCTestCase {
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
         webView.loadHTMLString("<html><body><p>needle needle needle</p></body></html>", baseURL: nil)
 
-        let deadline = Date().addingTimeInterval(5)
+        let deadline = Date().addingTimeInterval(10)
         while webView.isLoading && Date() < deadline {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
-        try XCTSkipIf(webView.isLoading, "WebView did not finish loading")
+        // Every FindController test funnels through this helper. Skipping on a slow
+        // load would report success for a group of tests that never ran.
+        XCTAssertFalse(webView.isLoading, "WebView did not finish loading within 10s")
         return webView
     }
 

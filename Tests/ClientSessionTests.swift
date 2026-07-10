@@ -15,10 +15,16 @@ final class ClientSessionTests: XCTestCase {
 
     /// Returns a connected pair: `.server` is handed to the session, `.client`
     /// stands in for the peer that reads what the session writes.
+    private struct SocketPairUnavailable: Error, CustomStringConvertible {
+        let errorNumber: Int32
+        var description: String { "socketpair() failed: errno \(errorNumber)" }
+    }
+
     private func makeSocketPair() throws -> (server: Int32, client: Int32) {
         var fds: [Int32] = [0, 0]
-        let result = socketpair(AF_UNIX, sockStreamType, 0, &fds)
-        try XCTSkipIf(result != 0, "socketpair() unavailable: errno \(errno)")
+        guard socketpair(AF_UNIX, sockStreamType, 0, &fds) == 0 else {
+            throw SocketPairUnavailable(errorNumber: errno)
+        }
         return (fds[0], fds[1])
     }
 
@@ -82,19 +88,25 @@ final class ClientSessionTests: XCTestCase {
         let retiredFD = session.fileDescriptor
         session.close()
 
-        // The kernel hands out the lowest free descriptor, so the next socket
-        // reclaims the number the session just released.
         let second = try makeSocketPair()
         defer { close(second.server); close(second.client) }
-        try XCTSkipIf(
-            second.server != retiredFD,
-            "Descriptor \(retiredFD) was not recycled (got \(second.server)); cannot exercise the race"
-        )
+
+        // In the daemon, accept() hands the retired number straight back. Place the
+        // new connection on that exact descriptor rather than waiting for the kernel
+        // to recycle it, so the race is reproduced on every run.
+        let needsPlacement = second.server != retiredFD
+        if needsPlacement {
+            XCTAssertEqual(
+                dup2(second.server, retiredFD), retiredFD,
+                "Could not place the new connection on retired descriptor \(retiredFD): errno \(errno)"
+            )
+        }
+        defer { if needsPlacement { close(retiredFD) } }
 
         session.send(Data("late response from the previous connection".utf8))
 
-        // Give the write queue a chance to run the dropped block.
-        Thread.sleep(forTimeInterval: 0.2)
+        // readAvailable polls, so a frame written by the closed session would surface
+        // here. Nothing arriving within the timeout is the passing case.
         XCTAssertNil(
             readAvailable(second.client),
             "A late frame from a closed session was written into the next client's connection"

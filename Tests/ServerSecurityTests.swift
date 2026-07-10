@@ -22,6 +22,19 @@ final class ServerSecurityTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempDir)
     }
 
+    private struct FifoUnavailable: Error, CustomStringConvertible {
+        let errorNumber: Int32
+        var description: String { "mkfifo() failed: errno \(errorNumber)" }
+    }
+
+    /// A FIFO is the only way to present a non-regular file to these reads. If the
+    /// platform cannot make one the test has not run, so it must not report success.
+    private func makeFifo(at url: URL) throws {
+        guard mkfifo(url.path, 0o600) == 0 else {
+            throw FifoUnavailable(errorNumber: errno)
+        }
+    }
+
     // MARK: - Document reads
 
     func testReadFileReturnsRegularFile() async throws {
@@ -38,7 +51,7 @@ final class ServerSecurityTests: XCTestCase {
     /// the actor on an open() that never returns, wedging the whole connection.
     func testReadFileRejectsNonRegularFile() async throws {
         let fifo = tempDir.appendingPathComponent("pipe.md")
-        try XCTSkipIf(mkfifo(fifo.path, 0o600) != 0, "mkfifo unavailable: errno \(errno)")
+        try makeFifo(at: fifo)
 
         let response = await FileOperations().readFile(path: fifo.path)
 
@@ -64,7 +77,7 @@ final class ServerSecurityTests: XCTestCase {
     /// A symlink to a FIFO must be judged by its target, not by the link.
     func testReadFileRejectsSymlinkToNonRegularFile() async throws {
         let fifo = tempDir.appendingPathComponent("pipe")
-        try XCTSkipIf(mkfifo(fifo.path, 0o600) != 0, "mkfifo unavailable: errno \(errno)")
+        try makeFifo(at: fifo)
         let link = tempDir.appendingPathComponent("link.md")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: fifo)
 
@@ -98,7 +111,7 @@ final class ServerSecurityTests: XCTestCase {
     /// open() that never returns, wedging every later request on the connection.
     func testReadAssetRejectsNonRegularFile() async throws {
         let fifo = tempDir.appendingPathComponent("pipe.png")
-        try XCTSkipIf(mkfifo(fifo.path, 0o600) != 0, "mkfifo unavailable: errno \(errno)")
+        try makeFifo(at: fifo)
 
         let response = await FileOperations().readAsset(path: fifo.path)
 
@@ -151,7 +164,7 @@ final class ServerSecurityTests: XCTestCase {
     /// not accepted because the link itself looks ordinary.
     func testReadAssetRejectsSymlinkToNonRegularFile() async throws {
         let fifo = tempDir.appendingPathComponent("pipe")
-        try XCTSkipIf(mkfifo(fifo.path, 0o600) != 0, "mkfifo unavailable: errno \(errno)")
+        try makeFifo(at: fifo)
         let link = tempDir.appendingPathComponent("link.png")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: fifo)
 

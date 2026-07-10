@@ -2,19 +2,21 @@
 
 ## Latest Run
 
-- Started: 2026-06-18
-- Commands: `npm test` in `WebRenderer`; `./resources/scripts/build.sh --no-install`; `swift test`
-- Status: ALL PASS. JavaScript renderer tests passed, the build script completed, and Swift executed 347 tests with 0 failures and 0 skips.
-- Notes: SSHConnection and RemoteIntegration coverage now use the real `devtest` host. `rg -n "XCTSkip|Skipping test" Tests src Server -S` returns no matches.
+- Started: 2026-07-10
+- Commands: `./resources/scripts/build.sh --no-install`, which now runs the renderer suite and the Swift suite and fails the build on any test failure.
+- Status: ALL PASS. The renderer ran 133 tests and Swift executed 414, with 0 failures and 0 skips.
+- Notes: `build.sh` skips the live remote suites (`RemoteIntegrationTests`, `SSHConnectionTests`, and `SSHConnectionManagerTests.testEnsureConnectedCoalescesConcurrentCallers`), which need a reachable `devtest` host and are run separately with a timeout guard. UI tests run from `resources/scripts/uitest.sh`.
 
-### Full suite and skip removal (2026-06-18)
+### Test audit follow-up (2026-07-10)
 
 | Suite | Status | Result | Last Run |
 | --- | --- | --- | --- |
-| WebRenderer `npm test` | PASS | Sourcepos 17, line number 2, sanitizer 49, gutter 21, integration 13, Mermaid 5 | 2026-06-18 |
-| `./resources/scripts/build.sh --no-install` | PASS | macOS app bundle and bundled remote helpers built | 2026-06-18 |
-| `swift test` | PASS | 347 tests, 0 failures, 0 skips | 2026-06-18 |
-| Skip marker sweep | PASS | No `XCTSkip` or `Skipping test` matches under `Tests`, `src`, or `Server` | 2026-06-18 |
+| WebRenderer (via `build.sh`) | PASS | Sourcepos 17, line number 2, sanitizer 36, sanitizer URL 17, gutter 29, checkbox handler 6, scroll position 8, integration 13, Mermaid 5 | 2026-07-10 |
+| Swift (via `build.sh`) | PASS | 414 tests, 0 failures, 0 skips | 2026-07-10 |
+| `./resources/scripts/build.sh --no-install` | PASS | Runs both suites, then builds the app bundle and bundled remote helpers | 2026-07-10 |
+| Skip marker sweep | PASS | No `XCTSkip` or `Skipping test` matches under `Tests`, `src`, or `Server` | 2026-07-10 |
+
+Notes on the audit fixes: the sanitizer now reads link schemes the way a browser does, so a scheme padded with tabs or newlines can no longer disguise `javascript:` as a relative link. `readFile` on the remote helper refuses non-regular files and oversized documents, as `readAsset` already did. The PDF export UI test inspects the exported PDF rather than deferring to a manual check. The recycled-descriptor test places the new connection on the retired descriptor with `dup2` instead of skipping when the kernel does not recycle it.
 
 ### Raw HTML fence rendering (2026-06-18)
 

@@ -29,7 +29,7 @@ public class RPCStreamHandler {
     /// Upper bound on a single frame. No legitimate message approaches this; a
     /// larger declared length means the stream is corrupt or desynced, so buffering
     /// toward it would grow memory without bound (a trivial OOM from a bad prefix).
-    private static let maxFrameLength: UInt32 = 64 * 1024 * 1024 // 64 MB
+    static let maxFrameLength: UInt32 = 64 * 1024 * 1024 // 64 MB
 
     public init() {}
 

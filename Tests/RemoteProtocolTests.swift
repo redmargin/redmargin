@@ -1,6 +1,6 @@
 import XCTest
 @testable import RedmarginLib
-import RedmarginCore
+@testable import RedmarginCore
 
 final class RemoteProtocolTests: XCTestCase {
 
@@ -93,6 +93,34 @@ final class RemoteProtocolTests: XCTestCase {
         XCTAssertEqual(messages.count, 1)
         let decoded = try JSONDecoder().decode(RPCMessage<String>.self, from: messages[0])
         XCTAssertEqual(decoded.payload, "after reset")
+    }
+
+    /// The cap is `length > maxFrameLength`. A frame declaring exactly the limit is
+    /// legal and must be awaited, so the handler keeps buffering toward it rather
+    /// than discarding the stream. Without this, `>` could relax to `>=` unnoticed.
+    func testFrameAtTheLengthLimitIsAwaitedNotDropped() throws {
+        let handler = RPCStreamHandler()
+
+        let length = RPCStreamHandler.maxFrameLength
+        var atLimit = Data([
+            UInt8((length >> 24) & 0xFF),
+            UInt8((length >> 16) & 0xFF),
+            UInt8((length >> 8) & 0xFF),
+            UInt8(length & 0xFF)
+        ])
+        atLimit.append(contentsOf: [0x01, 0x02])
+
+        XCTAssertTrue(handler.receive(data: atLimit).isEmpty, "The frame is not complete yet")
+
+        // The prefix was accepted, so the handler is still collecting that frame.
+        // Bytes that follow belong to it, and cannot parse as a frame of their own.
+        // Had the prefix been dropped, the buffer would have been cleared and this
+        // would decode as a standalone message.
+        let following = try RPCStreamHandler.encode(id: 7, type: "Test", payload: "not a new frame")
+        XCTAssertTrue(
+            handler.receive(data: following).isEmpty,
+            "A frame declaring exactly maxFrameLength must be awaited, not dropped"
+        )
     }
 
     func testHelloHandshake() throws {
