@@ -87,25 +87,35 @@
         'vector-effect', 'href', 'xlink:href', 'style'
     ]);
 
+    // Scheme grammar per RFC 3986: ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"
+    const SCHEME_PATTERN = /^([a-z][a-z0-9+\-.]*):/i;
+
+    /**
+     * Render a URL the way a browser will parse it.
+     *
+     * Browsers delete every tab, LF, and CR anywhere in a URL, and skip leading
+     * C0 controls and spaces, before they read the scheme. Any check that runs
+     * against the raw attribute value therefore sees a different URL than the
+     * one that eventually navigates: `java<TAB><TAB>script:alert(1)` reaches the
+     * browser as `javascript:alert(1)`.
+     */
+    function normalizeUrl(url) {
+        return url.replace(/[\t\n\r]/g, '').replace(/^[\x00-\x20]+/, '');
+    }
+
     /**
      * Extract scheme from URL, returns null for relative URLs
      */
     function getUrlScheme(url) {
         if (!url) return null;
-        const trimmed = url.trim();
+        const normalized = normalizeUrl(url);
         // Relative URLs (no scheme)
-        if (trimmed.startsWith('/') || trimmed.startsWith('.') ||
-            trimmed.startsWith('#') || trimmed.startsWith('?') ||
-            !trimmed.includes(':')) {
+        if (normalized.startsWith('/') || normalized.startsWith('.') ||
+            normalized.startsWith('#') || normalized.startsWith('?')) {
             return null;
         }
-        const colonIndex = trimmed.indexOf(':');
-        // Schemes are typically short (http, https, file, mailto, javascript, etc.)
-        // Allow up to 11 chars to cover 'javascript:' (10 chars + colon)
-        if (colonIndex > 0 && colonIndex <= 11) {
-            return trimmed.substring(0, colonIndex + 1).toLowerCase();
-        }
-        return null;
+        const match = SCHEME_PATTERN.exec(normalized);
+        return match ? match[1].toLowerCase() + ':' : null;
     }
 
     /**
@@ -141,22 +151,22 @@
      */
     function isSafeDataUrl(url, tagName) {
         if (!url) return true;
-        const trimmed = url.trim().toLowerCase();
-        if (!trimmed.startsWith('data:')) return true;
+        const normalized = normalizeUrl(url).toLowerCase();
+        if (!normalized.startsWith('data:')) return true;
         // Only allow data URLs for images, and only image MIME types
         if (tagName === 'img') {
             // Only safe raster formats - NOT svg+xml (can contain scripts)
-            return /^data:image\/(png|jpeg|jpg|gif|webp);/i.test(trimmed);
+            return /^data:image\/(png|jpeg|jpg|gif|webp);/i.test(normalized);
         }
         return false;
     }
 
     function isUnsafeSvgUrl(url) {
         if (!url) return false;
-        const trimmed = url.trim();
-        return /^javascript:/i.test(trimmed) ||
-            /^data:/i.test(trimmed) ||
-            /url\(\s*['"]?\s*(javascript:|data:)/i.test(trimmed);
+        const normalized = normalizeUrl(url);
+        return /^javascript:/i.test(normalized) ||
+            /^data:/i.test(normalized) ||
+            /url\(\s*['"]?\s*(javascript:|data:)/i.test(normalized);
     }
 
     function isSafeMermaidStyle(styleValue) {

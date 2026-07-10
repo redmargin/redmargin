@@ -4,7 +4,7 @@
   "private": true,
   "description": "WebRenderer for RedMargin markdown viewer",
   "scripts": {
-    "test": "node tests/sourcepos.test.js && node tests/lineNumbers.test.js && node tests/sanitizer.test.js && node tests/gutter.test.js && node tests/integration.test.js && node tests/mermaid.test.js"
+    "test": "node tests/sourcepos.test.js && node tests/lineNumbers.test.js && node tests/sanitizer.test.js && node tests/sanitizerUrl.test.js && node tests/gutter.test.js && node tests/integration.test.js && node tests/mermaid.test.js"
   },
   "devDependencies": {
     "jsdom": "^27.4.0",
