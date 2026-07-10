@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Redmargin test audit — 2026-07-10</title>
+<style>
+:root{color-scheme:light dark;--bg:#f5f6f8;--panel:#fff;--ink:#17202a;--dim:#667085;--line:#d8dee7;--crit:#c62828;--high:#b26a00;--med:#2369a8;--fixed:#19724b;--stripe:rgba(128,128,128,.08)}
+@media(prefers-color-scheme:dark){:root{--bg:#11151b;--panel:#191f27;--ink:#edf1f7;--dim:#aab4c3;--line:#35404e;--crit:#ff7777;--high:#ffb74d;--med:#72b7ee;--fixed:#62d49b;--stripe:rgba(255,255,255,.04)}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,sans-serif}.shell{display:grid;grid-template-columns:260px minmax(0,1fr);min-height:100vh}.side{border-right:1px solid var(--line);padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto;background:var(--panel)}main{padding:28px;max-width:1120px;width:100%}h1{font-size:25px;margin:0 0 4px}.muted,.meta{color:var(--dim)}.posture{display:flex;gap:16px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:16px;margin:20px 0;background:var(--panel)}.grade{font-size:34px;font-weight:800;min-width:48px;text-align:center}.summary,.stats,.finding{background:var(--panel);border:1px solid var(--line);border-radius:12px}.summary{padding:4px 18px 14px;margin-bottom:16px}.summary p{max-width:85ch}.stats{padding:14px;margin-bottom:18px}.bar{height:9px;background:var(--line);border-radius:999px;overflow:hidden;margin:10px 0}.bar>span{display:block;height:100%;background:var(--fixed);width:0}.counts{display:flex;flex-wrap:wrap;gap:14px;font-variant-numeric:tabular-nums}.controls{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px}input[type=search]{flex:1;min-width:250px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)}button{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 9px;border-radius:8px;cursor:pointer}button.active{outline:2px solid var(--med);outline-offset:-2px}.group{margin:0 0 18px}.group h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:18px 0 7px}.filter{display:flex;justify-content:space-between;width:100%;margin:4px 0;text-align:left}.finding{padding:15px 16px;margin:10px 0;border-left:5px solid var(--med)}.finding.Critical{border-left-color:var(--crit)}.finding.High{border-left-color:var(--high)}.finding.Medium{border-left-color:var(--med)}.finding.fixed{text-decoration:line-through;opacity:.55}.finding.wontfix{opacity:.6}.badges{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:8px}.badge,.status{font-size:11px;font-weight:700;border:1px solid var(--line);border-radius:999px;padding:2px 7px;text-transform:uppercase;letter-spacing:.04em}.sev-Critical{color:var(--crit)}.sev-High{color:var(--high)}.sev-Medium{color:var(--med)}.desc{font-size:15px;margin:7px 0}.sugg{margin:8px 0 0;padding:7px 10px;border-radius:8px;background:var(--bg);border:1px solid var(--line)}.sugg b{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}.loc{display:inline-block;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:4px 7px;margin-right:6px}.cite{border-left:3px solid var(--line);padding:6px 9px;margin-top:10px;color:var(--dim)}code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:1px 4px}.empty{padding:40px;text-align:center;color:var(--dim)}@media(max-width:760px){.shell{display:block}.side{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}main{padding:18px}}
+</style>
+</head>
+<body><div class="shell"><aside class="side">
+<h1>Test audit</h1><div class="meta">Redmargin · 2026-07-10</div>
+<div id="filters"></div>
+</aside><main>
+<div class="posture"><div class="grade" id="grade">C</div><div><strong id="gradeline">Critical theater in the only UI test, and a confirmed sanitizer bypass with no test to catch it.</strong><div class="muted" id="graderationale">The Swift suite is substantial and mostly real: 443 tests exercise real Git repositories, real file descriptors, real SSH sessions, and real WKWebView instances. The green build is still not a strong signal, because the two paths that most need a test either assert nothing or are not reached at all.</div></div></div>
+<details class="summary" open><summary><strong>Plain-language summary</strong></summary>
+<p>The test suite is largely genuine. Most Swift tests drive real dependencies rather than stand-ins, and the remote transport harness runs the production connection code over a pipe instead of faking it. That is the right shape, and it means most of the 443 Swift tests would notice if the code beneath them broke.</p>
+<p>Two things undercut it. The HTML sanitizer, which is the only barrier between untrusted Markdown and script execution inside the embedded browser, has a bypass that its 49 tests do not cover: a link scheme padded with two or more tab or newline characters passes the sanitizer untouched, and the browser then strips that padding and runs the script. This was confirmed by execution, not inferred. Separately, the sole user-interface test performs a PDF export and asserts nothing, deferring verification to a script that also asserts nothing and reports that manual checking is recommended.</p>
+<p>Beyond those, the command the project designates for local verification builds the app without running any test at all, so the routine developers are told to follow never executes the suite. The remote helper's main file-read entry point lacks the safety checks its sibling asset-read path received, and has no test. Two renderer modules, one of which decides which line of the user's document a checkbox click rewrites, have no test coverage of any kind. Three tests skip themselves silently when the environment does not cooperate, and the test log records a claim that no such skips exist.</p>
+</details>
+<section class="stats"><strong>Progress</strong><div class="bar"><span id="progress"></span></div><div class="counts" id="counts"></div></section>
+<div class="controls"><input id="search" type="search" placeholder="Search findings, files, categories"></div>
+<div id="findings"></div>
+</main></div>
+<script>
+const META = {
+  frameworks: "XCTest (Tests/, target RedmarginTests, 443 test functions across 58 files); plain node assertion scripts (WebRenderer/tests/, 121 tests across 6 files)",
+  mutation: "No mutation tooling detected (no mutmut, Stryker, Pitest, or Cosmic Ray). Mutation pass skipped; no tooling proposed."
+};
+
+const FINDINGS=[
+{sev:"Critical",cat:"security-boundary",type:"Missing",verdict:"Add-coverage",zombies:"B",conf:100,status:"open",
+ file:"WebRenderer/src/sanitizer.js",line:105,
+ desc:"<code>getUrlScheme</code> returns <code>null</code> for any scheme whose colon sits past index 11, and <code>isSafeHref</code> treats <code>null</code> as a relative URL and allows it. <code>&lt;a href=\"java&amp;#9;&amp;#9;script:alert(1)\"&gt;</code> is 12 characters before the colon, so it passes <code>sanitize()</code> with its href intact. The browser then strips tab and newline characters from the URL and resolves the scheme to <code>javascript:</code>. Verified by execution: the anchor survives sanitization and <code>a.protocol</code> reads <code>\"javascript:\"</code>. <code>sanitizer.test.js:115</code> covers casing, a single tab, leading spaces, and <code>vbscript:</code>, all of which stay under the 11-character cap.",
+ suggestion:"Feed sanitize() hrefs padded with two tabs, three newlines, and mixed tab/newline/CR (e.g. 'ja\\tva\\nscr\\ript:alert(1)'); assert no href attribute survives. Assert getUrlScheme('java\\t\\tscript:x') is not null.",
+ cite:"Confirmed by running the sanitizer under jsdom. Both <code>sanitize()</code> and a WHATWG URL parse were checked against the same input."},
+
+{sev:"Critical",cat:"no-assertion",type:"Broken",verdict:"Rewrite",conf:100,status:"open",
+ file:"Tests/UITests/RedmarginUITests/RedmarginUITests/PDFExportUITests.swift",line:7,
+ desc:"<code>testDarkThemePDFExport</code> switches theme, presses Cmd+E, and ends. Its closing comment is <code>// Test passes if no crash - verification done externally</code>. The external verifier is <code>resources/scripts/uitest.sh</code>, whose embedded Python ends with <code>print(\"PDF export completed. Manual verification recommended.\")</code> and calls <code>sys.exit(0)</code> when it cannot generate a thumbnail. Nothing anywhere asserts on the exported PDF. This is the only UI test in the repository.",
+ cite:"<code>~/.claude/CLAUDE.md</code>: \"Manual verification is the residue only... Punting visual reconciliation, baseline capture, or walkthrough checklists onto the user is the failure mode.\""},
+
+{sev:"High",cat:"security-boundary",type:"Missing",verdict:"Add-coverage",zombies:"E",conf:92,status:"open",
+ file:"Server/FileOperations.swift",line:96,
+ desc:"<code>readFile</code> calls <code>String(contentsOf:)</code> on a client-supplied path with no regular-file check and no size cap. Its sibling <code>readAsset</code> (line 125) resolves symlinks, rejects non-regular files, and caps at 20 MB, and carries seven tests in <code>ServerSecurityTests</code>. <code>readFile</code> carries none. A path naming a FIFO blocks the daemon; a path naming a large or endless character device is read whole into memory.",
+ suggestion:"Mirror ServerSecurityTests: mkfifo a path and assert readFile returns an error rather than hanging; assert a file above the size limit is rejected.",
+ cite:"<code>ServerSecurityTests.swift:39</code> <code>testReadAssetRejectsNonRegularFile</code> establishes the pattern for the asset path."},
+
+{sev:"High",cat:"test-runner-gap",type:"Convention",verdict:"Rewrite",conf:95,status:"open",
+ file:"resources/scripts/build.sh",line:70,
+ desc:"The script builds with <code>swift build -c release</code>, bundles the app, codesigns, and installs. It runs no test, Swift or JavaScript, and <code>swift build</code> does not compile the test target. The project designates this script as the verification command, so following the documented routine never executes the suite.",
+ cite:"<code>CLAUDE.md</code>: \"For local verification, use <code>./resources/scripts/build.sh</code> unless Marco explicitly asks for a specific test command\" and \"For local build verification, run <code>./resources/scripts/build.sh</code>. Never run <code>swift build</code>, <code>xcodebuild</code>, <code>swiftlint</code>, or substitute verification commands.\""},
+
+{sev:"High",cat:"external-integration",type:"Missing",verdict:"Add-coverage",zombies:"I",conf:95,status:"open",
+ file:"WebRenderer/src/checkboxHandler.js",line:15,
+ desc:"No test file requires <code>checkboxHandler.js</code>. It reads <code>data-sourcepos</code> off the clicked checkbox's <code>&lt;tr&gt;</code> or <code>&lt;li&gt;</code>, parses the leading line number with <code>/^(\\d+):/</code>, and posts that line to Swift, which rewrites that line of the user's file. An off-by-one or a wrong ancestor lookup edits the wrong line of the document.",
+ suggestion:"Render a task list and a checkbox table through the app harness, dispatch a click on each checkbox, and assert the posted message carries the source line the checkbox actually came from.",
+ cite:"<code>CLAUDE.md</code>: \"Always add automated tests for features/fixes\". Only <code>frontMatter</code>, <code>headingAnchors</code>, <code>tableCheckboxPlugin</code>, <code>sourcepos</code>, <code>sourcepos-map</code>, <code>gutter</code>, <code>lineNumbers</code>, <code>mermaid</code>, <code>highlight</code>, <code>sanitizer</code>, and <code>index</code> are required by any test."},
+
+{sev:"Medium",cat:"silent-skip",type:"Broken",verdict:"Rewrite",conf:88,status:"open",
+ file:"Tests/ClientSessionTests.swift",line:89,
+ desc:"The test asserts that a late frame from a closed session is not written into the next client's connection. It first calls <code>XCTSkipIf(second.server != retiredFD, \"Descriptor ... was not recycled ... cannot exercise the race\")</code>. Descriptor recycling is the premise, not a precondition of the environment: when the kernel hands out a different descriptor the test reports success without exercising the defect it guards.",
+ cite:"<code>Tests/TEST_LOG.md:8</code> records \"0 skips\" for this suite."},
+
+{sev:"Medium",cat:"silent-skip",type:"Broken",verdict:"Tighten",conf:85,status:"open",
+ file:"Tests/StaleResultTests.swift",line:140,
+ desc:"<code>makeLoadedWebView()</code> polls for five seconds, then calls <code>try XCTSkipIf(webView.isLoading, \"WebView did not finish loading\")</code>. Every FindController stale-result test funnels through this helper, so on a loaded machine the whole group reports success without running.",
+ verdictNote:"Fail the helper instead of skipping it."},
+
+{sev:"Medium",cat:"sleepy-test",type:"Smelly",verdict:"Rewrite",conf:85,status:"open",
+ file:"Tests/ClientSessionTests.swift",line:97,
+ desc:"<code>Thread.sleep(forTimeInterval: 0.2)</code> stands in for synchronization with the session's write queue, with the comment \"Give the write queue a chance to run the dropped block.\" The assertion that follows reads whatever happens to have arrived by then.",
+ cite:"The rest of the suite uses <code>XCTestExpectation</code> and <code>wait(for:timeout:)</code> for asynchronous work."},
+
+{sev:"Medium",cat:"pattern-deviation",type:"Convention",verdict:"Rewrite",conf:100,status:"open",
+ file:"Tests/TEST_LOG.md",line:8,
+ desc:"The log records that <code>rg -n \"XCTSkip|Skipping test\" Tests src Server -S</code> returns no matches, and that <code>swift test</code> ran \"347 tests, 0 failures, 0 skips\". Five <code>XCTSkipIf</code> call sites now exist, in <code>ClientSessionTests</code> (two), <code>ServerSecurityTests</code> (two), and <code>StaleResultTests</code> (one). The suite has also grown to 443 test functions.",
+ cite:"<code>Tests/TEST_LOG.md:17</code>: \"| Skip marker sweep | PASS | No <code>XCTSkip</code> or <code>Skipping test</code> matches under <code>Tests</code>, <code>src</code>, or <code>Server</code> | 2026-06-18 |\""},
+
+{sev:"Medium",cat:"boundary",type:"Missing",verdict:"Add-coverage",zombies:"B",conf:82,status:"open",
+ file:"src/Core/Remote/Protocol/RPCMessage.swift",line:61,
+ desc:"<code>RPCStreamHandler.receive</code> drops a frame when <code>length &gt; maxFrameLength</code>. <code>RemoteProtocolTests.testOversizeFramePrefixIsDroppedNotBuffered</code> covers the over-limit side. No test sends a frame of exactly <code>maxFrameLength</code>, so the boundary between accepted and dropped is unpinned and <code>&gt;</code> could become <code>&gt;=</code> unnoticed.",
+ suggestion:"Feed a frame whose declared length equals maxFrameLength and assert it decodes; feed maxFrameLength+1 and assert it is dropped."},
+
+{sev:"Medium",cat:"error-path",type:"Missing",verdict:"Add-coverage",zombies:"E",conf:85,status:"open",
+ file:"WebRenderer/src/scrollPosition.js",line:1,
+ desc:"No test file requires <code>scrollPosition.js</code>. It restores the reader's scroll offset after a re-render, which is the behaviour a user notices on every file change the watcher picks up.",
+ suggestion:"Render a document through the app harness, set a scroll offset, re-render, and assert the offset is restored rather than reset to the top."}
+];
+
+const SEVS=["Critical","High","Medium"];
+const state={sev:new Set(),cat:new Set(),status:new Set(),file:new Set(),q:""};
+
+const el=(t,c,h)=>{const n=document.createElement(t);if(c)n.className=c;if(h!=null)n.innerHTML=h;return n;};
+
+function passes(f){
+  if(state.sev.size&&!state.sev.has(f.sev))return false;
+  if(state.cat.size&&!state.cat.has(f.cat))return false;
+  if(state.status.size&&!state.status.has(f.status||"open"))return false;
+  if(state.file.size&&!state.file.has(f.file))return false;
+  if(state.q){const q=state.q.toLowerCase();
+    const hay=(f.desc+" "+f.file+" "+f.cat+" "+f.type+" "+f.verdict+" "+(f.suggestion||"")).toLowerCase();
+    if(!hay.includes(q))return false;}
+  return true;
+}
+
+function tally(key){const m=new Map();for(const f of FINDINGS){const v=key==="status"?(f.status||"open"):f[key];m.set(v,(m.get(v)||0)+1);}return m;}
+
+function buildFilters(){
+  const box=document.getElementById("filters");box.innerHTML="";
+  const groups=[["Status","status"],["Severity","sev"],["Category","cat"],["Files","file"]];
+  for(const [label,key] of groups){
+    const g=el("div","group");g.appendChild(el("h2",null,label));
+    const entries=[...tally(key).entries()].sort((a,b)=>{
+      if(key==="sev")return SEVS.indexOf(a[0])-SEVS.indexOf(b[0]);
+      return b[1]-a[1]||String(a[0]).localeCompare(String(b[0]));});
+    for(const [val,n] of entries){
+      const b=el("button","filter"+(state[key].has(val)?" active":""));
+      const short=key==="file"?String(val).split("/").pop():val;
+      b.appendChild(el("span",null,short));b.appendChild(el("span",null,String(n)));
+      b.title=val;
+      b.onclick=()=>{state[key].has(val)?state[key].delete(val):state[key].add(val);render();};
+      g.appendChild(b);}
+    box.appendChild(g);}
+}
+
+function renderStats(){
+  const c={open:0,progress:0,fixed:0,wontfix:0};
+  for(const f of FINDINGS)c[f.status||"open"]++;
+  const done=c.fixed+c.wontfix;
+  document.getElementById("progress").style.width=(FINDINGS.length?100*done/FINDINGS.length:0)+"%";
+  const bySev=tally("sev");
+  const parts=[`<strong>${FINDINGS.length}</strong> findings`];
+  for(const s of SEVS)if(bySev.get(s))parts.push(`<span class="sev-${s}"><strong>${bySev.get(s)}</strong> ${s}</span>`);
+  parts.push(`<span><strong>${c.fixed}</strong> fixed</span>`,`<span><strong>${c.open}</strong> open</span>`);
+  document.getElementById("counts").innerHTML=parts.join("");
+}
+
+function render(){
+  buildFilters();renderStats();
+  const box=document.getElementById("findings");box.innerHTML="";
+  const shown=FINDINGS.filter(passes).sort((a,b)=>SEVS.indexOf(a.sev)-SEVS.indexOf(b.sev)||b.conf-a.conf);
+  if(!shown.length){box.appendChild(el("div","empty","No findings match the current filters."));return;}
+  for(const f of shown){
+    const st=f.status||"open";
+    const card=el("div",`finding ${f.sev} ${st}`);
+    const badges=el("div","badges");
+    badges.appendChild(el("span",`badge sev-${f.sev}`,f.sev));
+    badges.appendChild(el("span","badge",f.type));
+    badges.appendChild(el("span","badge",f.verdict));
+    badges.appendChild(el("span","badge",f.cat));
+    if(f.zombies)badges.appendChild(el("span","badge","ZOMBIES: "+f.zombies));
+    badges.appendChild(el("span","muted",`conf ${f.conf}`));
+    card.appendChild(badges);
+    card.appendChild(el("div","desc",f.desc));
+    card.appendChild(el("span","loc",f.file+(f.line?":"+f.line:"")));
+    if(f.suggestion)card.appendChild(el("div","sugg","<b>Proposed test</b><br>"+f.suggestion));
+    if(f.cite)card.appendChild(el("div","cite",f.cite));
+    card.appendChild(el("div",null,`<span class="status">${st}</span>`));
+    box.appendChild(card);}
+}
+
+document.getElementById("search").addEventListener("input",e=>{state.q=e.target.value;render();});
+render();
+</script>
+</body></html>
