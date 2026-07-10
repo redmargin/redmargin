@@ -16,6 +16,10 @@
 - Fixed the find bar reporting a match count for a search that had already been changed or cleared.
 - Fixed refreshing a remote document still showing the old version of an image that had changed on the server.
 - Fixed completed remote image requests being retained for the life of a window.
+- Fixed open folders being lost when the app crashed or was force-quit; the list of open folders is now kept current as folders are opened and closed.
+- Fixed a remote window on an IPv6 host never being restored as the frontmost window.
+- Fixed a remote document that had been emptied on the server still showing its old contents when reopened offline.
+- Fixed a file opened from the remote sidebar not being available offline until the next reconnect.
 
 ### Security
 

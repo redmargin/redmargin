@@ -29,6 +29,7 @@ extension AppDelegate {
 
         let window = createFolderWindow(for: standardized, rootView: folderView)
         folderWindows[standardized] = window
+        persistOpenFolderURLs()
         window.delegate = self
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -95,7 +96,8 @@ extension AppDelegate {
             let savedOrderTokens = UserDefaults.standard.stringArray(forKey: remoteWindowOrderKey) ?? []
             let savedOrderKeys = savedOrderTokens.compactMap(RemoteRestoreOrdering.storageKey(fromWindowToken:))
             let frontmostKey = UserDefaults.standard.string(forKey: frontmostWindowKey)
-                .flatMap(RemoteRestoreOrdering.storageKey(fromWindowToken:))
+                .flatMap(PersistedWindowIdentity.decode)?
+                .remoteLocation?.storageKey
 
             let plan = RemoteRestoreOrdering.plan(
                 locations: savedRemoteLocations,

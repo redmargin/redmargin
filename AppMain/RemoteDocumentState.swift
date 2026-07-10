@@ -260,7 +260,7 @@ class RemoteDocumentState {
     }
 
     /// Persist confirmed server content to the local cache, fire-and-forget so it
-    /// never blocks the UI. Empty content (folder windows) is not cached.
+    /// never blocks the UI.
     func cacheContent(_ content: String) {
         cacheContent(content, for: location)
     }
@@ -269,7 +269,11 @@ class RemoteDocumentState {
     /// must pass the location the content was read from, not `self.location`,
     /// which navigation may already have moved on.
     func cacheContent(_ content: String, for location: RemoteLocation) {
-        guard !content.isEmpty else { return }
+        // Folder windows carry no document content; identify them by their trailing
+        // separator rather than by emptiness. Skipping every empty string instead
+        // meant a file emptied on the server kept its old bytes in the cache, and an
+        // offline restore showed content the file no longer had.
+        guard !location.isFolder else { return }
         let cache = contentCache
         Task.detached(priority: .utility) {
             await cache.save(content, for: location)

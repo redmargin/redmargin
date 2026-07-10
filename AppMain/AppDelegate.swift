@@ -152,12 +152,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
 
         // Save frontmost window (local, remote, or folder)
         if let frontWindow = NSApp.orderedWindows.first {
+            let identity: PersistedWindowIdentity?
             if let localURL = documentWindows.first(where: { $0.value === frontWindow })?.key {
-                UserDefaults.standard.set(localURL.path, forKey: frontmostWindowKey)
+                identity = .local(path: localURL.path)
             } else if let loc = remoteDocumentWindows.first(where: { $0.value === frontWindow })?.key {
-                UserDefaults.standard.set("remote:\(loc.host):\(loc.path)", forKey: frontmostWindowKey)
+                identity = .remote(loc)
             } else if let folderURL = folderWindows.first(where: { $0.value === frontWindow })?.key {
-                UserDefaults.standard.set("folder:\(folderURL.path)", forKey: frontmostWindowKey)
+                identity = .folder(path: folderURL.path)
+            } else {
+                identity = nil
+            }
+            if let encoded = identity?.encoded {
+                UserDefaults.standard.set(encoded, forKey: frontmostWindowKey)
             }
         }
 
@@ -195,31 +201,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
     }
 
     func restoreFrontmostWindow() {
-        guard let saved = UserDefaults.standard.string(forKey: frontmostWindowKey) else { return }
+        guard let saved = UserDefaults.standard.string(forKey: frontmostWindowKey),
+              let identity = PersistedWindowIdentity.decode(saved) else { return }
         UserDefaults.standard.removeObject(forKey: frontmostWindowKey)
 
-        if saved.hasPrefix("remote:") {
-            // Parse "remote:host:path"
-            let rest = String(saved.dropFirst("remote:".count))
-            if let colonIdx = rest.firstIndex(of: ":") {
-                let host = String(rest[rest.startIndex..<colonIdx])
-                let path = String(rest[rest.index(after: colonIdx)...])
-                let location = RemoteLocation(host: host, path: path)
-                if let window = remoteDocumentWindows[location] {
-                    window.makeKeyAndOrderFront(nil)
-                }
-            }
-        } else if saved.hasPrefix("folder:") {
-            let path = String(saved.dropFirst("folder:".count))
+        switch identity {
+        case .remote(let location):
+            remoteDocumentWindows[location]?.makeKeyAndOrderFront(nil)
+        case .folder(let path):
             let url = URL(fileURLWithPath: path).standardizedFileURL
-            if let window = folderWindows[url] {
-                window.makeKeyAndOrderFront(nil)
-            }
-        } else {
-            let url = URL(fileURLWithPath: saved)
-            if let window = documentWindows[url] {
-                window.makeKeyAndOrderFront(nil)
-            }
+            folderWindows[url]?.makeKeyAndOrderFront(nil)
+        case .local(let path):
+            documentWindows[URL(fileURLWithPath: path)]?.makeKeyAndOrderFront(nil)
         }
     }
 
@@ -409,9 +402,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         }
     }
 
-    private func restoreSavedFolderURLs() -> [URL] {
+    /// Rewrites the open-folder snapshot from the windows that exist right now.
+    /// Called whenever a folder window opens or closes, so the snapshot survives a
+    /// crash or force-quit that never reaches `applicationWillTerminate`.
+    func persistOpenFolderURLs() {
+        UserDefaults.standard.set(Array(folderWindows.keys).map(\.path), forKey: savedFolderURLsKey)
+    }
+
+    func restoreSavedFolderURLs() -> [URL] {
+        // The snapshot is deliberately left in place. Clearing it here meant that a
+        // crash or force-quit before clean termination left nothing to restore on the
+        // next launch; folder-window lifecycle changes keep it current instead.
         guard let paths = UserDefaults.standard.stringArray(forKey: savedFolderURLsKey) else { return [] }
-        UserDefaults.standard.removeObject(forKey: savedFolderURLsKey)
         return paths.compactMap { path -> URL? in
             let url = URL(fileURLWithPath: path)
             var isDir: ObjCBool = false
@@ -601,7 +603,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Observable
         guard let window = notification.object as? NSWindow else { return }
         documentWindows = documentWindows.filter { $0.value !== window }
         remoteDocumentWindows = remoteDocumentWindows.filter { $0.value !== window }
+        let folderCountBeforeClose = folderWindows.count
         folderWindows = folderWindows.filter { $0.value !== window }
+        if folderWindows.count != folderCountBeforeClose {
+            persistOpenFolderURLs()
+        }
     }
 
     /// Focusing a not-yet-connected remote window connects it promptly (T19).
