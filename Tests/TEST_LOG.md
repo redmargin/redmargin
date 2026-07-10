@@ -3,8 +3,8 @@
 ## Latest Run
 
 - Started: 2026-07-10
-- Commands: `./resources/scripts/build.sh --no-install`, which runs the renderer suite and the Swift suite and fails the build on any test failure; `./resources/scripts/test-linux.sh` for the Linux-only suite.
-- Status: ALL PASS. The renderer ran 136 tests, Swift executed 424, and the Linux suite ran 2, with 0 failures and 0 skips.
+- Commands: `./resources/scripts/build.sh --no-install` (renderer + Swift suites, fails on any test failure); `./resources/scripts/test-linux.sh` (Linux-only suite on `devtest`); `./resources/scripts/uitest-foundry.sh` (XCUITest on the Foundry build host, never on Spectre).
+- Status: ALL PASS. The renderer ran 136 tests, Swift executed 424, the Linux suite ran 2, and the PDF export UI test passed on Foundry (1 test, 14.2s), with 0 failures and 0 skips.
 - Notes: `build.sh` skips the live remote suites (`RemoteIntegrationTests`, `SSHConnectionTests`, and `SSHConnectionManagerTests.testEnsureConnectedCoalescesConcurrentCallers`), which need a reachable `devtest` host. UI tests run from `resources/scripts/uitest.sh`.
 
 ### Test audit, second pass (2026-07-10)
@@ -14,6 +14,7 @@
 | WebRenderer (via `build.sh`) | PASS | 136 tests across 9 files | 2026-07-10 |
 | Swift (via `build.sh`) | PASS | 424 tests, 0 failures, 0 skips | 2026-07-10 |
 | `LinuxWatcherTests` (via `test-linux.sh`) | PASS | 2 tests on `devtest`, no helper left behind | 2026-07-10 |
+| `PDFExportUITests` (via `uitest-foundry.sh`) | PASS | 1 test on Foundry, asserts a readable, multi-page, dark export | 2026-07-10 |
 | Skip marker sweep | PASS | No `XCTSkip` or `Skipping test` matches under `Tests`, `src`, or `Server` | 2026-07-10 |
 
 The second pass replaced tests that exercised macOS rather than Redmargin. `GitStateWatcherTests` now drives `GitRepoWatcher` against a real repository, including the case where HEAD moves to another branch and the watcher must follow it onto the new ref. Four `FileWatcherTests` cases that built their own `DispatchSource` now drive `FileWatcher`, one of them pinning that it keeps reporting after an atomic write replaces the inode. `shellArgPreservingTilde` no longer lets a metacharacter through in a `~`-prefixed path, and `RPCHandler` has coverage for the three ways it can decline to answer. Every one of these was checked by reintroducing the defect and confirming the new test fails.
