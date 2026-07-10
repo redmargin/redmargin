@@ -14,6 +14,8 @@
 - Fixed a slow file selection replacing the document opened after it, both in a folder window and in the remote sidebar.
 - Fixed a slow directory listing in the remote open panel overwriting the folder the user had already navigated to.
 - Fixed the find bar reporting a match count for a search that had already been changed or cleared.
+- Fixed refreshing a remote document still showing the old version of an image that had changed on the server.
+- Fixed completed remote image requests being retained for the life of a window.
 
 ### Security
 
