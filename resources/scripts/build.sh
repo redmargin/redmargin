@@ -129,9 +129,18 @@ CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-Detour Dev}"
 CODESIGN_KEYCHAIN="${CODESIGN_KEYCHAIN:-$HOME/Library/Keychains/detour-codesign.keychain-db}"
 ENTITLEMENTS="Redmargin.entitlements"
 
+# A build host's signing keychain is password protected and starts locked in every fresh
+# SSH session, so it cannot be unlocked with an empty password the way the local one is.
+CODESIGN_KEYCHAIN_PASSWORD="${CODESIGN_KEYCHAIN_PASSWORD:-}"
+CODESIGN_KEYCHAIN_PASSWORD_FILE="${CODESIGN_KEYCHAIN_PASSWORD_FILE:-}"
+if [ -z "$CODESIGN_KEYCHAIN_PASSWORD" ] && [ -f "$CODESIGN_KEYCHAIN_PASSWORD_FILE" ]; then
+    CODESIGN_KEYCHAIN_PASSWORD="$(cat "$CODESIGN_KEYCHAIN_PASSWORD_FILE")"
+fi
+
 if [ -d "$APP_DIR" ]; then
     if [ -f "$CODESIGN_KEYCHAIN" ]; then
-        security unlock-keychain -p "" "$CODESIGN_KEYCHAIN" 2>/dev/null || true
+        security unlock-keychain -p "$CODESIGN_KEYCHAIN_PASSWORD" "$CODESIGN_KEYCHAIN" 2>/dev/null || true
+        CODESIGN_KEYCHAIN_PASSWORD=""
         /usr/bin/codesign --force --options runtime --entitlements "$ENTITLEMENTS" --keychain "$CODESIGN_KEYCHAIN" -s "$CODESIGN_IDENTITY" "$APP_DIR"
     else
         /usr/bin/codesign --force --options runtime --entitlements "$ENTITLEMENTS" -s "$CODESIGN_IDENTITY" "$APP_DIR"
