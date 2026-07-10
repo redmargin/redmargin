@@ -30,6 +30,38 @@ func socketRead(fileDesc: Int32, buffer: UnsafeMutableRawPointer, count: Int) ->
     return systemRead(fileDesc, buffer, count)
 }
 
+/// The RPC socket is unauthenticated: whoever reaches it drives file operations
+/// as the account running the daemon. Socket and directory modes are the primary
+/// defence; this is the second one, used to reject a peer running as anyone else.
+/// Returns nil on platforms that do not expose peer credentials, where the caller
+/// falls back to the filesystem modes alone.
+func socketPeerUID(fileDesc: Int32) -> uid_t? {
+    #if canImport(Darwin)
+    var uid = uid_t()
+    var gid = gid_t()
+    return getpeereid(fileDesc, &uid, &gid) == 0 ? uid : nil
+    #elseif canImport(Glibc)
+    var credentials = PeerCredentials()
+    var length = SocketLen(MemoryLayout<PeerCredentials>.size)
+    let succeeded = withUnsafeMutablePointer(to: &credentials) { pointer in
+        getsockopt(fileDesc, SOL_SOCKET, SO_PEERCRED, pointer, &length) == 0
+    }
+    return succeeded ? credentials.uid : nil
+    #else
+    return nil
+    #endif
+}
+
+#if canImport(Glibc)
+/// Mirrors `struct ucred`, which Swift's Glibc overlay does not re-export. The
+/// layout is fixed by the kernel ABI that SO_PEERCRED fills in.
+private struct PeerCredentials {
+    var pid: pid_t = 0
+    var uid: uid_t = 0
+    var gid: gid_t = 0
+}
+#endif
+
 func socketWrite(fileDesc: Int32, buffer: UnsafeRawPointer, count: Int) -> Int {
     return systemWrite(fileDesc, buffer, count)
 }
@@ -103,16 +135,29 @@ class UnixSocketListener {
 
         let addrSize = SocketLen(MemoryLayout<sockaddr_un>.size)
 
+        // bind() creates the socket file with 0666 masked by the login umask. On a
+        // group- or world-writable umask that hands any local user an unauthenticated
+        // RPC channel into this account, so create it 0600 and confirm afterwards.
+        let previousMask = umask(0o177)
         let bindResult = withUnsafePointer(to: &addr) { ptr in
             ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { saPtr in
                 systemBind(fileDescriptor, saPtr, addrSize)
             }
         }
+        _ = umask(previousMask)
 
         guard bindResult == 0 else {
             _ = systemClose(fileDescriptor)
             let msg = "Failed to bind socket: \(errno)"
             throw NSError(domain: "UnixSocket", code: 3, userInfo: [NSLocalizedDescriptionKey: msg])
+        }
+
+        // Fail closed: an unrestricted socket must never be left listening.
+        guard chmod(path, 0o600) == 0 else {
+            _ = systemClose(fileDescriptor)
+            _ = systemUnlink(path)
+            let msg = "Failed to restrict socket permissions: \(errno)"
+            throw NSError(domain: "UnixSocket", code: 5, userInfo: [NSLocalizedDescriptionKey: msg])
         }
 
         guard systemListen(fileDescriptor, 5) == 0 else {

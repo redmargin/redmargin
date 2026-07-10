@@ -17,8 +17,8 @@ enum Proxy {
         let socketPath = "\(serverDir)/rpc.sock"
         let pidFile = "\(serverDir)/daemon.pid"
 
-        // 1. Ensure directory exists
-        try? FileManager.default.createDirectory(atPath: serverDir, withIntermediateDirectories: true)
+        // 1. Ensure directory exists, owned by us and unreadable to anyone else
+        prepareServerDirectory(serverDir)
 
         // 2. Connect to daemon (starting if needed)
         let socketFD = connectToDaemon(socketPath: socketPath, pidFile: pidFile)
@@ -33,6 +33,38 @@ enum Proxy {
 
         // 5. Bridge stdin/stdout to socket
         bridgeStdioToSocket(socketFD: socketFD)
+    }
+
+    /// The helper directory holds the RPC socket, and anyone who can reach that
+    /// socket drives file operations as this user with no authentication. Its
+    /// ownership and mode are the whole access-control story, so anything we did
+    /// not create ourselves (a symlink pointed elsewhere, another user's
+    /// directory, a plain file) is a hard failure rather than something to repair
+    /// in place. `createDirectory` alone would inherit the login umask and leave a
+    /// group-writable directory on hosts that set one.
+    private static func prepareServerDirectory(_ path: String) {
+        var info = stat()
+
+        // lstat, not stat: a symlink here must be rejected, not followed.
+        if lstat(path, &info) == 0 {
+            guard (info.st_mode & S_IFMT) == S_IFDIR else {
+                fputs("Helper path \(path) is not a directory; refusing to start\n", stderr)
+                exit(1)
+            }
+            guard info.st_uid == getuid() else {
+                fputs("Helper directory \(path) is owned by uid \(info.st_uid); refusing to start\n", stderr)
+                exit(1)
+            }
+        } else if mkdir(path, 0o700) != 0 && errno != EEXIST {
+            fputs("Failed to create helper directory \(path): errno \(errno)\n", stderr)
+            exit(1)
+        }
+
+        // mkdir(2) applies the umask to its mode argument, so set it explicitly.
+        guard chmod(path, 0o700) == 0 else {
+            fputs("Failed to restrict helper directory \(path): errno \(errno)\n", stderr)
+            exit(1)
+        }
     }
 
     private static func connectToDaemon(socketPath: String, pidFile: String) -> Int32 {

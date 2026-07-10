@@ -78,11 +78,14 @@ public actor ServerDeployer {
         onProgress?("Stopping old server on")
         await killOldProcesses(host: host)
 
-        // 5. Create directory and upload
+        // 5. Create directory and upload. `mkdir -p` applies the remote login
+        // umask, which on a group-writable umask leaves the directory that holds
+        // the unauthenticated RPC socket open to other local users. chmod it
+        // explicitly rather than trusting whatever umask the host happens to set.
         onProgress?("Uploading to")
         _ = try await ProcessRunner.run(
             executable: "ssh",
-            arguments: sshOptions + [host, "mkdir -p ~/.redmargin-server"],
+            arguments: sshOptions + [host, "mkdir -p ~/.redmargin-server && chmod 700 ~/.redmargin-server"],
             timeout: sshTimeout
         )
 

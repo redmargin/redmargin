@@ -116,13 +116,46 @@ actor FileOperations {
         }
     }
 
+    /// Asset paths come out of Markdown, so a document decides what this reads.
+    /// Anything above this size would be held whole here, again as base64, and
+    /// again in the JSON frame, on both hosts. Matches the client's asset cache
+    /// limit, above which an asset would not be retained anyway.
+    static let maxAssetBytes = 20 * 1024 * 1024
+
     func readAsset(path: String) -> ReadAssetResponsePayload {
-        let expandedPath = expandTilde(in: path)
-        guard let data = FileManager.default.contents(atPath: expandedPath) else {
+        // Resolve first: the checks below must describe the file we actually open,
+        // not a symlink standing in front of it.
+        let resolvedURL = URL(fileURLWithPath: expandTilde(in: path))
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let resolvedPath = resolvedURL.path
+
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: resolvedPath),
+              let fileType = attributes[.type] as? FileAttributeType,
+              let size = (attributes[.size] as? NSNumber)?.int64Value else {
             return ReadAssetResponsePayload(data: nil, mimeType: nil, error: "File not found")
         }
+
+        // A FIFO or device node would block this actor for the life of the daemon.
+        guard fileType == .typeRegular else {
+            return ReadAssetResponsePayload(data: nil, mimeType: nil, error: "Not a regular file")
+        }
+
+        guard size <= Self.maxAssetBytes else {
+            return ReadAssetResponsePayload(data: nil, mimeType: nil, error: "Asset exceeds \(Self.maxAssetBytes) bytes")
+        }
+
+        guard let data = FileManager.default.contents(atPath: resolvedPath) else {
+            return ReadAssetResponsePayload(data: nil, mimeType: nil, error: "File not found")
+        }
+
+        // The file can grow between the stat and the read.
+        guard data.count <= Self.maxAssetBytes else {
+            return ReadAssetResponsePayload(data: nil, mimeType: nil, error: "Asset exceeds \(Self.maxAssetBytes) bytes")
+        }
+
         let base64 = data.base64EncodedString()
-        let mimeType = mimeTypeForExtension((expandedPath as NSString).pathExtension)
+        let mimeType = mimeTypeForExtension((resolvedPath as NSString).pathExtension)
         return ReadAssetResponsePayload(data: base64, mimeType: mimeType, error: nil)
     }
 

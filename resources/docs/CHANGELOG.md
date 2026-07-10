@@ -9,6 +9,11 @@
 - Fixed the remote helper terminating outright when a slow client disconnected while the helper was still writing to it.
 - Fixed the remote helper's proxy silently truncating large messages (big diffs, embedded images) when the operating system accepted only part of a write, which desynchronized the connection until reconnect.
 
+### Security
+
+- Restricted the remote helper's working directory and its command socket to the owning account. On hosts with a permissive umask another local user could previously connect to the socket and read or write files as the connecting user, without authenticating. The helper now also refuses connections from any other account and fails to start rather than run with weakened permissions.
+- Bounded the size and kind of files the remote helper will load as images: a document can no longer point it at a huge file or a device node and exhaust memory or stall the connection.
+
 ## v1.5.2 (2026-06-29)
 
 ### Added

@@ -145,6 +145,15 @@ enum Daemon {
                 continue
             }
 
+            // Socket and directory modes should already keep other users out. This
+            // is the backstop: the RPC channel is unauthenticated, so a peer that is
+            // not this account never gets to issue file operations through it.
+            if let peerUID = socketPeerUID(fileDesc: clientFD), peerUID != getuid() {
+                fputs("Rejecting connection from uid \(peerUID)\n", stderr)
+                _ = systemClose(clientFD)
+                continue
+            }
+
             fputs("Accepted connection\n", stderr)
 
             // Handle each connection concurrently with its OWN RPC handler and
