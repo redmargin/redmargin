@@ -4,9 +4,14 @@ set -e
 cd "$(dirname "$0")/../.."
 
 NO_INSTALL=false
-if [[ "${1:-}" == "--no-install" ]]; then
-    NO_INSTALL=true
-fi
+RUN_TESTS=true
+for arg in "$@"; do
+    case "$arg" in
+        --no-install) NO_INSTALL=true ;;
+        --no-test) RUN_TESTS=false ;;
+        *) echo "Unknown option: $arg" >&2; exit 2 ;;
+    esac
+done
 
 APP_NAME="Redmargin"
 APP_BUNDLE_ID="com.redmargin.app"
@@ -59,6 +64,23 @@ fi
 
 echo "Building Redmargin..."
 swift build -c release
+
+if [[ "$RUN_TESTS" == "true" ]]; then
+    echo "Running renderer tests..."
+    (
+        cd WebRenderer
+        [ -d node_modules ] || npm install --silent
+        npm test
+    )
+
+    echo "Running Swift tests..."
+    # The live remote suites drive real SSH sessions and helper daemons against
+    # `devtest`. They stay opt-in, and are run separately with a timeout guard.
+    swift test \
+        --skip RemoteIntegrationTests \
+        --skip SSHConnectionTests \
+        --skip 'SSHConnectionManagerTests/testEnsureConnectedCoalescesConcurrentCallers'
+fi
 
 echo "Creating app bundle..."
 rm -rf build/Redmargin.app

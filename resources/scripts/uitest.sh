@@ -15,9 +15,9 @@ XCODEPROJ="$PROJECT_DIR/Tests/UITests/RedmarginUITests/RedmarginUITests.xcodepro
 TEST_DIR="$HOME/RedmarginUITests-Temp"
 DOWNLOADS_DIR="$HOME/Downloads"
 
-# Build app first
+# Build app first. The unit suites are not re-run here; this script runs the UI tests.
 echo "Building Redmargin..."
-"$SCRIPT_DIR/build.sh"
+"$SCRIPT_DIR/build.sh" --no-test
 
 echo ""
 echo "Setting up test directory..."
