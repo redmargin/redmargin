@@ -21,11 +21,11 @@
         // Prevent the native toggle — we'll handle it manually if appropriate
         event.preventDefault();
 
-        // If the user was selecting text, don't toggle
+        // If the user was selecting text, don't toggle. preventDefault above already
+        // restores the pre-click state; flipping it here as well would re-apply the
+        // toggle the drag was not asking for.
         const selection = window.getSelection();
         if (selection && !selection.isCollapsed) {
-            // Revert the checked state since click already toggled it
-            checkbox.checked = !checkbox.checked;
             return;
         }
 
