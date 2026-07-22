@@ -94,6 +94,18 @@ struct CommandPaletteView: View {
                 .frame(width: 22, height: 22)
                 .foregroundStyle(entry.isEnabled ? Color.secondary : Color.gray.opacity(0.45))
 
+            if let host = entry.hostBadge {
+                Text(host)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color(nsColor: .quaternarySystemFill))
+                    )
+            }
+
             Text(entry.title)
                 .font(.system(size: 13, weight: .medium))
                 .lineLimit(1)

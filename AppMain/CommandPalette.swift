@@ -222,9 +222,17 @@ enum CommandPaletteEntry: Identifiable, Hashable {
 
     var subtitle: String {
         switch self {
-        case .workspace(let item): return item.locationText
+        case .workspace(let item):
+            if let remote = item.remoteLocation { return remote.path }
+            return item.locationText
         case .command(let command, _): return command.keyEquivalent ?? ""
         }
+    }
+
+    /// Remote host shown as a chip in the palette row; nil for local items and commands.
+    var hostBadge: String? {
+        guard case .workspace(let item) = self else { return nil }
+        return item.remoteLocation?.host
     }
 
     var iconName: String {
@@ -271,20 +279,26 @@ actor CommandPaletteSource {
         focus: CommandPaletteFocus,
         hasActiveDocument: Bool
     ) -> [CommandPaletteSection] {
-        let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let workspaceEntries = workspaces
-            .sorted { $0.lastOpened > $1.lastOpened }
-            .filter { item in
-                query.isEmpty
-                    || item.displayTitle.lowercased().contains(query)
-                    || item.locationText.lowercased().contains(query)
-            }
-            .prefix(query.isEmpty ? 6 : Int.max)
-            .map(CommandPaletteEntry.workspace)
+        let query = PaletteSearchQuery(search)
+        let workspaceEntries: [CommandPaletteEntry]
+        if query.isEmpty {
+            workspaceEntries = workspaces
+                .sorted { $0.lastOpened > $1.lastOpened }
+                .prefix(6)
+                .map(CommandPaletteEntry.workspace)
+        } else {
+            workspaceEntries = workspaces
+                .compactMap { item in query.score(item).map { (item: item, score: $0) } }
+                .sorted {
+                    if $0.score != $1.score { return $0.score > $1.score }
+                    return $0.item.lastOpened > $1.item.lastOpened
+                }
+                .map { CommandPaletteEntry.workspace($0.item) }
+        }
 
         let commandEntries = AppCommand.allCases
             .filter { command in
-                query.isEmpty || command.title.lowercased().contains(query)
+                query.isEmpty || query.matches(commandTitle: command.title)
             }
             .map { command in
                 CommandPaletteEntry.command(

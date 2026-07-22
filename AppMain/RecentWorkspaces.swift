@@ -233,7 +233,7 @@ final class RecentWorkspaceStore: ObservableObject {
         kind: RecentWorkspaceKindFilter,
         pinnedOnly: Bool
     ) -> [RecentWorkspaceItem] {
-        let trimmedSearch = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let query = PaletteSearchQuery(search)
 
         return (pinned + recent).filter { item in
             if pinnedOnly && !item.isPinned { return false }
@@ -249,9 +249,8 @@ final class RecentWorkspaceStore: ObservableObject {
             case .folders where item.kind.isFile: return false
             default: break
             }
-            guard !trimmedSearch.isEmpty else { return true }
-            return item.displayTitle.lowercased().contains(trimmedSearch)
-                || item.locationText.lowercased().contains(trimmedSearch)
+            guard !query.isEmpty else { return true }
+            return query.score(item) != nil
         }
     }
 
