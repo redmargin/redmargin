@@ -223,16 +223,18 @@ enum CommandPaletteEntry: Identifiable, Hashable {
     var subtitle: String {
         switch self {
         case .workspace(let item):
-            if let remote = item.remoteLocation { return remote.path }
-            return item.locationText
+            switch item.location {
+            case .local(let url): return url.displayPath
+            case .remote(let location): return location.path
+            }
         case .command(let command, _): return command.keyEquivalent ?? ""
         }
     }
 
-    /// Remote host shown as a chip in the palette row; nil for local items and commands.
-    var hostBadge: String? {
+    /// Machine the workspace lives on: the remote host, or "local". Nil for commands.
+    var locationContext: String? {
         guard case .workspace(let item) = self else { return nil }
-        return item.remoteLocation?.host
+        return item.remoteLocation?.host ?? "local"
     }
 
     var iconName: String {

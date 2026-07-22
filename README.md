@@ -11,7 +11,7 @@ Download the latest notarized macOS build from [GitHub Releases](https://github.
 - **Git change indicators** — Gutter shows added, modified, and deleted lines compared to HEAD. Sidebar file rows show modified, staged, untracked, and conflict status.
 - **Remote file access** — Open Markdown on remote servers via SSH (Cmd+Shift+O or `redmargin host:/path`). Git gutter, checkboxes, and sidebar all work remotely.
 - **Recent Workspaces** — Return to local files, local folders, remote files, and remote folders from File > Recent Workspaces, the toolbar history button, or Cmd+Shift+1.
-- **Command palette** — Search recent workspaces and common app actions with Cmd+P; Cmd+Shift+P opens with actions first. Multi-word queries match host, folder, and path (e.g. `wraith notes`), remote entries show the server as a chip, and host or name matches rank above incidental path hits.
+- **Command palette** — Search recent workspaces and common app actions with Cmd+P; Cmd+Shift+P opens with actions first. Multi-word queries match host, folder, and path (e.g. `wraith notes`), every entry shows its machine (server name or `local`) beside the title, and host or name matches rank above incidental path hits.
 - **File sidebar** — Browse Markdown files in the repository or directory (Cmd+1). Collapsible folders, current file highlighted, and git status bars enabled by default.
 - **Syntax highlighting** — Code blocks render with language-aware coloring. Supports Python, JavaScript, Swift, Rust, Go, and more.
 - **Mermaid diagrams** — Fenced `mermaid` blocks render as diagrams, follow the active theme, and print/export with the preview.

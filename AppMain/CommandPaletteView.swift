@@ -94,30 +94,32 @@ struct CommandPaletteView: View {
                 .frame(width: 22, height: 22)
                 .foregroundStyle(entry.isEnabled ? Color.secondary : Color.gray.opacity(0.45))
 
-            if let host = entry.hostBadge {
-                Text(host)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color(nsColor: .quaternarySystemFill))
-                    )
-            }
-
             Text(entry.title)
                 .font(.system(size: 13, weight: .medium))
                 .lineLimit(1)
+                .layoutPriority(1)
+
+            if let context = entry.locationContext {
+                HStack(spacing: 6) {
+                    Text(context)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .layoutPriority(1)
+                    Text(entry.subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
 
             Spacer(minLength: 12)
 
-            if !entry.subtitle.isEmpty {
+            if entry.locationContext == nil && !entry.subtitle.isEmpty {
                 Text(entry.subtitle)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
             }
         }
         .frame(height: 40)

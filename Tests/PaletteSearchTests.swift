@@ -67,14 +67,17 @@ final class PaletteSearchTests: XCTestCase {
         XCTAssertEqual(commands, [.toggleGitIndicators])
     }
 
-    func testRemoteEntryShowsHostBadgeAndPathSubtitle() {
+    func testEntriesShareUniformMachineAndPathPresentation() {
         let remote = CommandPaletteEntry.workspace(wraithFile)
-        XCTAssertEqual(remote.hostBadge, "wraith")
+        XCTAssertEqual(remote.locationContext, "wraith")
         XCTAssertEqual(remote.subtitle, "/Users/ghost/engagement/deliverables/Details Prep.md")
 
         let local = CommandPaletteEntry.workspace(.localFile(URL(fileURLWithPath: "/tmp/a.md")))
-        XCTAssertNil(local.hostBadge)
-        XCTAssertEqual(local.subtitle, "/tmp")
+        XCTAssertEqual(local.locationContext, "local")
+        XCTAssertEqual(local.subtitle, "/tmp/a.md")
+
+        let command = CommandPaletteEntry.command(.openFile, isEnabled: true)
+        XCTAssertNil(command.locationContext)
     }
 
     func testStoreFilteredUsesTokenizedSearch() {
