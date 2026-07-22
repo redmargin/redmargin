@@ -2,15 +2,13 @@ import AppKit
 import SwiftUI
 
 struct CommandPaletteView: View {
-    @ObservedObject var store: RecentWorkspaceStore
     let appDelegate: AppDelegate
     let controller: CommandPaletteWindowController
-    let initialFocus: CommandPaletteFocus
 
     private let source = CommandPaletteSource()
 
     @State private var search = ""
-    @State private var sections: [CommandPaletteSection] = []
+    @State private var entries: [CommandPaletteEntry] = []
     @State private var selectedID: String?
     @State private var keyMonitor: Any?
     @FocusState private var searchFocused: Bool
@@ -26,16 +24,13 @@ struct CommandPaletteView: View {
         .onAppear {
             searchFocused = true
             installKeyMonitorIfNeeded()
-            refreshSections()
+            refreshEntries()
         }
         .onDisappear {
             removeKeyMonitor()
         }
         .onChange(of: search) {
-            refreshSections()
-        }
-        .onChange(of: store.items) {
-            refreshSections()
+            refreshEntries()
         }
     }
 
@@ -44,7 +39,7 @@ struct CommandPaletteView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 16))
                 .foregroundStyle(.secondary)
-            TextField("Search workspaces and commands", text: $search)
+            TextField("Search commands", text: $search)
                 .textFieldStyle(.plain)
                 .font(.system(size: 16))
                 .focused($searchFocused)
@@ -57,27 +52,18 @@ struct CommandPaletteView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(sections) { section in
-                        Text(section.title)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 12)
-                            .padding(.bottom, 5)
-
-                        ForEach(section.entries) { entry in
-                            row(entry)
-                                .id(entry.id)
-                                .onTapGesture {
-                                    selectedID = entry.id
-                                }
-                                .onTapGesture(count: 2) {
-                                    activate(entry, keepsOpen: false)
-                                }
-                        }
+                    ForEach(entries) { entry in
+                        row(entry)
+                            .id(entry.id)
+                            .onTapGesture {
+                                selectedID = entry.id
+                            }
+                            .onTapGesture(count: 2) {
+                                activate(entry)
+                            }
                     }
                 }
-                .padding(.bottom, 12)
+                .padding(.vertical, 8)
             }
             .onChange(of: selectedID) {
                 if let selectedID {
@@ -97,25 +83,10 @@ struct CommandPaletteView: View {
             Text(entry.title)
                 .font(.system(size: 13, weight: .medium))
                 .lineLimit(1)
-                .layoutPriority(1)
-
-            if let context = entry.locationContext {
-                HStack(spacing: 6) {
-                    Text(context)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .layoutPriority(1)
-                    Text(entry.subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
 
             Spacer(minLength: 12)
 
-            if entry.locationContext == nil && !entry.subtitle.isEmpty {
+            if !entry.subtitle.isEmpty {
                 Text(entry.subtitle)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -133,58 +104,43 @@ struct CommandPaletteView: View {
         .contentShape(Rectangle())
     }
 
-    private var flattenedEntries: [CommandPaletteEntry] {
-        sections.flatMap(\.entries)
-    }
-
     private var selectedEntry: CommandPaletteEntry? {
         guard let selectedID else { return nil }
-        return flattenedEntries.first { $0.id == selectedID }
+        return entries.first { $0.id == selectedID }
     }
 
-    private func refreshSections() {
+    private func refreshEntries() {
         Task {
-            let resolved = await source.sections(
-                workspaces: store.items,
+            let resolved = await source.entries(
                 search: search,
-                focus: initialFocus,
                 hasActiveDocument: hasActiveDocumentWindow()
             )
             await MainActor.run {
-                sections = resolved
-                if selectedID == nil || !flattenedEntries.contains(where: { $0.id == selectedID }) {
-                    selectedID = flattenedEntries.first?.id
+                entries = resolved
+                if selectedID == nil || !entries.contains(where: { $0.id == selectedID }) {
+                    selectedID = entries.first?.id
                 }
             }
         }
     }
 
-    private func activateSelected(keepsOpen: Bool) {
+    private func activateSelected() {
         guard let selectedEntry else { return }
-        activate(selectedEntry, keepsOpen: keepsOpen)
+        activate(selectedEntry)
     }
 
-    private func activate(_ entry: CommandPaletteEntry, keepsOpen: Bool) {
-        switch entry {
-        case .workspace(let item):
-            if !keepsOpen {
-                controller.closeAfterDispatch()
-            }
-            CommandPaletteDispatcher.dispatchRecentWorkspace(item, opener: appDelegate)
-        case .command(let command, let isEnabled):
-            guard isEnabled else {
-                NSSound.beep()
-                return
-            }
-            controller.closeAfterDispatch()
-            DispatchQueue.main.async {
-                command.handler(appDelegate: appDelegate)()
-            }
+    private func activate(_ entry: CommandPaletteEntry) {
+        guard entry.isEnabled else {
+            NSSound.beep()
+            return
+        }
+        controller.closeAfterDispatch()
+        DispatchQueue.main.async {
+            entry.command.handler(appDelegate: appDelegate)()
         }
     }
 
     private func moveSelection(delta: Int) {
-        let entries = flattenedEntries
         guard !entries.isEmpty else { return }
         let currentIndex = selectedID.flatMap { id in
             entries.firstIndex { $0.id == id }
@@ -217,11 +173,8 @@ struct CommandPaletteView: View {
     }
 
     private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let isCommand = modifiers.contains(.command)
-
         if event.keyCode == 36 {
-            activateSelected(keepsOpen: isCommand)
+            activateSelected()
             return nil
         }
         if event.keyCode == 53 {

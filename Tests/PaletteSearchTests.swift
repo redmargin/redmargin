@@ -28,7 +28,12 @@ final class PaletteSearchTests: XCTestCase {
         XCTAssertEqual(PaletteSearchQuery("  ").score(wraithFile), 0)
     }
 
-    func testHostMatchOutranksPathSubstringMatch() async {
+    func testStoreFilteredRanksHostMatchAboveTitleSubstringMatch() {
+        let suiteName = "PaletteSearchTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
         let hostItem = RecentWorkspaceItem.remoteFolder(
             RemoteLocation(host: "spamnesia-dev", path: "/opt/app/"),
             lastOpened: Date(timeIntervalSinceNow: -3600)
@@ -38,46 +43,12 @@ final class PaletteSearchTests: XCTestCase {
             lastOpened: Date()
         )
 
-        let sections = await CommandPaletteSource().sections(
-            workspaces: [titleItem, hostItem],
-            search: "spamnesia",
-            focus: .recents,
-            hasActiveDocument: true
-        )
+        let store = RecentWorkspaceStore(defaults: defaults)
+        store.add(hostItem)
+        store.add(titleItem)
 
-        let recents = sections.first { $0.title == "Recent Workspaces" }
-        guard case .workspace(let first) = recents?.entries.first else {
-            return XCTFail("Expected a workspace entry, got \(String(describing: recents?.entries.first))")
-        }
-        XCTAssertEqual(first.storageKey, hostItem.storageKey)
-    }
-
-    func testTokenizedCommandMatching() async {
-        let sections = await CommandPaletteSource().sections(
-            workspaces: [],
-            search: "toggle git",
-            focus: .actions,
-            hasActiveDocument: true
-        )
-
-        let commands = sections.flatMap(\.entries).compactMap { entry -> AppCommand? in
-            if case .command(let command, _) = entry { return command }
-            return nil
-        }
-        XCTAssertEqual(commands, [.toggleGitIndicators])
-    }
-
-    func testEntriesShareUniformMachineAndPathPresentation() {
-        let remote = CommandPaletteEntry.workspace(wraithFile)
-        XCTAssertEqual(remote.locationContext, "wraith")
-        XCTAssertEqual(remote.subtitle, "/Users/ghost/engagement/deliverables/Details Prep.md")
-
-        let local = CommandPaletteEntry.workspace(.localFile(URL(fileURLWithPath: "/tmp/a.md")))
-        XCTAssertEqual(local.locationContext, "local")
-        XCTAssertEqual(local.subtitle, "/tmp/a.md")
-
-        let command = CommandPaletteEntry.command(.openFile, isEnabled: true)
-        XCTAssertNil(command.locationContext)
+        let results = store.filtered(search: "spamnesia", tier: .all, kind: .all, pinnedOnly: false)
+        XCTAssertEqual(results.map(\.storageKey), [hostItem.storageKey, titleItem.storageKey])
     }
 
     func testStoreFilteredUsesTokenizedSearch() {

@@ -68,30 +68,31 @@ private func createFileMenu(target: AppDelegate) -> NSMenuItem {
     let recentWorkspacesItem = NSMenuItem(
         title: "Recent Workspaces...",
         action: #selector(AppDelegate.showRecentWorkspaces(_:)),
-        keyEquivalent: "1"
+        keyEquivalent: "p"
     )
-    recentWorkspacesItem.keyEquivalentModifierMask = [.command, .shift]
     recentWorkspacesItem.target = target
     fileMenu.addItem(recentWorkspacesItem)
+
+    // Hidden alias so the previous Recent Workspaces shortcut keeps working.
+    let recentWorkspacesAliasItem = NSMenuItem(
+        title: "Recent Workspaces",
+        action: #selector(AppDelegate.showRecentWorkspaces(_:)),
+        keyEquivalent: "1"
+    )
+    recentWorkspacesAliasItem.keyEquivalentModifierMask = [.command, .shift]
+    recentWorkspacesAliasItem.target = target
+    recentWorkspacesAliasItem.isHidden = true
+    recentWorkspacesAliasItem.allowsKeyEquivalentWhenHidden = true
+    fileMenu.addItem(recentWorkspacesAliasItem)
 
     let commandPaletteItem = NSMenuItem(
         title: "Command Palette",
         action: #selector(AppDelegate.showCommandPaletteFromMenu(_:)),
-        keyEquivalent: "p"
-    )
-    commandPaletteItem.target = target
-    commandPaletteItem.representedObject = CommandPaletteFocus.recents
-    fileMenu.addItem(commandPaletteItem)
-
-    let commandPaletteActionsItem = NSMenuItem(
-        title: "Command Palette — Actions",
-        action: #selector(AppDelegate.showCommandPaletteFromMenu(_:)),
         keyEquivalent: "P"
     )
-    commandPaletteActionsItem.keyEquivalentModifierMask = [.command, .shift]
-    commandPaletteActionsItem.target = target
-    commandPaletteActionsItem.representedObject = CommandPaletteFocus.actions
-    fileMenu.addItem(commandPaletteActionsItem)
+    commandPaletteItem.keyEquivalentModifierMask = [.command, .shift]
+    commandPaletteItem.target = target
+    fileMenu.addItem(commandPaletteItem)
 
     fileMenu.addItem(NSMenuItem.separator())
 

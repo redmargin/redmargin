@@ -10,8 +10,8 @@ Download the latest notarized macOS build from [GitHub Releases](https://github.
 
 - **Git change indicators** — Gutter shows added, modified, and deleted lines compared to HEAD. Sidebar file rows show modified, staged, untracked, and conflict status.
 - **Remote file access** — Open Markdown on remote servers via SSH (Cmd+Shift+O or `redmargin host:/path`). Git gutter, checkboxes, and sidebar all work remotely.
-- **Recent Workspaces** — Return to local files, local folders, remote files, and remote folders from File > Recent Workspaces, the toolbar history button, or Cmd+Shift+1.
-- **Command palette** — Search recent workspaces and common app actions with Cmd+P; Cmd+Shift+P opens with actions first. Multi-word queries match host, folder, and path (e.g. `wraith notes`), every entry shows its machine (server name or `local`) beside the title, and host or name matches rank above incidental path hits.
+- **Recent Workspaces** — Return to local files, local folders, remote files, and remote folders with Cmd+P (also Cmd+Shift+1, File > Recent Workspaces, or the toolbar history button). Multi-word queries match host, folder, and path (e.g. `wraith notes`), and host or name matches rank above incidental path hits.
+- **Command palette** — Search app actions with Cmd+Shift+P.
 - **File sidebar** — Browse Markdown files in the repository or directory (Cmd+1). Collapsible folders, current file highlighted, and git status bars enabled by default.
 - **Syntax highlighting** — Code blocks render with language-aware coloring. Supports Python, JavaScript, Swift, Rust, Go, and more.
 - **Mermaid diagrams** — Fenced `mermaid` blocks render as diagrams, follow the active theme, and print/export with the preview.
@@ -83,9 +83,8 @@ Remote command-line targets use Redmargin's existing Mac -> SSH support. The com
 | ------ | -------- |
 | Open File | Cmd-O |
 | Open Remote | Cmd-Shift-O |
-| Recent Workspaces | Cmd-Shift-1 |
-| Command Palette | Cmd-P |
-| Command Palette - Actions | Cmd-Shift-P |
+| Recent Workspaces | Cmd-P (also Cmd-Shift-1) |
+| Command Palette | Cmd-Shift-P |
 | Export PDF | Cmd-E |
 | Print | Cmd-Option-P |
 | Preferences | Cmd-, |

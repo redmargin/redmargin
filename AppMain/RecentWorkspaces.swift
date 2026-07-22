@@ -235,7 +235,7 @@ final class RecentWorkspaceStore: ObservableObject {
     ) -> [RecentWorkspaceItem] {
         let query = PaletteSearchQuery(search)
 
-        return (pinned + recent).filter { item in
+        let visible = (pinned + recent).filter { item in
             if pinnedOnly && !item.isPinned { return false }
             switch tier {
             case .all: break
@@ -249,9 +249,18 @@ final class RecentWorkspaceStore: ObservableObject {
             case .folders where item.kind.isFile: return false
             default: break
             }
-            guard !query.isEmpty else { return true }
-            return query.score(item) != nil
+            return true
         }
+
+        guard !query.isEmpty else { return visible }
+
+        return visible
+            .compactMap { item in query.score(item).map { (item: item, score: $0) } }
+            .sorted {
+                if $0.score != $1.score { return $0.score > $1.score }
+                return $0.item.lastOpened > $1.item.lastOpened
+            }
+            .map(\.item)
     }
 
     private func update(_ item: RecentWorkspaceItem, change: (inout RecentWorkspaceItem) -> Void) {

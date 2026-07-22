@@ -174,12 +174,11 @@ extension AppDelegate {
     }
 
     @objc func showCommandPaletteFromMenu(_ sender: NSMenuItem) {
-        let focus = sender.representedObject as? CommandPaletteFocus ?? .recents
-        showCommandPalette(focus: focus)
+        showCommandPalette()
     }
 
-    func showCommandPalette(focus: CommandPaletteFocus) {
-        CommandPaletteWindowController.show(store: recentWorkspaces, appDelegate: self, focus: focus)
+    func showCommandPalette() {
+        CommandPaletteWindowController.show(appDelegate: self)
     }
 
     @objc func printDocument(_ sender: Any?) {

@@ -88,17 +88,18 @@ final class MainMenuTests: XCTestCase {
         let fileMenu = NSApp.mainMenu?.item(withTitle: "File")?.submenu
         XCTAssertNotNil(fileMenu)
         let recentWorkspaces = fileMenu?.item(withTitle: "Recent Workspaces...")
-        XCTAssertEqual(recentWorkspaces?.keyEquivalent, "1")
-        XCTAssertEqual(recentWorkspaces?.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask), [.command, .shift])
+        XCTAssertEqual(recentWorkspaces?.keyEquivalent, "p")
+        XCTAssertEqual(recentWorkspaces?.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask), [.command])
+
+        let recentWorkspacesAlias = fileMenu?.item(withTitle: "Recent Workspaces")
+        XCTAssertEqual(recentWorkspacesAlias?.keyEquivalent, "1")
+        XCTAssertEqual(recentWorkspacesAlias?.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask), [.command, .shift])
+        XCTAssertEqual(recentWorkspacesAlias?.isHidden, true)
+        XCTAssertEqual(recentWorkspacesAlias?.allowsKeyEquivalentWhenHidden, true)
 
         let commandPalette = fileMenu?.item(withTitle: "Command Palette")
-        XCTAssertEqual(commandPalette?.keyEquivalent, "p")
-        XCTAssertEqual(commandPalette?.representedObject as? CommandPaletteFocus, .recents)
-
-        let commandPaletteActions = fileMenu?.item(withTitle: "Command Palette — Actions")
-        XCTAssertEqual(commandPaletteActions?.keyEquivalent, "P")
-        XCTAssertEqual(commandPaletteActions?.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask), [.command, .shift])
-        XCTAssertEqual(commandPaletteActions?.representedObject as? CommandPaletteFocus, .actions)
+        XCTAssertEqual(commandPalette?.keyEquivalent, "P")
+        XCTAssertEqual(commandPalette?.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask), [.command, .shift])
 
         let print = fileMenu?.item(withTitle: "Print...")
         XCTAssertEqual(print?.keyEquivalent, "p")

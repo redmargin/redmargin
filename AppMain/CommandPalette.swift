@@ -2,17 +2,11 @@ import AppKit
 import Foundation
 import RedmarginLib
 
-enum CommandPaletteFocus {
-    case recents
-    case actions
-}
-
 enum AppCommand: CaseIterable, Hashable, Identifiable {
     case openFile
     case openRemote
     case recentWorkspaces
     case commandPalette
-    case commandPaletteActions
     case settings
     case findInPage
     case findNext
@@ -37,7 +31,6 @@ enum AppCommand: CaseIterable, Hashable, Identifiable {
             .openRemote,
             .recentWorkspaces,
             .commandPalette,
-            .commandPaletteActions,
             .settings,
             .findInPage,
             .findNext,
@@ -64,7 +57,6 @@ enum AppCommand: CaseIterable, Hashable, Identifiable {
         case .openRemote: return "Open Remote"
         case .recentWorkspaces: return "Recent Workspaces"
         case .commandPalette: return "Command Palette"
-        case .commandPaletteActions: return "Command Palette Actions"
         case .settings: return "Settings"
         case .findInPage: return "Find in Page"
         case .findNext: return "Find Next"
@@ -89,9 +81,8 @@ enum AppCommand: CaseIterable, Hashable, Identifiable {
         switch self {
         case .openFile: return "⌘O"
         case .openRemote: return "⇧⌘O"
-        case .recentWorkspaces: return "⇧⌘1"
-        case .commandPalette: return "⌘P"
-        case .commandPaletteActions: return "⇧⌘P"
+        case .recentWorkspaces: return "⌘P"
+        case .commandPalette: return "⇧⌘P"
         case .settings: return "⌘,"
         case .findInPage: return "⌘F"
         case .findNext: return "⌘G"
@@ -116,7 +107,7 @@ enum AppCommand: CaseIterable, Hashable, Identifiable {
         case .openFile: return "doc"
         case .openRemote: return "network"
         case .recentWorkspaces: return "clock.arrow.circlepath"
-        case .commandPalette, .commandPaletteActions: return "command"
+        case .commandPalette: return "command"
         case .settings: return "gearshape"
         case .findInPage, .findNext, .findPrevious: return "magnifyingglass"
         case .refresh: return "arrow.clockwise"
@@ -156,9 +147,7 @@ enum AppCommand: CaseIterable, Hashable, Identifiable {
             case .recentWorkspaces:
                 appDelegate.showRecentWorkspaces(nil)
             case .commandPalette:
-                appDelegate.showCommandPalette(focus: .recents)
-            case .commandPaletteActions:
-                appDelegate.showCommandPalette(focus: .actions)
+                appDelegate.showCommandPalette()
             case .settings:
                 appDelegate.showPreferences(nil)
             case .findInPage:
@@ -202,121 +191,28 @@ enum AppCommand: CaseIterable, Hashable, Identifiable {
     }
 }
 
-enum CommandPaletteEntry: Identifiable, Hashable {
-    case workspace(RecentWorkspaceItem)
-    case command(AppCommand, isEnabled: Bool)
+struct CommandPaletteEntry: Identifiable, Hashable {
+    let command: AppCommand
+    let isEnabled: Bool
 
-    var id: String {
-        switch self {
-        case .workspace(let item): return "workspace:\(item.storageKey)"
-        case .command(let command, _): return "command:\(command.id)"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .workspace(let item): return item.displayTitle
-        case .command(let command, _): return command.title
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .workspace(let item):
-            switch item.location {
-            case .local(let url): return url.displayPath
-            case .remote(let location): return location.path
-            }
-        case .command(let command, _): return command.keyEquivalent ?? ""
-        }
-    }
-
-    /// Machine the workspace lives on: the remote host, or "local". Nil for commands.
-    var locationContext: String? {
-        guard case .workspace(let item) = self else { return nil }
-        return item.remoteLocation?.host ?? "local"
-    }
-
-    var iconName: String {
-        switch self {
-        case .workspace(let item): return item.kind.isFile ? "doc.text" : "folder"
-        case .command(let command, _): return command.iconName
-        }
-    }
-
-    var isEnabled: Bool {
-        switch self {
-        case .workspace: return true
-        case .command(_, let enabled): return enabled
-        }
-    }
-}
-
-protocol CommandPaletteRecentWorkspaceOpening: AnyObject {
-    func openRecentWorkspace(_ item: RecentWorkspaceItem)
-}
-
-extension AppDelegate: CommandPaletteRecentWorkspaceOpening {}
-
-enum CommandPaletteDispatcher {
-    static func dispatchRecentWorkspace(
-        _ item: RecentWorkspaceItem,
-        opener: CommandPaletteRecentWorkspaceOpening
-    ) {
-        opener.openRecentWorkspace(item)
-    }
-}
-
-struct CommandPaletteSection: Identifiable, Hashable {
-    let title: String
-    let entries: [CommandPaletteEntry]
-
-    var id: String { title }
+    var id: String { command.id }
+    var title: String { command.title }
+    var subtitle: String { command.keyEquivalent ?? "" }
+    var iconName: String { command.iconName }
 }
 
 actor CommandPaletteSource {
-    func sections(
-        workspaces: [RecentWorkspaceItem],
-        search: String,
-        focus: CommandPaletteFocus,
-        hasActiveDocument: Bool
-    ) -> [CommandPaletteSection] {
+    func entries(search: String, hasActiveDocument: Bool) -> [CommandPaletteEntry] {
         let query = PaletteSearchQuery(search)
-        let workspaceEntries: [CommandPaletteEntry]
-        if query.isEmpty {
-            workspaceEntries = workspaces
-                .sorted { $0.lastOpened > $1.lastOpened }
-                .prefix(6)
-                .map(CommandPaletteEntry.workspace)
-        } else {
-            workspaceEntries = workspaces
-                .compactMap { item in query.score(item).map { (item: item, score: $0) } }
-                .sorted {
-                    if $0.score != $1.score { return $0.score > $1.score }
-                    return $0.item.lastOpened > $1.item.lastOpened
-                }
-                .map { CommandPaletteEntry.workspace($0.item) }
-        }
-
-        let commandEntries = AppCommand.allCases
+        return AppCommand.allCases
             .filter { command in
                 query.isEmpty || query.matches(commandTitle: command.title)
             }
             .map { command in
-                CommandPaletteEntry.command(
-                    command,
+                CommandPaletteEntry(
+                    command: command,
                     isEnabled: !command.requiresActiveDocument || hasActiveDocument
                 )
             }
-
-        let recents = CommandPaletteSection(title: "Recent Workspaces", entries: Array(workspaceEntries))
-        let actions = CommandPaletteSection(title: "Actions", entries: commandEntries)
-
-        switch focus {
-        case .recents:
-            return [recents, actions].filter { !$0.entries.isEmpty }
-        case .actions:
-            return [actions, recents].filter { !$0.entries.isEmpty }
-        }
     }
 }

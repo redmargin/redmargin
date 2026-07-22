@@ -9,30 +9,25 @@ final class CommandPaletteWindowController: NSWindowController {
 
     private static weak var current: CommandPaletteWindowController?
 
-    private let store: RecentWorkspaceStore
     private let appDelegate: AppDelegate
-    private var focus: CommandPaletteFocus
 
-    static func show(store: RecentWorkspaceStore, appDelegate: AppDelegate, focus: CommandPaletteFocus) {
+    static func show(appDelegate: AppDelegate) {
         if let current {
-            current.focus = focus
-            current.installRootView(focus: focus)
+            current.installRootView()
             current.positionIfNeeded()
             current.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        let controller = CommandPaletteWindowController(store: store, appDelegate: appDelegate, focus: focus)
+        let controller = CommandPaletteWindowController(appDelegate: appDelegate)
         current = controller
         controller.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private init(store: RecentWorkspaceStore, appDelegate: AppDelegate, focus: CommandPaletteFocus) {
-        self.store = store
+    private init(appDelegate: AppDelegate) {
         self.appDelegate = appDelegate
-        self.focus = focus
 
         let panel = NSPanel()
         super.init(window: panel)
@@ -44,7 +39,7 @@ final class CommandPaletteWindowController: NSWindowController {
         panel.becomesKeyOnlyIfNeeded = false
         panel.hidesOnDeactivate = true
         panel.minSize = NSSize(width: 520, height: 320)
-        installRootView(focus: focus)
+        installRootView()
         Self.configureFramePersistence(on: panel)
         panel.delegate = self
     }
@@ -65,13 +60,11 @@ final class CommandPaletteWindowController: NSWindowController {
         Self.current = nil
     }
 
-    private func installRootView(focus: CommandPaletteFocus) {
+    private func installRootView() {
         window?.contentViewController = NSHostingController(
             rootView: CommandPaletteView(
-                store: store,
                 appDelegate: appDelegate,
-                controller: self,
-                initialFocus: focus
+                controller: self
             )
         )
         restoreFrameAfterContentInstall()

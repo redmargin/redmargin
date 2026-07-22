@@ -2,54 +2,23 @@ import XCTest
 @testable import Redmargin
 
 final class CommandPaletteTests: XCTestCase {
-    func testCommandPaletteIncludesRecentWorkspaces() async {
-        let workspace = RecentWorkspaceItem.localFile(URL(fileURLWithPath: "/tmp/Sidebar.md"))
-        let sections = await sourceSections(workspaces: [workspace])
+    func testCommandPaletteListsAllAppCommands() async {
+        let entries = await sourceEntries()
 
-        XCTAssertTrue(sections.flatMap(\.entries).contains { entry in
-            if case .workspace(let item) = entry {
-                return item.storageKey == workspace.storageKey
-            }
-            return false
-        })
+        XCTAssertEqual(entries.map(\.command), AppCommand.allCases)
     }
 
-    func testCommandPaletteIncludesAppCommands() async {
-        let sections = await sourceSections()
-        let commandCount = sections.flatMap(\.entries).filter { entry in
-            if case .command = entry { return true }
-            return false
-        }.count
+    func testCommandPaletteSearchFiltersCommands() async {
+        let entries = await sourceEntries(search: "side")
 
-        XCTAssertEqual(commandCount, AppCommand.allCases.count)
+        XCTAssertTrue(entries.contains { $0.command == .toggleSidebar })
+        XCTAssertFalse(entries.contains { $0.command == .openFile })
     }
 
-    func testCommandPaletteSearchMatchesRecentAndCommands() async {
-        let workspace = RecentWorkspaceItem.localFile(URL(fileURLWithPath: "/tmp/Sidebar.md"))
-        let sections = await sourceSections(workspaces: [workspace], search: "side")
-        let entries = sections.flatMap(\.entries)
+    func testCommandPaletteMatchesMultiTokenQueries() async {
+        let entries = await sourceEntries(search: "toggle git")
 
-        XCTAssertTrue(entries.contains { entry in
-            if case .workspace(let item) = entry {
-                return item.displayTitle == "Sidebar.md"
-            }
-            return false
-        })
-        XCTAssertTrue(entries.contains { entry in
-            if case .command(let command, _) = entry {
-                return command == .toggleSidebar
-            }
-            return false
-        })
-    }
-
-    func testCommandPaletteDispatchesRecentWorkspace() {
-        let workspace = RecentWorkspaceItem.localFile(URL(fileURLWithPath: "/tmp/Sidebar.md"))
-        let opener = RecordingRecentWorkspaceOpener()
-
-        CommandPaletteDispatcher.dispatchRecentWorkspace(workspace, opener: opener)
-
-        XCTAssertEqual(opener.openedWorkspace?.storageKey, workspace.storageKey)
+        XCTAssertEqual(entries.map(\.command), [.toggleGitIndicators])
     }
 
     func testCommandPaletteDispatchesMenuBackedCommand() {
@@ -70,53 +39,24 @@ final class CommandPaletteTests: XCTestCase {
     }
 
     func testCommandPaletteDisablesDocumentOnlyCommandsWithoutDocument() async {
-        let sections = await sourceSections(hasActiveDocument: false)
+        let entries = await sourceEntries(hasActiveDocument: false)
 
-        XCTAssertTrue(sections.flatMap(\.entries).contains { entry in
-            if case .command(.toggleSidebar, let isEnabled) = entry {
-                return !isEnabled
-            }
-            return false
-        })
+        XCTAssertTrue(entries.contains { $0.command == .toggleSidebar && !$0.isEnabled })
+        XCTAssertTrue(entries.contains { $0.command == .openFile && $0.isEnabled })
     }
 
-    func testCommandPaletteRecentsFocusOrdersRecentsFirst() async {
-        let sections = await sourceSections(
-            workspaces: [.localFile(URL(fileURLWithPath: "/tmp/a.md"))],
-            focus: .recents
-        )
-
-        XCTAssertEqual(sections.first?.title, "Recent Workspaces")
+    func testRecentWorkspacesOwnsCommandPShortcut() {
+        XCTAssertEqual(AppCommand.recentWorkspaces.keyEquivalent, "⌘P")
+        XCTAssertEqual(AppCommand.commandPalette.keyEquivalent, "⇧⌘P")
     }
 
-    func testCommandPaletteActionsFocusOrdersActionsFirst() async {
-        let sections = await sourceSections(
-            workspaces: [.localFile(URL(fileURLWithPath: "/tmp/a.md"))],
-            focus: .actions
-        )
-
-        XCTAssertEqual(sections.first?.title, "Actions")
-    }
-
-    private func sourceSections(
-        workspaces: [RecentWorkspaceItem] = [],
+    private func sourceEntries(
         search: String = "",
-        focus: CommandPaletteFocus = .recents,
         hasActiveDocument: Bool = true
-    ) async -> [CommandPaletteSection] {
-        await CommandPaletteSource().sections(
-            workspaces: workspaces,
+    ) async -> [CommandPaletteEntry] {
+        await CommandPaletteSource().entries(
             search: search,
-            focus: focus,
             hasActiveDocument: hasActiveDocument
         )
-    }
-}
-
-private final class RecordingRecentWorkspaceOpener: CommandPaletteRecentWorkspaceOpening {
-    private(set) var openedWorkspace: RecentWorkspaceItem?
-
-    func openRecentWorkspace(_ item: RecentWorkspaceItem) {
-        openedWorkspace = item
     }
 }
