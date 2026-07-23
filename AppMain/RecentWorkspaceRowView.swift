@@ -60,7 +60,6 @@ struct RecentWorkspaceRowView: View {
         }
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
-        .help(item.lastFailureReason ?? item.locationText)
         .contextMenu {
             Button("Open", action: onOpen)
                 .disabled(isUnavailable && item.localURL != nil)
