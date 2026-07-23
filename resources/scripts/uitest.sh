@@ -94,26 +94,82 @@ MARKDOWN
 
 echo "Running UI tests..."
 
+# Prompt sentry (ported from the Detours qualification runner): an independent
+# process that watches for TCC "Allow" dialogs and kills this run loudly
+# instead of letting xcodebuild stall behind an invisible prompt.
+EVIDENCE_DIR="$PROJECT_DIR/.build/uitest/guard-$(date +%Y%m%d-%H%M%S)-$$"
+GUARD_PID=""
+RUN_STARTED_AT="$(date '+%Y-%m-%d %H:%M:%S')"
+
 # shellcheck disable=SC2329  # invoked by the EXIT trap below
 cleanup() {
     rm -rf "$TEST_DIR"
+    if [ -n "$GUARD_PID" ] && kill -0 "$GUARD_PID" 2>/dev/null; then
+        kill -TERM "$GUARD_PID" 2>/dev/null || true
+        wait "$GUARD_PID" 2>/dev/null || true
+    fi
 }
 trap cleanup EXIT
 
+"$SCRIPT_DIR/uitest-prompt-guard.sh" live $$ "$PROJECT_DIR" "$EVIDENCE_DIR" &
+GUARD_PID=$!
+for _ in $(seq 1 50); do
+    [ -f "$EVIDENCE_DIR/ready.env" ] && break
+    if ! kill -0 "$GUARD_PID" 2>/dev/null; then
+        echo "Error: prompt guard failed to arm (see $EVIDENCE_DIR)" >&2
+        exit 91
+    fi
+    sleep 0.1
+done
+if [ ! -f "$EVIDENCE_DIR/ready.env" ]; then
+    echo "Error: prompt guard never became ready (see $EVIDENCE_DIR)" >&2
+    exit 91
+fi
+echo "Prompt guard armed (evidence: $EVIDENCE_DIR)"
+
+# Hard deadline for the whole xcodebuild run: kill the entire process tree
+# rather than hang. 30 minutes covers a cold runner rebuild with margin.
+DEADLINE_EPOCH=$(( $(date +%s) + 1800 ))
+
 TEST_RESULT=0
-if [ -n "$1" ]; then
-    # Run specific test
-    xcodebuild test \
+if [ -n "${1:-}" ]; then
+    "$SCRIPT_DIR/uitest-deadline.sh" "$DEADLINE_EPOCH" xcodebuild test \
         -project "$XCODEPROJ" \
         -scheme RedmarginUITests \
         -destination 'platform=macOS' \
         -only-testing:"RedmarginUITests/$1" || TEST_RESULT=$?
 else
-    # Run all tests
-    xcodebuild test \
+    "$SCRIPT_DIR/uitest-deadline.sh" "$DEADLINE_EPOCH" xcodebuild test \
         -project "$XCODEPROJ" \
         -scheme RedmarginUITests \
         -destination 'platform=macOS' || TEST_RESULT=$?
+fi
+
+# A guard incident overrides the xcodebuild result: a run that "passed" while
+# a permission dialog was on screen is not a pass.
+if [ -f "$EVIDENCE_DIR/incident.env" ]; then
+    echo "PROMPT GUARD INCIDENT:" >&2
+    cat "$EVIDENCE_DIR/incident.env" >&2
+    exit 90
+fi
+
+# Post-run audit: sweep the system log over the run window for any tccd
+# prompt activity the live channels might have missed. An unreadable log is a
+# failed audit, not a clean one.
+if ! /usr/bin/log show --style compact --start "$RUN_STARTED_AT" \
+        --predicate 'process == "tccd" && eventMessage CONTAINS "display_prompt"' \
+        > "$EVIDENCE_DIR/post-audit-raw.log" 2> "$EVIDENCE_DIR/post-audit-err.log"; then
+    echo "Error: post-run prompt audit could not read the system log (see $EVIDENCE_DIR)" >&2
+    exit 91
+fi
+if grep -F 'display_prompt: called' "$EVIDENCE_DIR/post-audit-raw.log" > "$EVIDENCE_DIR/post-audit.log"; then
+    echo "PROMPT GUARD POST-AUDIT: tccd displayed a prompt during the run:" >&2
+    cat "$EVIDENCE_DIR/post-audit.log" >&2
+    exit 90
+fi
+
+if [ "$TEST_RESULT" -eq 124 ]; then
+    echo "UI test run exceeded its 30-minute deadline and was terminated." >&2
 fi
 
 # The PDF is inspected by PDFExportUITests itself: page count, page text, and
