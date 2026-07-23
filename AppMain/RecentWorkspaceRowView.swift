@@ -15,8 +15,6 @@ struct RecentWorkspaceRowView: View {
     let onRemove: () -> Void
     let onLocate: () -> Void
 
-    @State private var isHovered = false
-
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             stateDot
@@ -33,7 +31,7 @@ struct RecentWorkspaceRowView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
-                        .opacity(isHovered ? 0 : 1)
+                        .opacity(isSelected ? 0 : 1)
                 }
 
                 metaLine
@@ -44,7 +42,7 @@ struct RecentWorkspaceRowView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Color.redmarginRed)
                     .padding(.top, 4)
-                    .opacity(isHovered ? 0 : 1)
+                    .opacity(isSelected ? 0 : 1)
             }
 
         }
@@ -52,14 +50,13 @@ struct RecentWorkspaceRowView: View {
         .padding(.vertical, 8)
         .background(selectionBackground)
         .overlay(alignment: .topTrailing) {
-            if isHovered {
-                hoverActions
+            if isSelected {
+                selectionActions
                     .padding(.top, 5)
                     .padding(.trailing, 12)
             }
         }
         .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
         .contextMenu {
             Button("Open", action: onOpen)
                 .disabled(isUnavailable && item.localURL != nil)
@@ -191,7 +188,7 @@ struct RecentWorkspaceRowView: View {
         }
     }
 
-    private var hoverActions: some View {
+    private var selectionActions: some View {
         HStack(spacing: 4) {
             HoverActionButton(symbol: item.isPinned ? "pin.slash" : "pin", help: item.isPinned ? "Unpin" : "Pin", action: onPinToggle)
             if item.localURL != nil, !isUnavailable {
