@@ -1,4 +1,5 @@
 import AppKit
+import RedmarginCore
 import SwiftUI
 
 struct RecentWorkspacesView: View {
@@ -12,6 +13,12 @@ struct RecentWorkspacesView: View {
     @State private var pinnedOnly = false
     @State private var selectedID: UUID?
     @State private var localAvailability: [String: Bool] = [:]
+    @State private var gitStates: [String: RecentWorkspaceGitState] = [:]
+    @State private var hostReachability: [String: Bool] = [:]
+    @State private var scannedContextKey: Set<String> = []
+    @State private var scrollSelectionIntoView = false
+    @State private var connectingKey: String?
+    @State private var hoverGate = HoverSelectionGate()
     @State private var keyMonitor: Any?
     @FocusState private var searchFocused: Bool
 
@@ -31,12 +38,14 @@ struct RecentWorkspacesView: View {
             installKeyMonitorIfNeeded()
             selectFirstIfNeeded()
             refreshAvailability()
+            refreshWorkspaceContext(force: true)
         }
         .onDisappear {
             removeKeyMonitor()
         }
         .onChange(of: store.items) {
             refreshAvailability()
+            refreshWorkspaceContext()
             selectFirstIfNeeded()
         }
         .onChange(of: search) {
@@ -94,22 +103,20 @@ struct RecentWorkspacesView: View {
 
     private var filters: some View {
         HStack(spacing: 12) {
-            Picker("Tier", selection: $tierFilter) {
-                ForEach(RecentWorkspaceTierFilter.allCases) { filter in
-                    Text(filter.rawValue).tag(filter)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 210)
+            filterLabel("Tier")
+            RedSegmentedControl(
+                options: RecentWorkspaceTierFilter.allCases.map { ($0.rawValue, $0) },
+                selection: $tierFilter
+            )
+            .accessibilityLabel("Tier")
             .accessibilityValue(tierFilter.rawValue)
 
-            Picker("Kind", selection: $kindFilter) {
-                ForEach(RecentWorkspaceKindFilter.allCases) { filter in
-                    Text(filter.rawValue).tag(filter)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 260)
+            filterLabel("Kind")
+            RedSegmentedControl(
+                options: RecentWorkspaceKindFilter.allCases.map { ($0.rawValue, $0) },
+                selection: $kindFilter
+            )
+            .accessibilityLabel("Kind")
             .accessibilityValue(kindFilter.rawValue)
 
             Spacer()
@@ -118,6 +125,7 @@ struct RecentWorkspacesView: View {
                 pinnedOnly.toggle()
             } label: {
                 Image(systemName: pinnedOnly ? "pin.fill" : "pin")
+                    .foregroundStyle(pinnedOnly ? Color.redmarginRed : Color.secondary)
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(.borderless)
@@ -125,8 +133,18 @@ struct RecentWorkspacesView: View {
             .accessibilityLabel("Pinned only")
             .accessibilityValue(pinnedOnly ? "On" : "Off")
         }
+        .font(.system(size: 13))
+        .foregroundStyle(.secondary)
         .frame(height: 36)
         .padding(.horizontal, 20)
+    }
+
+    /// Form-label treatment so category names read as labels, not options.
+    private func filterLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 10.5, weight: .semibold))
+            .kerning(0.6)
+            .foregroundStyle(.tertiary)
     }
 
     @ViewBuilder
@@ -151,9 +169,12 @@ struct RecentWorkspacesView: View {
                     .padding(.vertical, 8)
                 }
                 .onChange(of: selectedID) {
-                    if let selectedID {
+                    // Only keyboard-driven selection scrolls; hover-driven
+                    // selection must never move the list under the pointer.
+                    if scrollSelectionIntoView, let selectedID {
                         proxy.scrollTo(selectedID, anchor: .center)
                     }
+                    scrollSelectionIntoView = false
                 }
             }
         }
@@ -164,8 +185,10 @@ struct RecentWorkspacesView: View {
             RecentWorkspaceRowView(
                 item: item,
                 isSelected: selectedID == item.id,
-                isFocused: selectedID == item.id,
                 isUnavailable: isUnavailable(item),
+                isConnecting: connectingKey == item.storageKey,
+                gitState: gitStates[item.storageKey] ?? .pending,
+                reachability: reachability(of: item),
                 onOpen: { open(item) },
                 onRetry: { retry(item) },
                 onPinToggle: { togglePin(item) },
@@ -176,23 +199,29 @@ struct RecentWorkspacesView: View {
             .padding(.horizontal, 8)
             .onTapGesture {
                 selectedID = item.id
+                open(item)
+            }
+            .onHover { hovering in
+                guard hovering, hoverGate.shouldSelect(at: NSEvent.mouseLocation) else { return }
+                selectedID = item.id
             }
         }
     }
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 8) {
             Button("Clear Missing") {
                 store.clearMissingLocal()
                 refreshAvailability()
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.bordered)
             .disabled(!hasMissingLocal)
 
             Button("Clear All...") {
                 confirmClearAll()
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.bordered)
+            .foregroundStyle(Color.redmarginRed)
             .disabled(store.items.isEmpty)
 
             Spacer()
@@ -208,6 +237,8 @@ struct RecentWorkspacesView: View {
             Button("Open") {
                 openSelected()
             }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.redmarginRed)
             .keyboardShortcut(.return, modifiers: [])
             .disabled(selectedItem == nil || selectedItem.map(isUnavailable) == true)
         }
@@ -287,6 +318,86 @@ struct RecentWorkspacesView: View {
         return localAvailability[item.storageKey] == false
     }
 
+    /// Loads git state for local and remote folder rows plus host
+    /// reachability, all concurrently. Remote folders answer both questions in
+    /// one ssh round trip. `force` bypasses the same-keys gate so reopening
+    /// the window picks up fresh state; store changes that keep the same
+    /// folders and hosts (pinning, reopening) skip the scan.
+    private func refreshWorkspaceContext(force: Bool = false) {
+        let localFolders = store.items.filter { $0.kind == .localFolder && !$0.isLocalMissing }
+        let remoteHosts = Set(store.items.compactMap { $0.remoteLocation?.host })
+        let contextKey = Set(localFolders.map(\.storageKey)).union(remoteHosts)
+        guard force || contextKey != scannedContextKey else { return }
+        scannedContextKey = contextKey
+
+        let remoteFolderTargets = store.items.compactMap { item -> (key: String, host: String, path: String)? in
+            guard item.kind == .remoteFolder, let location = item.remoteLocation else { return nil }
+            return (item.storageKey, location.host, location.path)
+        }
+
+        Task {
+            let folderTargets = localFolders.compactMap { item in
+                item.localURL.map { (key: item.storageKey, url: $0) }
+            }
+
+            var states: [String: RecentWorkspaceGitState] = [:]
+            var reachable: [String: Bool] = [:]
+
+            await withTaskGroup(of: (String, RecentWorkspaceGitState).self) { group in
+                for target in folderTargets {
+                    group.addTask {
+                        let summary = await GitStatusProvider.shared.summary(for: target.url)
+                        return (target.key, summary.map { .repo($0) } ?? .notARepository)
+                    }
+                }
+                for await (key, state) in group { states[key] = state }
+            }
+
+            await withTaskGroup(of: (String, String, RemoteWorkspaceProbe).self) { group in
+                for target in remoteFolderTargets {
+                    group.addTask {
+                        (target.key, target.host, await RemoteWorkspaceProber.probeFolder(host: target.host, path: target.path))
+                    }
+                }
+                for await (key, host, probe) in group {
+                    switch probe {
+                    case .unreachable:
+                        reachable[host] = reachable[host] ?? false
+                    case .reachable(let state):
+                        states[key] = state
+                        reachable[host] = true
+                    }
+                }
+            }
+
+            let uncoveredHosts = remoteHosts.filter { reachable[$0] == nil }
+            await withTaskGroup(of: (String, Bool).self) { group in
+                for host in uncoveredHosts {
+                    group.addTask {
+                        if await SSHConnectionManager.shared.hasLiveConnection(host: host) {
+                            return (host, true)
+                        }
+                        return (host, await RemoteWorkspaceProber.isHostReachable(host))
+                    }
+                }
+                for await (host, up) in group { reachable[host] = up }
+            }
+
+            let resolvedStates = states
+            let resolvedReachable = reachable
+            await MainActor.run {
+                gitStates = resolvedStates
+                hostReachability = resolvedReachable
+            }
+        }
+    }
+
+    private func reachability(of item: RecentWorkspaceItem) -> RemoteReachability {
+        guard let host = item.remoteLocation?.host else { return .unknown }
+        guard let isUp = hostReachability[host] else { return .unknown }
+        return isUp ? .reachable : .unreachable
+    }
+
     private func refreshAvailability() {
         var next = localAvailability
         for item in store.items where item.localURL != nil {
@@ -301,6 +412,7 @@ struct RecentWorkspacesView: View {
         if let selectedID, visibleItems.contains(where: { $0.id == selectedID }) {
             return
         }
+        scrollSelectionIntoView = true
         selectedID = visibleItems.first?.id
     }
 
@@ -310,6 +422,7 @@ struct RecentWorkspacesView: View {
     }
 
     private func open(_ item: RecentWorkspaceItem) {
+        guard connectingKey == nil else { return }
         if isUnavailable(item), item.localURL != nil {
             NSSound.beep()
             return
@@ -325,14 +438,15 @@ struct RecentWorkspacesView: View {
     }
 
     private func retry(_ item: RecentWorkspaceItem) {
+        guard connectingKey != item.storageKey else { return }
+        connectingKey = item.storageKey
         Task {
             let succeeded = await appDelegate.retryRecentWorkspace(item)
-            if succeeded {
-                await MainActor.run {
+            await MainActor.run {
+                connectingKey = nil
+                if succeeded {
                     controller.closeAfterOpening()
-                }
-            } else {
-                await MainActor.run {
+                } else {
                     refreshAvailability()
                 }
             }
@@ -388,8 +502,10 @@ struct RecentWorkspacesView: View {
 
         switch direction {
         case .up:
+            scrollSelectionIntoView = true
             selectedID = visibleItems[max(0, currentIndex - 1)].id
         case .down:
+            scrollSelectionIntoView = true
             selectedID = visibleItems[min(visibleItems.count - 1, currentIndex + 1)].id
         default:
             break
@@ -433,6 +549,13 @@ struct RecentWorkspacesView: View {
             return nil
         }
 
+        guard RecentWorkspacesKeyRouting.intercepts(keyCode: event.keyCode, searchFocused: searchFocused) else {
+            if !isCommand, characters.count == 1, characters.first?.isWhitespace == false {
+                searchFocused = true
+            }
+            return event
+        }
+
         if isCommand && event.keyCode == 51 {
             confirmClearAll()
             return nil
@@ -462,10 +585,37 @@ struct RecentWorkspacesView: View {
             moveSelection(.down)
             return nil
         default:
-            if !isCommand, characters.count == 1, characters.first?.isWhitespace == false {
-                searchFocused = true
-            }
             return event
+        }
+    }
+}
+
+/// Lets hover move the selection only when the pointer itself moved. When the
+/// list scrolls or reflows under a stationary pointer, macOS fires hover for
+/// rows arriving beneath the cursor; without this gate those synthetic hovers
+/// steal the selection back from the keyboard.
+struct HoverSelectionGate {
+    private var lastMouseLocation: CGPoint?
+
+    mutating func shouldSelect(at location: CGPoint) -> Bool {
+        guard location != lastMouseLocation else { return false }
+        lastMouseLocation = location
+        return true
+    }
+}
+
+/// Which keys the Recent Workspaces window intercepts for list navigation.
+/// While the search field is focused, editing keys (backspace, left, right)
+/// belong to the text field; only navigation and activation are intercepted.
+enum RecentWorkspacesKeyRouting {
+    static func intercepts(keyCode: UInt16, searchFocused: Bool) -> Bool {
+        switch keyCode {
+        case 36, 53, 125, 126:
+            return true
+        case 51, 123, 124:
+            return !searchFocused
+        default:
+            return false
         }
     }
 }

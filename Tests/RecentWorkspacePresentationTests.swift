@@ -1,0 +1,181 @@
+import XCTest
+import RedmarginCore
+@testable import Redmargin
+
+final class RecentWorkspacePresentationTests: XCTestCase {
+    private var tempDir: URL!
+
+    override func setUpWithError() throws {
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PresentationTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tempDir)
+        tempDir = nil
+        super.tearDown()
+    }
+
+    func testRepoSlugDerivation() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+
+        let nested = RecentWorkspaceItem.localFolder(home.appendingPathComponent("dev/detours"))
+        XCTAssertEqual(nested.repoSlug, "dev/detours")
+
+        let homeDirect = RecentWorkspaceItem.localFolder(home.appendingPathComponent("dotfiles"))
+        XCTAssertEqual(homeDirect.repoSlug, "dotfiles")
+
+        let localFile = RecentWorkspaceItem.localFile(URL(fileURLWithPath: "/tmp/notes/a.md"))
+        XCTAssertEqual(localFile.repoSlug, "a.md")
+
+        let remoteHomeFolder = RecentWorkspaceItem.remoteFolder(
+            RemoteLocation(host: "wraith", path: "~/engagement/")
+        )
+        XCTAssertEqual(remoteHomeFolder.repoSlug, "engagement")
+
+        let remoteNested = RecentWorkspaceItem.remoteFolder(
+            RemoteLocation(host: "spamnesia-dev", path: "/opt/spamnesia/")
+        )
+        XCTAssertEqual(remoteNested.repoSlug, "opt/spamnesia")
+
+        let remoteFile = RecentWorkspaceItem.remoteFile(
+            RemoteLocation(host: "wraith", path: "/Users/ghost/engagement/deliverables/Details Prep.md")
+        )
+        XCTAssertEqual(remoteFile.repoSlug, "Details Prep.md")
+    }
+
+    func testMachineTokenIsHostOrNil() {
+        let remote = RecentWorkspaceItem.remoteFolder(RemoteLocation(host: "wraith", path: "~/engagement/"))
+        XCTAssertEqual(remote.machineToken, "wraith")
+
+        let local = RecentWorkspaceItem.localFolder(tempDir)
+        XCTAssertNil(local.machineToken)
+    }
+
+    func testMetaLineDecision() {
+        let repoFolder = RecentWorkspaceItem.localFolder(tempDir)
+        let summary = GitWorkspaceSummary(branch: "main", changedCount: 3)
+        XCTAssertEqual(repoFolder.meta(gitState: .repo(summary)), .git(branch: "main", changedCount: 3))
+        XCTAssertNil(repoFolder.meta(gitState: .pending))
+        XCTAssertEqual(repoFolder.meta(gitState: .notARepository), .noRepository)
+
+        let remoteFolder = RecentWorkspaceItem.remoteFolder(
+            RemoteLocation(host: "azooco-dev", path: "/opt/azooco/")
+        )
+        XCTAssertEqual(
+            remoteFolder.meta(gitState: .repo(summary)),
+            .git(branch: "main", changedCount: 3)
+        )
+        XCTAssertNil(remoteFolder.meta(gitState: .pending))
+
+        let remoteFile = RecentWorkspaceItem.remoteFile(
+            RemoteLocation(host: "wraith", path: "~/engagement/report/deliverables/Details Prep.md")
+        )
+        XCTAssertEqual(
+            remoteFile.meta(gitState: .pending),
+            .containingPath("~/engagement/report/deliverables/")
+        )
+
+        var failed = RecentWorkspaceItem.remoteFolder(RemoteLocation(host: "wraith", path: "~/gone/"))
+        failed.lastFailureReason = "connection refused"
+        failed.lastFailureDate = Date(timeIntervalSinceNow: -86_400)
+        guard case .warning(let text)? = failed.meta(gitState: .pending) else {
+            return XCTFail("Expected a warning meta, got \(String(describing: failed.meta(gitState: .pending)))")
+        }
+        XCTAssertTrue(text.hasPrefix("unreachable since"), "got: \(text)")
+
+        let missing = RecentWorkspaceItem.localFile(tempDir.appendingPathComponent("gone.md"))
+        XCTAssertEqual(missing.meta(gitState: .pending), .warning("missing"))
+    }
+
+    func testRemoteProbeParsing() {
+        XCTAssertEqual(
+            RemoteWorkspaceProber.parse(exitCode: 0, output: "REPO main 3\n"),
+            .reachable(.repo(GitWorkspaceSummary(branch: "main", changedCount: 3)))
+        )
+        XCTAssertEqual(
+            RemoteWorkspaceProber.parse(exitCode: 0, output: "REPO feature/git-gutter 0\n"),
+            .reachable(.repo(GitWorkspaceSummary(branch: "feature/git-gutter", changedCount: 0)))
+        )
+        XCTAssertEqual(RemoteWorkspaceProber.parse(exitCode: 0, output: "NOREPO\n"), .reachable(.notARepository))
+        XCTAssertEqual(RemoteWorkspaceProber.parse(exitCode: 0, output: "NODIR\n"), .reachable(.notARepository))
+        XCTAssertEqual(RemoteWorkspaceProber.parse(exitCode: 0, output: "garbage"), .reachable(.notARepository))
+        XCTAssertEqual(RemoteWorkspaceProber.parse(exitCode: 255, output: ""), .unreachable)
+    }
+
+    func testAvailabilityDotMapping() {
+        let present = RecentWorkspaceItem.localFolder(tempDir)
+        XCTAssertEqual(present.availability(remoteReachability: .unknown), .available)
+
+        let missing = RecentWorkspaceItem.localFile(tempDir.appendingPathComponent("gone.md"))
+        XCTAssertEqual(missing.availability(remoteReachability: .unknown), .unavailable)
+
+        var failed = RecentWorkspaceItem.remoteFolder(RemoteLocation(host: "wraith", path: "~/x/"))
+        failed.lastFailureReason = "timeout"
+        XCTAssertEqual(failed.availability(remoteReachability: .reachable), .unavailable)
+
+        let remote = RecentWorkspaceItem.remoteFolder(RemoteLocation(host: "wraith", path: "~/x/"))
+        XCTAssertEqual(remote.availability(remoteReachability: .unknown), .idle)
+        XCTAssertEqual(remote.availability(remoteReachability: .reachable), .available)
+        XCTAssertEqual(remote.availability(remoteReachability: .unreachable), .unavailable)
+    }
+
+    func testWindowKeyRoutingLeavesTextEditingToSearchField() {
+        // Backspace and horizontal arrows edit text while search is focused.
+        XCTAssertFalse(RecentWorkspacesKeyRouting.intercepts(keyCode: 51, searchFocused: true))
+        XCTAssertFalse(RecentWorkspacesKeyRouting.intercepts(keyCode: 123, searchFocused: true))
+        XCTAssertFalse(RecentWorkspacesKeyRouting.intercepts(keyCode: 124, searchFocused: true))
+
+        // The same keys drive the list when search is not focused.
+        XCTAssertTrue(RecentWorkspacesKeyRouting.intercepts(keyCode: 51, searchFocused: false))
+        XCTAssertTrue(RecentWorkspacesKeyRouting.intercepts(keyCode: 123, searchFocused: false))
+        XCTAssertTrue(RecentWorkspacesKeyRouting.intercepts(keyCode: 124, searchFocused: false))
+
+        // Navigation and activation are always the window's.
+        for keyCode: UInt16 in [36, 53, 125, 126] {
+            XCTAssertTrue(RecentWorkspacesKeyRouting.intercepts(keyCode: keyCode, searchFocused: true))
+            XCTAssertTrue(RecentWorkspacesKeyRouting.intercepts(keyCode: keyCode, searchFocused: false))
+        }
+    }
+
+    func testHoverGateIgnoresListMovementUnderStationaryPointer() {
+        var gate = HoverSelectionGate()
+
+        XCTAssertTrue(gate.shouldSelect(at: CGPoint(x: 100, y: 200)))
+        // List scrolls under the parked pointer: same mouse location, no select.
+        XCTAssertFalse(gate.shouldSelect(at: CGPoint(x: 100, y: 200)))
+        XCTAssertFalse(gate.shouldSelect(at: CGPoint(x: 100, y: 200)))
+        // The pointer itself moves: hover selects again.
+        XCTAssertTrue(gate.shouldSelect(at: CGPoint(x: 101, y: 200)))
+    }
+
+    func testProbeUnreachableHostReturnsFalse() async {
+        let hostUp = await RemoteWorkspaceProber.isHostReachable("redmargin-no-such-host.invalid")
+        XCTAssertFalse(hostUp)
+
+        let probe = await RemoteWorkspaceProber.probeFolder(
+            host: "redmargin-no-such-host.invalid",
+            path: "~/x/"
+        )
+        XCTAssertEqual(probe, .unreachable)
+    }
+
+    func testFailureBookkeepingCarriesDate() {
+        let suiteName = "PresentationTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = RecentWorkspaceStore(defaults: defaults)
+        let item = RecentWorkspaceItem.remoteFolder(RemoteLocation(host: "wraith", path: "~/x/"))
+        store.add(item)
+
+        store.markRemoteFailure(item, reason: "timeout")
+        XCTAssertNotNil(store.items.first?.lastFailureDate)
+
+        store.clearRemoteFailure(item)
+        XCTAssertNil(store.items.first?.lastFailureDate)
+        XCTAssertNil(store.items.first?.lastFailureReason)
+    }
+}
