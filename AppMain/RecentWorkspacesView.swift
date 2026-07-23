@@ -185,6 +185,7 @@ struct RecentWorkspacesView: View {
             .padding(.horizontal, 8)
             .onTapGesture {
                 selectedID = item.id
+                open(item)
             }
         }
     }

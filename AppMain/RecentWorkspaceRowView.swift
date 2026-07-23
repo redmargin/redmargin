@@ -101,7 +101,6 @@ struct RecentWorkspaceRowView: View {
         }
         .accessibilityAction(named: "Locate", onLocate)
         .accessibilityAction(named: "Try Again", onRetry)
-        .onTapGesture(count: 2, perform: onOpen)
     }
 
     private var stateDot: some View {
