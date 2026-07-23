@@ -74,6 +74,8 @@ struct RecentWorkspaceItem: Codable, Hashable, Identifiable {
         return RecentWorkspaceItem(kind: .remoteFolder, location: .remote(normalized), lastOpened: lastOpened)
     }
 
+    private static let homeDirectory = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
+
     var storageKey: String {
         switch location {
         case .local(let url):
@@ -125,9 +127,8 @@ struct RecentWorkspaceItem: Codable, Hashable, Identifiable {
             let name = url.lastPathComponent
             guard !name.isEmpty, name != "/" else { return url.path }
             let parent = url.deletingLastPathComponent().standardizedFileURL
-            let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
             let parentName = parent.lastPathComponent
-            if parent == home || parentName.isEmpty || parentName == "/" {
+            if parent == Self.homeDirectory || parentName.isEmpty || parentName == "/" {
                 return name
             }
             return "\(parentName)/\(name)"
@@ -162,10 +163,7 @@ struct RecentWorkspaceItem: Codable, Hashable, Identifiable {
         }
         guard lastFailureReason != nil else { return nil }
         guard let lastFailureDate else { return "unreachable" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        let relative = formatter.localizedString(for: lastFailureDate, relativeTo: Date())
-        return "unreachable since \(relative)"
+        return "unreachable since \(lastFailureDate.relativeFullDescription)"
     }
 
     /// What the second row line shows; nil collapses the row to one line.

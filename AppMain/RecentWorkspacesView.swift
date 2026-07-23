@@ -15,6 +15,7 @@ struct RecentWorkspacesView: View {
     @State private var localAvailability: [String: Bool] = [:]
     @State private var gitSummaries: [String: GitWorkspaceSummary] = [:]
     @State private var liveHosts: Set<String> = []
+    @State private var scannedContextKey: Set<String> = []
     @State private var keyMonitor: Any?
     @FocusState private var searchFocused: Bool
 
@@ -34,7 +35,7 @@ struct RecentWorkspacesView: View {
             installKeyMonitorIfNeeded()
             selectFirstIfNeeded()
             refreshAvailability()
-            refreshWorkspaceContext()
+            refreshWorkspaceContext(force: true)
         }
         .onDisappear {
             removeKeyMonitor()
@@ -299,18 +300,34 @@ struct RecentWorkspacesView: View {
     }
 
     /// Loads git summaries for local folder rows and live-connection state for
-    /// remote hosts. Cached by storage key / host until the store changes.
-    private func refreshWorkspaceContext() {
+    /// remote hosts. Repos scan concurrently. `force` bypasses the same-keys
+    /// gate so reopening the window picks up fresh git state; store changes
+    /// that keep the same folders and hosts (pinning, reopening) skip the scan.
+    private func refreshWorkspaceContext(force: Bool = false) {
         let localFolders = store.items.filter { $0.kind == .localFolder && !$0.isLocalMissing }
         let remoteHosts = Set(store.items.compactMap { $0.remoteLocation?.host })
+        let contextKey = Set(localFolders.map(\.storageKey)).union(remoteHosts)
+        guard force || contextKey != scannedContextKey else { return }
+        scannedContextKey = contextKey
 
         Task {
-            var summaries: [String: GitWorkspaceSummary] = [:]
-            for item in localFolders {
-                guard let url = item.localURL else { continue }
-                if let summary = await GitStatusProvider.shared.summary(for: url) {
-                    summaries[item.storageKey] = summary
+            let folderTargets = localFolders.compactMap { item in
+                item.localURL.map { (key: item.storageKey, url: $0) }
+            }
+            let summaries = await withTaskGroup(
+                of: (String, GitWorkspaceSummary?).self,
+                returning: [String: GitWorkspaceSummary].self
+            ) { group in
+                for target in folderTargets {
+                    group.addTask {
+                        (target.key, await GitStatusProvider.shared.summary(for: target.url))
+                    }
                 }
+                var result: [String: GitWorkspaceSummary] = [:]
+                for await (key, summary) in group {
+                    if let summary { result[key] = summary }
+                }
+                return result
             }
 
             var live: Set<String> = []
@@ -320,10 +337,9 @@ struct RecentWorkspacesView: View {
                 }
             }
 
-            let resolvedSummaries = summaries
             let resolvedLive = live
             await MainActor.run {
-                gitSummaries = resolvedSummaries
+                gitSummaries = summaries
                 liveHosts = resolvedLive
             }
         }
@@ -443,37 +459,6 @@ struct RecentWorkspacesView: View {
             search = ""
         } else {
             controller.close()
-        }
-    }
-
-    fileprivate struct RedSegmentedControl<Value: Hashable>: View {
-        let options: [(label: String, value: Value)]
-        @Binding var selection: Value
-
-        var body: some View {
-            HStack(spacing: 2) {
-                ForEach(options, id: \.value) { option in
-                    Button {
-                        selection = option.value
-                    } label: {
-                        Text(option.label)
-                            .font(.system(size: 12, weight: selection == option.value ? .semibold : .regular))
-                            .foregroundStyle(selection == option.value ? Color.white : Color.secondary)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 3)
-                            .background(
-                                RoundedRectangle(cornerRadius: 5)
-                                    .fill(selection == option.value ? Color.redmarginRed : .clear)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(2)
-            .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-            )
         }
     }
 

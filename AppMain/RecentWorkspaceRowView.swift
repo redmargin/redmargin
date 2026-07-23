@@ -68,10 +68,8 @@ struct RecentWorkspaceRowView: View {
             Button("Open", action: onOpen)
                 .disabled(isUnavailable && item.localURL != nil)
             Button(item.isPinned ? "Unpin" : "Pin", action: onPinToggle)
-            if let url = item.localURL, !isUnavailable {
-                Button("Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                }
+            if item.localURL != nil, !isUnavailable {
+                Button("Reveal in Finder", action: revealInFinder)
             }
             Button("Copy Path") {
                 NSPasteboard.general.clearContents()
@@ -92,11 +90,7 @@ struct RecentWorkspaceRowView: View {
         .accessibilityAction(named: "Open", onOpen)
         .accessibilityAction(named: item.isPinned ? "Unpin" : "Pin", onPinToggle)
         .accessibilityAction(named: "Remove", onRemove)
-        .accessibilityAction(named: "Reveal in Finder") {
-            if let url = item.localURL, !isUnavailable {
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-            }
-        }
+        .accessibilityAction(named: "Reveal in Finder", revealInFinder)
         .accessibilityAction(named: "Copy Path") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(copyPath, forType: .string)
@@ -177,10 +171,8 @@ struct RecentWorkspaceRowView: View {
     private var hoverActions: some View {
         HStack(spacing: 4) {
             hoverButton(item.isPinned ? "pin.slash" : "pin", help: item.isPinned ? "Unpin" : "Pin", action: onPinToggle)
-            if let url = item.localURL, !isUnavailable {
-                hoverButton("arrow.up.forward", help: "Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                }
+            if item.localURL != nil, !isUnavailable {
+                hoverButton("arrow.up.forward", help: "Reveal in Finder", action: revealInFinder)
             }
             hoverButton("xmark", help: "Remove", action: onRemove)
         }
@@ -202,6 +194,11 @@ struct RecentWorkspaceRowView: View {
         .help(help)
     }
 
+    private func revealInFinder() {
+        guard let url = item.localURL, !isUnavailable else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
     private var iconName: String {
         item.kind.isFile ? "doc.text" : "folder"
     }
@@ -219,9 +216,7 @@ struct RecentWorkspaceRowView: View {
         if calendar.isDateInYesterday(item.lastOpened) {
             return "Yesterday"
         }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return formatter.localizedString(for: item.lastOpened, relativeTo: Date())
+        return item.lastOpened.relativeFullDescription
     }
 
     private var copyPath: String {
