@@ -103,7 +103,7 @@ struct RecentWorkspacesView: View {
 
     private var filters: some View {
         HStack(spacing: 12) {
-            Text("Tier")
+            filterLabel("Tier")
             RedSegmentedControl(
                 options: RecentWorkspaceTierFilter.allCases.map { ($0.rawValue, $0) },
                 selection: $tierFilter
@@ -111,7 +111,7 @@ struct RecentWorkspacesView: View {
             .accessibilityLabel("Tier")
             .accessibilityValue(tierFilter.rawValue)
 
-            Text("Kind")
+            filterLabel("Kind")
             RedSegmentedControl(
                 options: RecentWorkspaceKindFilter.allCases.map { ($0.rawValue, $0) },
                 selection: $kindFilter
@@ -137,6 +137,14 @@ struct RecentWorkspacesView: View {
         .foregroundStyle(.secondary)
         .frame(height: 36)
         .padding(.horizontal, 20)
+    }
+
+    /// Form-label treatment so category names read as labels, not options.
+    private func filterLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 10.5, weight: .semibold))
+            .kerning(0.6)
+            .foregroundStyle(.tertiary)
     }
 
     @ViewBuilder
