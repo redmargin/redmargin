@@ -15,4 +15,9 @@ extension NSColor {
 
 extension Color {
     static let redmarginRed = Color(nsColor: .redmarginRed)
+
+    /// Gutter palette from the renderer themes, reused for workspace state.
+    static let gutterAdded = Color(red: 0x5C / 255, green: 0xB8 / 255, blue: 0x5C / 255)
+    static let gutterModified = Color(red: 0xD4 / 255, green: 0xA2 / 255, blue: 0x4A / 255)
+    static let gutterDeleted = Color(red: 0xD4 / 255, green: 0x6A / 255, blue: 0x6A / 255)
 }

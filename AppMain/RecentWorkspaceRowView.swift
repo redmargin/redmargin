@@ -1,4 +1,5 @@
 import AppKit
+import RedmarginCore
 import SwiftUI
 
 struct RecentWorkspaceRowView: View {
@@ -6,6 +7,8 @@ struct RecentWorkspaceRowView: View {
     let isSelected: Bool
     let isFocused: Bool
     let isUnavailable: Bool
+    let gitSummary: GitWorkspaceSummary?
+    let hasLiveConnection: Bool
     let onOpen: () -> Void
     let onRetry: () -> Void
     let onPinToggle: () -> Void
@@ -15,67 +18,48 @@ struct RecentWorkspaceRowView: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
+            stateDot
             Image(systemName: iconName)
-                .font(.system(size: 24))
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                .frame(width: 28)
+                .font(.system(size: 22))
+                .foregroundStyle(isSelected ? Color.redmarginRed : Color.secondary)
+                .frame(width: 26)
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 10) {
-                    Text(item.machineLabel)
-                        .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.redmarginRed)
-                        .lineLimit(1)
-
-                    Text(item.displayTitle)
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    if isUnavailable {
-                        Label("Unavailable", systemImage: "exclamationmark.triangle")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.red)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    fusedToken
+                    Spacer(minLength: 16)
+                    if !isHovered {
+                        Text(relativeDateText)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
                     }
                 }
 
-                HStack(spacing: 4) {
-                    Text(item.pathText)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Text(" · ")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
-                    Text(relativeDateText)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
+                metaLine
             }
 
-            Spacer(minLength: 8)
-
-            if isUnavailable && item.localURL != nil && isHovered {
-                Button("Locate...", action: onLocate)
-                    .controlSize(.small)
+            if isHovered {
+                hoverActions
             }
 
             if item.isPinned {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.redmarginRed)
+                    .padding(.top, 4)
             }
 
             if isFocused {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.redmarginRed)
+                    .padding(.top, 4)
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 56)
+        .padding(.vertical, 8)
         .background(selectionBackground)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
@@ -103,7 +87,7 @@ struct RecentWorkspaceRowView: View {
             Button("Remove", action: onRemove)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(item.displayTitle) on \(item.machineLabel), \(item.kindLabel.lowercased()), at \(item.pathText)")
+        .accessibilityLabel(accessibilityRowLabel)
         .accessibilityValue(accessibilityValue)
         .accessibilityAction(named: "Open", onOpen)
         .accessibilityAction(named: item.isPinned ? "Unpin" : "Pin", onPinToggle)
@@ -122,14 +106,109 @@ struct RecentWorkspaceRowView: View {
         .onTapGesture(count: 2, perform: onOpen)
     }
 
+    private var stateDot: some View {
+        Circle()
+            .fill(dotColor)
+            .frame(width: 7, height: 7)
+            .padding(.top, 7)
+            .accessibilityHidden(true)
+    }
+
+    private var dotColor: Color {
+        switch item.availability(hasLiveConnection: hasLiveConnection) {
+        case .available: return .gutterAdded
+        case .idle: return Color.secondary.opacity(0.5)
+        case .unavailable: return .gutterDeleted
+        }
+    }
+
+    private var fusedToken: some View {
+        HStack(spacing: 0) {
+            if let machine = item.machineToken {
+                Text(machine)
+                    .foregroundStyle(Color.redmarginRed)
+                Text(":")
+                    .foregroundStyle(.tertiary)
+            }
+            Text(item.repoSlug)
+                .foregroundStyle(Color(nsColor: .labelColor))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .font(.system(size: 13.5, weight: .semibold, design: .monospaced))
+    }
+
+    @ViewBuilder
+    private var metaLine: some View {
+        switch item.meta(gitSummary: gitSummary) {
+        case .warning(let text):
+            Text(text)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.gutterDeleted)
+        case .containingPath(let path):
+            Text(path)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        case .git(let branch, let changedCount):
+            HStack(spacing: 6) {
+                Text(branch)
+                    .font(.system(size: 11.5, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                Text("·")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
+                if changedCount == 0 {
+                    Text("clean")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("\(changedCount) modified")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.gutterModified)
+                }
+            }
+        case nil:
+            EmptyView()
+        }
+    }
+
+    private var hoverActions: some View {
+        HStack(spacing: 4) {
+            hoverButton(item.isPinned ? "pin.slash" : "pin", help: item.isPinned ? "Unpin" : "Pin", action: onPinToggle)
+            if let url = item.localURL, !isUnavailable {
+                hoverButton("arrow.up.forward", help: "Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+            }
+            hoverButton("xmark", help: "Remove", action: onRemove)
+        }
+        .padding(.top, 2)
+    }
+
+    private func hoverButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 24, height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color(nsColor: .quaternarySystemFill))
+                )
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help(help)
+    }
+
     private var iconName: String {
-        if item.kind.isFile { return item.isPinned ? "doc.text.fill" : "doc.text" }
-        return item.isPinned ? "folder.fill" : "folder"
+        item.kind.isFile ? "doc.text" : "folder"
     }
 
     private var selectionBackground: some View {
         RoundedRectangle(cornerRadius: 6)
-            .fill(isSelected ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.18) : .clear)
+            .fill(isSelected ? Color.redmarginRed.opacity(0.16) : .clear)
     }
 
     private var relativeDateText: String {
@@ -150,6 +229,11 @@ struct RecentWorkspaceRowView: View {
             return url.path
         }
         return item.remoteLocation?.displayString ?? item.locationText
+    }
+
+    private var accessibilityRowLabel: String {
+        let machine = item.machineToken ?? "this Mac"
+        return "\(item.repoSlug) on \(machine), \(item.kindLabel.lowercased())"
     }
 
     private var accessibilityValue: String {

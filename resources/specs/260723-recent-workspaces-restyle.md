@@ -31,13 +31,13 @@ Implement variant C3 of the approved prototype (`resources/specs/260723-recent-w
 
 ### Acceptance Criteria
 
-- [ ] **A1** Rows show machine and repo in terminal notation, machine in red, and local entries carry no machine part
-- [ ] **A2** A second row line appears only for local git repositories (branch and state), file entries (containing folder), or unavailable entries (red warning)
-- [ ] **A3** Each row leads with a green, grey, or red dot matching the workspace's availability
+- [x] **A1** Rows show machine and repo in terminal notation, machine in red, and local entries carry no machine part
+- [x] **A2** A second row line appears only for local git repositories (branch and state), file entries (containing folder), or unavailable entries (red warning)
+- [x] **A3** Each row leads with a green, grey, or red dot matching the workspace's availability
 - [ ] **A4** Hovering a row shows pin, reveal, and remove actions, and each performs its action
 - [ ] **A5** No system blue remains anywhere in the window; selection, filters, buttons, and markers all use Redmargin red
-- [ ] **A6** Searching, filtering, pinning, opening, and keyboard navigation behave the same as before the restyle
-- [ ] **A7** The full test suite passes on the dev machine
+- [x] **A6** Searching, filtering, pinning, opening, and keyboard navigation behave the same as before the restyle
+- [x] **A7** The full test suite passes on the dev machine
 
 ### Out of scope
 
@@ -72,15 +72,15 @@ The design itself was validated with Marco across three prototype rounds (`26072
 
 **Phase 1: Model and providers**
 
-- [ ] **C1** Add `repoSlug`, `machineToken`, and meta-line decision helpers to `RecentWorkspaceItem` in `AppMain/RecentWorkspaces.swift` (parent/name slug, home-directory rule, filename for file kinds, replacing `machineLabel`/`pathText` usage)
-- [ ] **C2** Add `GitWorkspaceSummary` (branch, changed-file count) with a `summary(for:)` method to `src/Core/Git/GitStatusProvider.swift`, reusing repo-root detection and porcelain parsing plus one branch lookup
-- [ ] **C3** Add read-only `hasLiveConnection(host:)` to `SSHConnectionManager` in `src/Core/Remote/Client/SSHConnectionManager.swift` and a `WorkspaceAvailability` dot mapping (green/grey/red) next to the row model in `AppMain/RecentWorkspaces.swift`
+- [x] **C1** Add `repoSlug`, `machineToken`, and meta-line decision helpers to `RecentWorkspaceItem` in `AppMain/RecentWorkspaces.swift` (parent/name slug, home-directory rule, filename for file kinds, replacing `machineLabel`/`pathText` usage)
+- [x] **C2** Add `GitWorkspaceSummary` (branch, changed-file count) with a `summary(for:)` method to `src/Core/Git/GitStatusProvider.swift`, reusing repo-root detection and porcelain parsing plus one branch lookup
+- [x] **C3** Add read-only `hasLiveConnection(host:)` to `SSHConnectionManager` in `src/Core/Remote/Client/SSHConnectionManager.swift` and a `WorkspaceAvailability` dot mapping (green/grey/red) next to the row model in `AppMain/RecentWorkspaces.swift`
 
 **Phase 2: Views**
 
-- [ ] **C4** Rebuild `AppMain/RecentWorkspaceRowView.swift` to prototype C3: leading dot, fused monospace token with red machine and bright repo, right-aligned faint date, adaptive meta line, hover actions (pin, reveal in Finder for locals, remove), context menu retained
-- [ ] **C5** Restyle `AppMain/RecentWorkspacesView.swift` to the red accent language: red selection tint, custom red segmented filter controls, styled footer buttons (quiet bordered Clear Missing, red-text bordered Clear All..., solid red Open), red pin toggle and markers
-- [ ] **C6** Load git summaries asynchronously in `RecentWorkspacesView` for visible local folder rows, cached by storage key, refreshed on window appear and on store changes
+- [x] **C4** Rebuild `AppMain/RecentWorkspaceRowView.swift` to prototype C3: leading dot, fused monospace token with red machine and bright repo, right-aligned faint date, adaptive meta line, hover actions (pin, reveal in Finder for locals, remove), context menu retained
+- [x] **C5** Restyle `AppMain/RecentWorkspacesView.swift` to the red accent language: red selection tint, custom red segmented filter controls, styled footer buttons (quiet bordered Clear Missing, red-text bordered Clear All..., solid red Open), red pin toggle and markers
+- [x] **C6** Load git summaries asynchronously in `RecentWorkspacesView` for visible local folder rows, cached by storage key, refreshed on window appear and on store changes
 
 ---
 
@@ -88,22 +88,32 @@ The design itself was validated with Marco across three prototype rounds (`26072
 
 ### Unit Tests (`Tests/RecentWorkspacePresentationTests.swift`)
 
-- [ ] **T1** `testRepoSlugDerivation` - parent/name slugs, home-directory rule, file entries, remote path variants
-- [ ] **T2** `testMetaLineDecision` - git repo shows branch/state, file entries show containing folder, plain remote folders none, unavailable entries show the warning
-- [ ] **T3** `testAvailabilityDotMapping` - local present/missing, remote with recorded failure, remote idle, remote with live connection
+- [x] **T1** `testRepoSlugDerivation` - parent/name slugs, home-directory rule, file entries, remote path variants
+- [x] **T2** `testMetaLineDecision` - git repo shows branch/state, file entries show containing folder, plain remote folders none, unavailable entries show the warning
+- [x] **T3** `testAvailabilityDotMapping` - local present/missing, remote with recorded failure, remote idle, remote with live connection
 
 ### Integration Tests (`Tests/GitWorkspaceSummaryTests.swift`)
 
-- [ ] **T4** `testSummaryOnRealRepo` - temp git repo via `GitTestHelper`: correct branch name, clean state, N-modified count after edits
-- [ ] **T5** `testSummaryOutsideRepo` - non-repo folder yields no summary
-- [ ] **T6** `testHasLiveConnectionDoesNotConnect` - the accessor reports state without creating an SSH connection
+- [x] **T4** `testSummaryOnRealRepo` - temp git repo via `GitTestHelper`: correct branch name, clean state, N-modified count after edits
+- [x] **T5** `testSummaryOutsideRepo` - non-repo folder yields no summary
+- [x] **T6** `testHasLiveConnectionDoesNotConnect` - the accessor reports state without creating an SSH connection
 
 ### Updated Tests (`Tests/RecentWorkspacesTests.swift`, `Tests/PaletteSearchTests.swift`, `Tests/MainMenuTests.swift`)
 
-- [ ] **T7** Update row/model assertions from `machineLabel`/`pathText` to the new helpers and accessibility labels; full suite green via `./resources/scripts/build.sh`
+- [x] **T7** Update row/model assertions from `machineLabel`/`pathText` to the new helpers and accessibility labels; full suite green via `./resources/scripts/build.sh`
 
 ---
 
 ## Build Log
 
-Populated at implement time.
+- **C1** `repoSlug`, `machineToken`, `containingFolderText`, `unavailabilityWarning`, `meta(gitSummary:)`, `availability(hasLiveConnection:)` on `RecentWorkspaceItem`; `lastFailureDate` added and maintained by the store (mark/clear/add/relocate). Old `machineLabel`/`pathText` removed.
+- **C2** `GitWorkspaceSummary` + `summary(for:)` on `GitStatusProvider`, reusing repo-root detection and porcelain parsing plus one `rev-parse --abbrev-ref HEAD` call.
+- **C3** `hasLiveConnection(host:)` dictionary-lookup accessor on `SSHConnectionManager`; `WorkspaceAvailability` mapping in `RecentWorkspaces.swift`.
+- **C4** `RecentWorkspaceRowView` rebuilt to prototype C3: state dot (gutter green/grey/red), fused monospace token (brand-red machine, tertiary colon, bright repo), right-aligned faint date, adaptive meta line (git amber count / containing path / red warning), hover actions (pin, reveal for locals, remove), context menu retained. Gutter colors centralized in `BrandColor.swift`.
+- **C5** `RecentWorkspacesView` restyled: red selection carried by the row, custom `RedSegmentedControl` for Tier/Kind, red pin toggle, footer with bordered Clear Missing, red-text bordered Clear All..., borderedProminent red-tinted Open.
+- **C6** `refreshWorkspaceContext()` loads git summaries for present local folders and live-connection state per remote host off the main actor, cached in `@State`, refreshed on appear and store change.
+- **T1-T3** `Tests/RecentWorkspacePresentationTests.swift`: slug derivation (local nested/home-direct, remote ~/, /opt, files), meta decisions (git/path/warning/none, "unreachable since" phrasing, missing local), availability mapping, failure-date bookkeeping.
+- **T4-T6** `Tests/GitWorkspaceSummaryTests.swift`: real temp repo via `GitTestHelper` (branch, clean 0, 2 changed after edits), non-repo nil, `hasLiveConnection` leaves `connectStartCount` unchanged on `.shared` (private init forbids a fresh instance).
+- **T7** `PaletteSearchTests` moved to `machineToken`/`repoSlug`. Full suite via `./resources/scripts/build.sh`: 438 tests, 0 failures.
+- During the walk the windowless test fix was hardened: activation policy alone failed (a `FolderWindowTests` window reached the screen), so `WindowlessTestCase` now also replaces `NSWindow` ordering methods with no-ops in the test process.
+- **A1-A3, A6, A7** confirmed via the tests above plus the full green suite (existing search/filter/pin/open tests unchanged and passing). **A4/A5** are visual/interactive checks awaiting Marco's look at the running app.

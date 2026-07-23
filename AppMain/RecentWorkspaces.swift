@@ -36,6 +36,7 @@ struct RecentWorkspaceItem: Codable, Hashable, Identifiable {
     var isPinned: Bool
     var lastOpened: Date
     var lastFailureReason: String?
+    var lastFailureDate: Date?
 
     init(
         id: UUID = UUID(),
@@ -43,7 +44,8 @@ struct RecentWorkspaceItem: Codable, Hashable, Identifiable {
         location: RecentWorkspaceLocation,
         isPinned: Bool = false,
         lastOpened: Date = Date(),
-        lastFailureReason: String? = nil
+        lastFailureReason: String? = nil,
+        lastFailureDate: Date? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -51,6 +53,7 @@ struct RecentWorkspaceItem: Codable, Hashable, Identifiable {
         self.isPinned = isPinned
         self.lastOpened = lastOpened
         self.lastFailureReason = lastFailureReason
+        self.lastFailureDate = lastFailureDate
     }
 
     static func localFile(_ url: URL, lastOpened: Date = Date()) -> RecentWorkspaceItem {
@@ -105,17 +108,83 @@ struct RecentWorkspaceItem: Codable, Hashable, Identifiable {
         kind.isFile ? "File" : "Folder"
     }
 
-    /// Machine the workspace lives on: the remote host, or "local".
-    var machineLabel: String {
-        remoteLocation?.host ?? "local"
+    /// Machine part of the fused token: the remote host, or nil for local
+    /// items, whose rows show no machine part at all.
+    var machineToken: String? {
+        remoteLocation?.host
     }
 
-    /// Location without the host prefix; the machine is shown separately.
-    var pathText: String {
-        switch location {
-        case .local(let url): return url.displayPath
-        case .remote(let location): return location.path
+    /// Repo identity for the row token: parent/name, name alone when the
+    /// parent is the home directory, the file name for file kinds.
+    var repoSlug: String {
+        if kind.isFile {
+            return displayTitle
         }
+        switch location {
+        case .local(let url):
+            let name = url.lastPathComponent
+            guard !name.isEmpty, name != "/" else { return url.path }
+            let parent = url.deletingLastPathComponent().standardizedFileURL
+            let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
+            let parentName = parent.lastPathComponent
+            if parent == home || parentName.isEmpty || parentName == "/" {
+                return name
+            }
+            return "\(parentName)/\(name)"
+        case .remote(let location):
+            let components = location.path.split(separator: "/").map(String.init)
+                .filter { $0 != "~" }
+            guard let name = components.last else { return location.host }
+            guard components.count >= 2 else { return name }
+            return "\(components[components.count - 2])/\(name)"
+        }
+    }
+
+    /// Folder containing a file entry, in the location's own notation.
+    var containingFolderText: String {
+        switch location {
+        case .local(let url):
+            return url.deletingLastPathComponent().displayPath
+        case .remote(let location):
+            let trimmed = location.path.hasSuffix("/")
+                ? String(location.path.dropLast())
+                : location.path
+            guard let lastSlash = trimmed.lastIndex(of: "/") else { return trimmed }
+            let parent = String(trimmed[..<lastSlash])
+            return parent.isEmpty ? "/" : parent + "/"
+        }
+    }
+
+    /// Red warning for the meta line, or nil when the item is healthy.
+    var unavailabilityWarning: String? {
+        if localURL != nil {
+            return isLocalMissing ? "missing" : nil
+        }
+        guard lastFailureReason != nil else { return nil }
+        guard let lastFailureDate else { return "unreachable" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        let relative = formatter.localizedString(for: lastFailureDate, relativeTo: Date())
+        return "unreachable since \(relative)"
+    }
+
+    /// What the second row line shows; nil collapses the row to one line.
+    func meta(gitSummary: GitWorkspaceSummary?) -> RecentWorkspaceMeta? {
+        if let warning = unavailabilityWarning { return .warning(warning) }
+        if kind.isFile { return .containingPath(containingFolderText) }
+        if let gitSummary {
+            return .git(branch: gitSummary.branch, changedCount: gitSummary.changedCount)
+        }
+        return nil
+    }
+
+    /// State-dot color bucket; the caller supplies live-connection knowledge.
+    func availability(hasLiveConnection: Bool) -> WorkspaceAvailability {
+        if localURL != nil {
+            return isLocalMissing ? .unavailable : .available
+        }
+        if lastFailureReason != nil { return .unavailable }
+        return hasLiveConnection ? .available : .idle
     }
 
     var tierLabel: String {
@@ -140,6 +209,18 @@ struct RecentWorkspaceItem: Codable, Hashable, Identifiable {
         }
         return kind == .localFolder && !isDirectory.boolValue
     }
+}
+
+enum RecentWorkspaceMeta: Equatable {
+    case warning(String)
+    case containingPath(String)
+    case git(branch: String, changedCount: Int)
+}
+
+enum WorkspaceAvailability {
+    case available
+    case idle
+    case unavailable
 }
 
 enum RecentWorkspaceTierFilter: String, CaseIterable, Identifiable {
@@ -194,6 +275,7 @@ final class RecentWorkspaceStore: ObservableObject {
             next.id = items[existingIndex].id
             next.isPinned = items[existingIndex].isPinned
             next.lastFailureReason = nil
+            next.lastFailureDate = nil
             items.remove(at: existingIndex)
         }
         items.append(next)
@@ -227,17 +309,24 @@ final class RecentWorkspaceStore: ObservableObject {
         update(item) {
             $0.location = .local(url.standardizedFileURL)
             $0.lastFailureReason = nil
+            $0.lastFailureDate = nil
             $0.lastOpened = Date()
         }
         normalizeAndPersist()
     }
 
     func markRemoteFailure(_ item: RecentWorkspaceItem, reason: String) {
-        update(item) { $0.lastFailureReason = reason }
+        update(item) {
+            $0.lastFailureReason = reason
+            $0.lastFailureDate = Date()
+        }
     }
 
     func clearRemoteFailure(_ item: RecentWorkspaceItem) {
-        update(item) { $0.lastFailureReason = nil }
+        update(item) {
+            $0.lastFailureReason = nil
+            $0.lastFailureDate = nil
+        }
     }
 
     func filtered(

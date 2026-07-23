@@ -8,6 +8,12 @@ public actor SSHConnectionManager {
 
     private var connections: [String: SSHConnection] = [:]
 
+    /// Read-only: whether a connection object currently exists for the host.
+    /// Never creates or probes a connection.
+    public func hasLiveConnection(host: String) -> Bool {
+        connections[host] != nil
+    }
+
     /// In-flight connect tasks, one per host, so concurrent `ensureConnected`
     /// callers coalesce onto a single underlying connect attempt.
     private var inFlightConnects: [String: Task<Void, Error>] = [:]

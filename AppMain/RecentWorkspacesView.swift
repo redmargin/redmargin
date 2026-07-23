@@ -1,4 +1,5 @@
 import AppKit
+import RedmarginCore
 import SwiftUI
 
 struct RecentWorkspacesView: View {
@@ -12,6 +13,8 @@ struct RecentWorkspacesView: View {
     @State private var pinnedOnly = false
     @State private var selectedID: UUID?
     @State private var localAvailability: [String: Bool] = [:]
+    @State private var gitSummaries: [String: GitWorkspaceSummary] = [:]
+    @State private var liveHosts: Set<String> = []
     @State private var keyMonitor: Any?
     @FocusState private var searchFocused: Bool
 
@@ -31,12 +34,14 @@ struct RecentWorkspacesView: View {
             installKeyMonitorIfNeeded()
             selectFirstIfNeeded()
             refreshAvailability()
+            refreshWorkspaceContext()
         }
         .onDisappear {
             removeKeyMonitor()
         }
         .onChange(of: store.items) {
             refreshAvailability()
+            refreshWorkspaceContext()
             selectFirstIfNeeded()
         }
         .onChange(of: search) {
@@ -94,22 +99,20 @@ struct RecentWorkspacesView: View {
 
     private var filters: some View {
         HStack(spacing: 12) {
-            Picker("Tier", selection: $tierFilter) {
-                ForEach(RecentWorkspaceTierFilter.allCases) { filter in
-                    Text(filter.rawValue).tag(filter)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 210)
+            Text("Tier")
+            RedSegmentedControl(
+                options: RecentWorkspaceTierFilter.allCases.map { ($0.rawValue, $0) },
+                selection: $tierFilter
+            )
+            .accessibilityLabel("Tier")
             .accessibilityValue(tierFilter.rawValue)
 
-            Picker("Kind", selection: $kindFilter) {
-                ForEach(RecentWorkspaceKindFilter.allCases) { filter in
-                    Text(filter.rawValue).tag(filter)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 260)
+            Text("Kind")
+            RedSegmentedControl(
+                options: RecentWorkspaceKindFilter.allCases.map { ($0.rawValue, $0) },
+                selection: $kindFilter
+            )
+            .accessibilityLabel("Kind")
             .accessibilityValue(kindFilter.rawValue)
 
             Spacer()
@@ -118,6 +121,7 @@ struct RecentWorkspacesView: View {
                 pinnedOnly.toggle()
             } label: {
                 Image(systemName: pinnedOnly ? "pin.fill" : "pin")
+                    .foregroundStyle(pinnedOnly ? Color.redmarginRed : Color.secondary)
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(.borderless)
@@ -125,6 +129,8 @@ struct RecentWorkspacesView: View {
             .accessibilityLabel("Pinned only")
             .accessibilityValue(pinnedOnly ? "On" : "Off")
         }
+        .font(.system(size: 13))
+        .foregroundStyle(.secondary)
         .frame(height: 36)
         .padding(.horizontal, 20)
     }
@@ -166,6 +172,8 @@ struct RecentWorkspacesView: View {
                 isSelected: selectedID == item.id,
                 isFocused: selectedID == item.id,
                 isUnavailable: isUnavailable(item),
+                gitSummary: gitSummaries[item.storageKey],
+                hasLiveConnection: item.remoteLocation.map { liveHosts.contains($0.host) } ?? false,
                 onOpen: { open(item) },
                 onRetry: { retry(item) },
                 onPinToggle: { togglePin(item) },
@@ -181,18 +189,19 @@ struct RecentWorkspacesView: View {
     }
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 8) {
             Button("Clear Missing") {
                 store.clearMissingLocal()
                 refreshAvailability()
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.bordered)
             .disabled(!hasMissingLocal)
 
             Button("Clear All...") {
                 confirmClearAll()
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.bordered)
+            .foregroundStyle(Color.redmarginRed)
             .disabled(store.items.isEmpty)
 
             Spacer()
@@ -208,6 +217,8 @@ struct RecentWorkspacesView: View {
             Button("Open") {
                 openSelected()
             }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.redmarginRed)
             .keyboardShortcut(.return, modifiers: [])
             .disabled(selectedItem == nil || selectedItem.map(isUnavailable) == true)
         }
@@ -285,6 +296,37 @@ struct RecentWorkspacesView: View {
         if item.lastFailureReason != nil { return true }
         guard item.localURL != nil else { return false }
         return localAvailability[item.storageKey] == false
+    }
+
+    /// Loads git summaries for local folder rows and live-connection state for
+    /// remote hosts. Cached by storage key / host until the store changes.
+    private func refreshWorkspaceContext() {
+        let localFolders = store.items.filter { $0.kind == .localFolder && !$0.isLocalMissing }
+        let remoteHosts = Set(store.items.compactMap { $0.remoteLocation?.host })
+
+        Task {
+            var summaries: [String: GitWorkspaceSummary] = [:]
+            for item in localFolders {
+                guard let url = item.localURL else { continue }
+                if let summary = await GitStatusProvider.shared.summary(for: url) {
+                    summaries[item.storageKey] = summary
+                }
+            }
+
+            var live: Set<String> = []
+            for host in remoteHosts {
+                if await SSHConnectionManager.shared.hasLiveConnection(host: host) {
+                    live.insert(host)
+                }
+            }
+
+            let resolvedSummaries = summaries
+            let resolvedLive = live
+            await MainActor.run {
+                gitSummaries = resolvedSummaries
+                liveHosts = resolvedLive
+            }
+        }
     }
 
     private func refreshAvailability() {
@@ -401,6 +443,37 @@ struct RecentWorkspacesView: View {
             search = ""
         } else {
             controller.close()
+        }
+    }
+
+    fileprivate struct RedSegmentedControl<Value: Hashable>: View {
+        let options: [(label: String, value: Value)]
+        @Binding var selection: Value
+
+        var body: some View {
+            HStack(spacing: 2) {
+                ForEach(options, id: \.value) { option in
+                    Button {
+                        selection = option.value
+                    } label: {
+                        Text(option.label)
+                            .font(.system(size: 12, weight: selection == option.value ? .semibold : .regular))
+                            .foregroundStyle(selection == option.value ? Color.white : Color.secondary)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5)
+                                    .fill(selection == option.value ? Color.redmarginRed : .clear)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(2)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
         }
     }
 

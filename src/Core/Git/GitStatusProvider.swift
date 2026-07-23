@@ -20,10 +20,49 @@ public struct GitStatusSnapshot: Codable, Equatable {
     public static let empty = GitStatusSnapshot(repoRoot: nil, statuses: [:])
 }
 
+/// Branch plus changed-file count for a workspace folder's repository.
+public struct GitWorkspaceSummary: Equatable {
+    public let branch: String
+    public let changedCount: Int
+
+    public init(branch: String, changedCount: Int) {
+        self.branch = branch
+        self.changedCount = changedCount
+    }
+}
+
 public actor GitStatusProvider {
     public static let shared = GitStatusProvider()
 
     public init() {}
+
+    /// Summary for a workspace folder, or nil when it is not inside a repo.
+    public func summary(for directory: URL) async -> GitWorkspaceSummary? {
+        let workingDirectory = resolvedDirectory(for: directory)
+
+        guard let repoRoot = await repoRoot(for: workingDirectory) else {
+            return nil
+        }
+
+        let branch = await currentBranch(in: repoRoot) ?? "HEAD"
+        let statuses = await runGitStatus(in: repoRoot)
+        return GitWorkspaceSummary(branch: branch, changedCount: statuses.count)
+    }
+
+    private func currentBranch(in repoRoot: URL) async -> String? {
+        do {
+            let result = try await ProcessRunner.run(
+                executable: "git",
+                arguments: GitCommand.arguments(["-C", repoRoot.path, "rev-parse", "--abbrev-ref", "HEAD"]),
+                timeout: 5
+            )
+            guard result.exitCode == 0 else { return nil }
+            let branch = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            return branch.isEmpty ? nil : branch
+        } catch {
+            return nil
+        }
+    }
 
     public func status(for directory: URL) async -> GitStatusSnapshot {
         let workingDirectory = resolvedDirectory(for: directory)
