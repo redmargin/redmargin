@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Recent Workspaces, iterations on C</title>
+<style>
+  :root {
+    --bg: #161618;
+    --win-bg: #1e1e21;
+    --panel: #232326;
+    --row-hover: #2a2a2e;
+    --border: #3a3a3e;
+    --text: #d9d9d6;
+    --muted: #9d9d9a;
+    --faint: #6e6e6c;
+    --heading: #ebebea;
+    --red-text: #c75259;
+    --red-fill: #a64047;
+    --red-tint: rgba(166, 64, 71, 0.16);
+    --added: #5cb85c;
+    --modified: #d4a24a;
+    --deleted: #d46a6a;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, "Helvetica Neue", sans-serif;
+    padding: 48px 24px 96px;
+  }
+  main { max-width: 980px; margin: 0 auto; }
+  h1 { color: var(--heading); font-size: 22px; margin-bottom: 6px; }
+  .intro { color: var(--muted); margin-bottom: 40px; max-width: 76ch; }
+  .variant { margin-bottom: 64px; }
+  .variant > h2 { color: var(--heading); font-size: 16px; margin-bottom: 4px; }
+  .variant > p { color: var(--muted); font-size: 13px; margin-bottom: 14px; max-width: 76ch; }
+
+  .window {
+    background: var(--win-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  }
+  .titlebar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px; background: #19191b;
+    border-bottom: 1px solid var(--border);
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: #3a3a3e; }
+  .dot.r { background: #d45c5c; } .dot.y { background: #d4a24a; } .dot.g { background: #5cb85c; }
+  .titlebar span { color: var(--muted); font-size: 13px; font-weight: 600; margin-left: 8px; }
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; }
+  .header h3 { color: var(--heading); font-size: 20px; font-weight: 700; }
+  .search {
+    display: flex; align-items: center; gap: 6px;
+    width: 230px; padding: 6px 10px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--faint); font-size: 13px;
+  }
+  .filters {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 20px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px; color: var(--muted);
+  }
+  .seg { display: flex; background: var(--panel); border-radius: 7px; padding: 2px; }
+  .seg span { padding: 3px 12px; border-radius: 5px; }
+  .seg .on { background: var(--red-fill); color: #fff; font-weight: 600; }
+  .pin-toggle { margin-left: auto; color: var(--muted); }
+  .section { color: var(--muted); font-size: 11px; font-weight: 700; padding: 12px 20px 4px; }
+  .rows { padding: 0 8px 8px; }
+  .row {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 8px 12px; border-radius: 6px;
+  }
+  .row.hovered, .row:hover { background: var(--row-hover); }
+  .row.sel { background: var(--red-tint); }
+  .row .icon { flex: none; width: 24px; color: var(--muted); margin-top: 1px; }
+  .row.sel .icon { color: var(--red-text); }
+  .body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .line1 { display: flex; align-items: baseline; }
+  .fused { font-family: var(--mono); font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+  .machine { color: var(--red-text); }
+  .colon { color: var(--faint); }
+  .repo { color: var(--heading); }
+  .meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; flex-wrap: wrap; }
+  .meta .sep { color: var(--faint); }
+  .branch { font-family: var(--mono); font-size: 11.5px; }
+  .added { color: var(--added); font-family: var(--mono); font-size: 11.5px; }
+  .modified { color: var(--modified); font-family: var(--mono); font-size: 11.5px; }
+  .deleted { color: var(--deleted); font-family: var(--mono); font-size: 11.5px; }
+  .ahead { color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
+  .date-r { margin-left: auto; color: var(--faint); font-size: 12px; white-space: nowrap; padding-left: 16px; }
+  .state { flex: none; width: 7px; height: 7px; border-radius: 50%; margin: 7px 0 0 2px; }
+  .state.ok { background: var(--added); }
+  .state.off { background: var(--deleted); }
+  .state.idle { background: var(--faint); }
+  .warn { color: var(--deleted); }
+  .actions { display: flex; gap: 4px; margin-left: 12px; }
+  .actions span {
+    width: 24px; height: 24px; display: grid; place-items: center;
+    border-radius: 5px; background: var(--panel); color: var(--muted); font-size: 12px;
+  }
+  .actions span:hover { color: var(--red-text); }
+
+  .footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 13px;
+  }
+  .footer .left { display: flex; gap: 8px; }
+  .btn {
+    display: inline-block; padding: 4px 14px; border-radius: 6px;
+    font-size: 12.5px; font-weight: 500;
+    border: 1px solid var(--border); color: var(--muted); background: transparent;
+  }
+  .btn:hover { background: var(--row-hover); }
+  .btn.danger { color: var(--red-text); border-color: rgba(166, 64, 71, 0.45); }
+  .open-btn {
+    background: var(--red-fill); color: #fff;
+    font-weight: 600; font-size: 13px;
+    padding: 5px 18px; border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Iterations on C</h1>
+  <p class="intro">Base stays C: <span class="fused"><span class="machine">wraith</span><span class="colon">:</span><span class="repo">engagement</span></span> on line 1, a meta line that earns its place, red as the only accent. All three now style the footer: bordered quiet button for Clear Missing, red-text destructive button for Clear All, solid red Open. Row 1 is selected.</p>
+
+  <!-- ============================================================ C1 -->
+  <section class="variant">
+    <h2>C1 · Git status bar</h2>
+    <p>The meta line becomes a miniature git status using the gutter palette the sidebar already speaks: branch, ahead/behind, then added/modified/deleted counts in their own colors (+2 green, ~3 amber, -1 red). Date moves to the right edge of line 1 so line 2 is pure repo state. Remotes show the date until the SSH helper reports their status.</p>
+    <div class="window">
+      <div class="titlebar"><i class="dot r"></i><i class="dot y"></i><i class="dot g"></i><span>Recent Workspaces</span></div>
+      <div class="header"><h3>Recent Workspaces</h3><div class="search">&#128269; Search</div></div>
+      <div class="filters">Tier <span class="seg"><span class="on">All</span><span>Local</span><span>Remote</span></span> Kind <span class="seg"><span class="on">All Kinds</span><span>Files</span><span>Folders</span></span><span class="pin-toggle">&#128204;</span></div>
+      <div class="section">RECENT</div>
+      <div class="rows">
+        <div class="row sel"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="repo">dev/detours</span></span><span class="date-r">Yesterday</span></span><span class="meta"><span class="branch">main</span><span class="ahead">&#8593;2</span><span class="sep">&#183;</span><span class="added">+2</span><span class="modified">~3</span><span class="deleted">-1</span></span></span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">wraith</span><span class="colon">:</span><span class="repo">engagement</span></span><span class="date-r">Yesterday</span></span></span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="repo">dev/ansible</span></span><span class="date-r">2 days ago</span></span><span class="meta"><span class="branch">main</span><span class="sep">&#183;</span><span>clean</span></span></span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">spamnesia-dev</span><span class="colon">:</span><span class="repo">opt/spamnesia</span></span><span class="date-r">2 days ago</span></span></span></div>
+        <div class="row"><span class="icon">&#128196;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">wraith</span><span class="colon">:</span><span class="repo">Details Prep.md</span></span><span class="date-r">2 days ago</span></span><span class="meta"><span>~/engagement/report/deliverables/</span></span></span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">cognel-dev-next</span><span class="colon">:</span><span class="repo">opt/cognel-app</span></span><span class="date-r">5 days ago</span></span></span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">azooco-dev</span><span class="colon">:</span><span class="repo">opt/azooco</span></span><span class="date-r">1 week ago</span></span></span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="repo">dotfiles</span></span><span class="date-r">1 week ago</span></span><span class="meta"><span class="branch">main</span><span class="sep">&#183;</span><span>clean</span></span></span></div>
+      </div>
+      <div class="footer"><span class="left"><span class="btn">Clear Missing</span><span class="btn danger">Clear All...</span></span><span>1 selected</span><span class="open-btn">Open</span></div>
+    </div>
+  </section>
+
+  <!-- ============================================================ C2 -->
+  <section class="variant">
+    <h2>C2 · Adaptive height</h2>
+    <p>Literal reading of "earns its place": a row gets a second line only when there is something to say. Local git repos show branch and state, deep files show their path, everything else collapses to a single line. Denser where the list is boring, informative where it is not.</p>
+    <div class="window">
+      <div class="titlebar"><i class="dot r"></i><i class="dot y"></i><i class="dot g"></i><span>Recent Workspaces</span></div>
+      <div class="header"><h3>Recent Workspaces</h3><div class="search">&#128269; Search</div></div>
+      <div class="filters">Tier <span class="seg"><span class="on">All</span><span>Local</span><span>Remote</span></span> Kind <span class="seg"><span class="on">All Kinds</span><span>Files</span><span>Folders</span></span><span class="pin-toggle">&#128204;</span></div>
+      <div class="section">RECENT</div>
+      <div class="rows">
+        <div class="row sel"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="repo">dev/detours</span></span><span class="date-r">Yesterday</span></span><span class="meta"><span class="branch">main</span><span class="sep">&#183;</span><span class="modified">3 modified</span></span></span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">wraith</span><span class="colon">:</span><span class="repo">engagement</span></span><span class="date-r">Yesterday</span></span></span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="repo">dev/ansible</span></span><span class="date-r">2 days ago</span></span><span class="meta"><span class="branch">main</span><span class="sep">&#183;</span><span>clean</span></span></span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">spamnesia-dev</span><span class="colon">:</span><span class="repo">opt/spamnesia</span></span><span class="date-r">2 days ago</span></span></span></div>
+        <div class="row"><span class="icon">&#128196;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">wraith</span><span class="colon">:</span><span class="repo">Details Prep.md</span></span><span class="date-r">2 days ago</span></span><span class="meta"><span>~/engagement/report/deliverables/</span></span></span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">cognel-dev-next</span><span class="colon">:</span><span class="repo">opt/cognel-app</span></span><span class="date-r">5 days ago</span></span></span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">azooco-dev</span><span class="colon">:</span><span class="repo">opt/azooco</span></span><span class="date-r">1 week ago</span></span></span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="repo">dotfiles</span></span><span class="date-r">1 week ago</span></span><span class="meta"><span class="branch">main</span><span class="sep">&#183;</span><span>clean</span></span></span></div>
+      </div>
+      <div class="footer"><span class="left"><span class="btn">Clear Missing</span><span class="btn danger">Clear All...</span></span><span>1 selected</span><span class="open-btn">Open</span></div>
+    </div>
+  </section>
+
+  <!-- ============================================================ C3 -->
+  <section class="variant">
+    <h2>C3 · State dot and hover actions</h2>
+    <p>A small state dot leads each row: green for reachable or present, grey for an idle remote connection, red for unreachable or missing, replacing the old Unavailable chip. Hovering a row (shown on the cognel row) reveals inline actions: pin, reveal, remove, so management stops hiding in the context menu. Meta stays as in C2.</p>
+    <div class="window">
+      <div class="titlebar"><i class="dot r"></i><i class="dot y"></i><i class="dot g"></i><span>Recent Workspaces</span></div>
+      <div class="header"><h3>Recent Workspaces</h3><div class="search">&#128269; Search</div></div>
+      <div class="filters">Tier <span class="seg"><span class="on">All</span><span>Local</span><span>Remote</span></span> Kind <span class="seg"><span class="on">All Kinds</span><span>Files</span><span>Folders</span></span><span class="pin-toggle">&#128204;</span></div>
+      <div class="section">RECENT</div>
+      <div class="rows">
+        <div class="row sel"><span class="state ok"></span><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="repo">dev/detours</span></span><span class="date-r">Yesterday</span></span><span class="meta"><span class="branch">main</span><span class="sep">&#183;</span><span class="modified">3 modified</span></span></span></div>
+        <div class="row"><span class="state ok"></span><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">wraith</span><span class="colon">:</span><span class="repo">engagement</span></span><span class="date-r">Yesterday</span></span></span></div>
+        <div class="row"><span class="state ok"></span><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="repo">dev/ansible</span></span><span class="date-r">2 days ago</span></span><span class="meta"><span class="branch">main</span><span class="sep">&#183;</span><span>clean</span></span></span></div>
+        <div class="row"><span class="state idle"></span><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">spamnesia-dev</span><span class="colon">:</span><span class="repo">opt/spamnesia</span></span><span class="date-r">2 days ago</span></span></span></div>
+        <div class="row"><span class="state off"></span><span class="icon">&#128196;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">wraith</span><span class="colon">:</span><span class="repo">Details Prep.md</span></span><span class="date-r">2 days ago</span></span><span class="meta"><span class="warn">unreachable since yesterday</span></span></span></div>
+        <div class="row hovered"><span class="state idle"></span><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">cognel-dev-next</span><span class="colon">:</span><span class="repo">opt/cognel-app</span></span></span></span><span class="actions"><span>&#128204;</span><span>&#8599;</span><span>&#10005;</span></span></div>
+        <div class="row"><span class="state idle"></span><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="machine">azooco-dev</span><span class="colon">:</span><span class="repo">opt/azooco</span></span><span class="date-r">1 week ago</span></span></span></div>
+        <div class="row"><span class="state ok"></span><span class="icon">&#128193;</span><span class="body"><span class="line1"><span class="fused"><span class="repo">dotfiles</span></span><span class="date-r">1 week ago</span></span><span class="meta"><span class="branch">main</span><span class="sep">&#183;</span><span>clean</span></span></span></div>
+      </div>
+      <div class="footer"><span class="left"><span class="btn">Clear Missing</span><span class="btn danger">Clear All...</span></span><span>1 selected</span><span class="open-btn">Open</span></div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

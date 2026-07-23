@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Recent Workspaces restyle prototypes</title>
+<style>
+  :root {
+    --bg: #161618;
+    --win-bg: #1e1e21;
+    --panel: #232326;
+    --row-hover: #2a2a2e;
+    --border: #3a3a3e;
+    --text: #d9d9d6;
+    --muted: #9d9d9a;
+    --faint: #6e6e6c;
+    --heading: #ebebea;
+    --red-text: #c75259;
+    --red-fill: #a64047;
+    --red-tint: rgba(166, 64, 71, 0.16);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, "Helvetica Neue", sans-serif;
+    padding: 48px 24px 96px;
+  }
+  main { max-width: 980px; margin: 0 auto; }
+  h1 { color: var(--heading); font-size: 22px; margin-bottom: 6px; }
+  .intro { color: var(--muted); margin-bottom: 40px; }
+  .variant { margin-bottom: 64px; }
+  .variant > h2 { color: var(--heading); font-size: 16px; margin-bottom: 4px; }
+  .variant > p { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+
+  .window {
+    background: var(--win-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  }
+  .titlebar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px;
+    background: #19191b;
+    border-bottom: 1px solid var(--border);
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: #3a3a3e; }
+  .dot.r { background: #d45c5c; } .dot.y { background: #d4a24a; } .dot.g { background: #5cb85c; }
+  .titlebar span { color: var(--muted); font-size: 13px; font-weight: 600; margin-left: 8px; }
+
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; }
+  .header h3 { color: var(--heading); font-size: 20px; font-weight: 700; }
+  .search {
+    display: flex; align-items: center; gap: 6px;
+    width: 230px; padding: 6px 10px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--faint); font-size: 13px;
+  }
+
+  .filters {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 20px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px; color: var(--muted);
+  }
+  .seg { display: flex; background: var(--panel); border-radius: 7px; padding: 2px; }
+  .seg span { padding: 3px 12px; border-radius: 5px; }
+  .seg .on { background: var(--red-fill); color: #fff; font-weight: 600; }
+  .pin-toggle { margin-left: auto; color: var(--muted); }
+
+  .section { color: var(--muted); font-size: 11px; font-weight: 700; padding: 12px 20px 4px; }
+  .rows { padding: 0 8px 8px; }
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: 6px;
+  }
+  .row:hover { background: var(--row-hover); }
+  .row.sel { background: var(--red-tint); }
+  .row .icon { flex: none; width: 24px; color: var(--muted); }
+  .row.sel .icon { color: var(--red-text); }
+  .row .body { min-width: 0; }
+  .line1 { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+  .line2 { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .line2 .date::before { content: "· "; color: var(--faint); }
+  .chev { margin-left: auto; color: var(--red-text); font-size: 13px; visibility: hidden; }
+  .row.sel .chev { visibility: visible; }
+
+  .repo { color: var(--heading); font-size: 14px; font-weight: 600; }
+  .machine {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12.5px; font-weight: 500;
+    color: var(--red-text);
+  }
+  .machine.quiet { color: var(--faint); }
+
+  .footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 13px;
+  }
+  .open-btn {
+    background: var(--red-fill); color: #fff;
+    font-weight: 600; font-size: 13px;
+    padding: 5px 18px; border-radius: 6px;
+  }
+
+  /* V1: machine column, aligned, red */
+  .v1 .rows { display: grid; grid-template-columns: 1fr; }
+  .v1 .line1 { display: contents; }
+  .v1 .row { display: grid; grid-template-columns: 24px max-content 1fr auto; align-items: center; column-gap: 12px; }
+  .v1 .row .body { display: contents; }
+  .v1 .line2 { grid-column: 3 / 4; grid-row: 2; margin-top: 0; }
+  .v1 .row { grid-template-rows: auto auto; row-gap: 2px; }
+  .v1 .icon { grid-row: 1 / 3; }
+  .v1 .machine { grid-row: 1 / 3; align-self: center; }
+  .v1 .chev { grid-column: 4; grid-row: 1 / 3; }
+
+  /* V2: scp-style fused token */
+  .v2 .fused { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13.5px; font-weight: 600; }
+  .v2 .fused .machine { font-size: 13.5px; font-weight: 600; }
+  .v2 .fused .colon { color: var(--faint); }
+  .v2 .fused .repo { font-family: inherit; font-size: 13.5px; }
+
+  /* V3: repo first, machine right rail */
+  .v3 .machine { margin-left: auto; }
+  .v3 .line1 { display: flex; }
+  .v3 .body { flex: 1; min-width: 0; }
+  .v3 .chev { margin-left: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Recent Workspaces restyle</h1>
+  <p class="intro">Three directions. All of them: identity is the repo (<b>dev/detours</b>), machine in monospace, and one accent color everywhere, Redmargin red. No blue anywhere: selection, filter pills, Open button, chevron, and selected icon all use the same red. Row 1 shows the selected state.</p>
+
+  <!-- ============================================================ V1 -->
+  <section class="variant v1">
+    <h2>1 · Machine column</h2>
+    <p>Machine leads in a column sized to the longest visible name: aligned repo edge, no dead whitespace, no ragged seam. Machine red, repo brightest, path and date underneath.</p>
+    <div class="window">
+      <div class="titlebar"><i class="dot r"></i><i class="dot y"></i><i class="dot g"></i><span>Recent Workspaces</span></div>
+      <div class="header"><h3>Recent Workspaces</h3><div class="search">&#128269; Search</div></div>
+      <div class="filters">Tier <span class="seg"><span class="on">All</span><span>Local</span><span>Remote</span></span> Kind <span class="seg"><span class="on">All Kinds</span><span>Files</span><span>Folders</span></span><span class="pin-toggle">&#128204;</span></div>
+      <div class="section">RECENT</div>
+      <div class="rows">
+        <div class="row sel"><span class="icon">&#128193;</span><span class="machine">local</span><span class="repo">dev/detours</span><span class="line2">~/dev/detours <span class="date">Yesterday</span></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="machine">wraith</span><span class="repo">engagement</span><span class="line2">~/engagement/ <span class="date">Yesterday</span></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="machine">local</span><span class="repo">dev/ansible</span><span class="line2">~/dev/ansible <span class="date">2 days ago</span></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="machine">spamnesia-dev</span><span class="repo">opt/spamnesia</span><span class="line2">/opt/spamnesia/ <span class="date">2 days ago</span></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128196;</span><span class="machine">wraith</span><span class="repo">engagement/&#8230;/Details Prep.md</span><span class="line2">/Users/ghost/engagement/report/deliverables/Details Prep.md <span class="date">2 days ago</span></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="machine">cognel-dev-next</span><span class="repo">opt/cognel-app</span><span class="line2">/opt/cognel-app/ <span class="date">5 days ago</span></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="machine">azooco-dev</span><span class="repo">opt/azooco</span><span class="line2">/opt/azooco/ <span class="date">1 week ago</span></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="machine">local</span><span class="repo">dotfiles</span><span class="line2">~/dotfiles <span class="date">1 week ago</span></span><span class="chev">&#8250;</span></div>
+      </div>
+      <div class="footer"><span>Clear Missing&nbsp;&nbsp;Clear All...</span><span>1 selected</span><span class="open-btn">Open</span></div>
+    </div>
+  </section>
+
+  <!-- ============================================================ V2 -->
+  <section class="variant v2">
+    <h2>2 · scp style</h2>
+    <p>One fused terminal-style token: <b>machine:repo</b>, all monospace, machine red, repo white. Locals drop the machine entirely, absence means local, so remote hosts stand out on their own.</p>
+    <div class="window">
+      <div class="titlebar"><i class="dot r"></i><i class="dot y"></i><i class="dot g"></i><span>Recent Workspaces</span></div>
+      <div class="header"><h3>Recent Workspaces</h3><div class="search">&#128269; Search</div></div>
+      <div class="filters">Tier <span class="seg"><span class="on">All</span><span>Local</span><span>Remote</span></span> Kind <span class="seg"><span class="on">All Kinds</span><span>Files</span><span>Folders</span></span><span class="pin-toggle">&#128204;</span></div>
+      <div class="section">RECENT</div>
+      <div class="rows">
+        <div class="row sel"><span class="icon">&#128193;</span><span class="body"><span class="line1 fused"><span class="repo">dev/detours</span></span><div class="line2">~/dev/detours <span class="date">Yesterday</span></div></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1 fused"><span class="machine">wraith</span><span class="colon">:</span><span class="repo">engagement</span></span><div class="line2">~/engagement/ <span class="date">Yesterday</span></div></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1 fused"><span class="repo">dev/ansible</span></span><div class="line2">~/dev/ansible <span class="date">2 days ago</span></div></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1 fused"><span class="machine">spamnesia-dev</span><span class="colon">:</span><span class="repo">opt/spamnesia</span></span><div class="line2">/opt/spamnesia/ <span class="date">2 days ago</span></div></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128196;</span><span class="body"><span class="line1 fused"><span class="machine">wraith</span><span class="colon">:</span><span class="repo">engagement/&#8230;/Details Prep.md</span></span><div class="line2">/Users/ghost/engagement/report/deliverables/Details Prep.md <span class="date">2 days ago</span></div></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1 fused"><span class="machine">cognel-dev-next</span><span class="colon">:</span><span class="repo">opt/cognel-app</span></span><div class="line2">/opt/cognel-app/ <span class="date">5 days ago</span></div></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1 fused"><span class="machine">azooco-dev</span><span class="colon">:</span><span class="repo">opt/azooco</span></span><div class="line2">/opt/azooco/ <span class="date">1 week ago</span></div></span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><span class="line1 fused"><span class="repo">dotfiles</span></span><div class="line2">~/dotfiles <span class="date">1 week ago</span></div></span><span class="chev">&#8250;</span></div>
+      </div>
+      <div class="footer"><span>Clear Missing&nbsp;&nbsp;Clear All...</span><span>1 selected</span><span class="open-btn">Open</span></div>
+    </div>
+  </section>
+
+  <!-- ============================================================ V3 -->
+  <section class="variant v3">
+    <h2>3 · Repo first, machine right rail</h2>
+    <p>Repo leads bright, machine sits red monospace on a fixed right rail: scan repos down the left, machines down the right. <b>local</b> shown dimmed so remote hosts pop.</p>
+    <div class="window">
+      <div class="titlebar"><i class="dot r"></i><i class="dot y"></i><i class="dot g"></i><span>Recent Workspaces</span></div>
+      <div class="header"><h3>Recent Workspaces</h3><div class="search">&#128269; Search</div></div>
+      <div class="filters">Tier <span class="seg"><span class="on">All</span><span>Local</span><span>Remote</span></span> Kind <span class="seg"><span class="on">All Kinds</span><span>Files</span><span>Folders</span></span><span class="pin-toggle">&#128204;</span></div>
+      <div class="section">RECENT</div>
+      <div class="rows">
+        <div class="row sel"><span class="icon">&#128193;</span><span class="body"><div class="line1"><span class="repo">dev/detours</span></div><div class="line2">~/dev/detours <span class="date">Yesterday</span></div></span><span class="machine quiet">local</span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><div class="line1"><span class="repo">engagement</span></div><div class="line2">~/engagement/ <span class="date">Yesterday</span></div></span><span class="machine">wraith</span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><div class="line1"><span class="repo">dev/ansible</span></div><div class="line2">~/dev/ansible <span class="date">2 days ago</span></div></span><span class="machine quiet">local</span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><div class="line1"><span class="repo">opt/spamnesia</span></div><div class="line2">/opt/spamnesia/ <span class="date">2 days ago</span></div></span><span class="machine">spamnesia-dev</span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128196;</span><span class="body"><div class="line1"><span class="repo">engagement/&#8230;/Details Prep.md</span></div><div class="line2">/Users/ghost/engagement/report/deliverables/Details Prep.md <span class="date">2 days ago</span></div></span><span class="machine">wraith</span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><div class="line1"><span class="repo">opt/cognel-app</span></div><div class="line2">/opt/cognel-app/ <span class="date">5 days ago</span></div></span><span class="machine">cognel-dev-next</span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><div class="line1"><span class="repo">opt/azooco</span></div><div class="line2">/opt/azooco/ <span class="date">1 week ago</span></div></span><span class="machine">azooco-dev</span><span class="chev">&#8250;</span></div>
+        <div class="row"><span class="icon">&#128193;</span><span class="body"><div class="line1"><span class="repo">dotfiles</span></div><div class="line2">~/dotfiles <span class="date">1 week ago</span></div></span><span class="machine quiet">local</span><span class="chev">&#8250;</span></div>
+      </div>
+      <div class="footer"><span>Clear Missing&nbsp;&nbsp;Clear All...</span><span>1 selected</span><span class="open-btn">Open</span></div>
+    </div>
+  </section>
+</main>
+</body>
+</html>
