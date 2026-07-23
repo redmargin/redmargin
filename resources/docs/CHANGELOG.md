@@ -1,10 +1,20 @@
 # Changelog
 <!-- markdownlint-disable MD022 MD032 -->
 
-## Unreleased
+## v1.6.0 (2026-07-23)
+
+### Added
+
+- Recent Workspaces is now the switcher behind Cmd-P (Cmd-Shift-P keeps the command palette for app actions; Cmd-Shift-1 still works). Search accepts multi-word queries that match server, repo, and path, and ranks server and name matches above incidental path hits.
+- Every workspace row reads like a terminal address: the server name in Redmargin red, then the repo (`wraith:engagement`, `dev/detours` for local ones). Local and remote repositories both show their branch and working-tree state; folders outside any repository say so; file entries show their containing folder.
+- A dot on each row shows availability at a glance: green when the workspace is present or its server answers, red when it is missing or unreachable, grey while unknown. Remote state and git context arrive through one probe per folder.
+- A single click opens a workspace. A remote open shows its progress in the clicked row and failures land there as a red warning. Selection follows the pointer and the arrow keys with one shared highlight, and the selected row carries inline pin, reveal, and remove actions.
 
 ### Fixed
 
+- Typing in the Recent Workspaces search field no longer removes the selected workspace when backspace is pressed; editing keys belong to the search field while it has focus.
+- Moving the selection with arrow keys no longer loses it to the row under a stationary mouse pointer when the list scrolls.
+- The test suite no longer opens windows on screen while it runs.
 - Fixed a remote helper defect where a response from a closed connection could be written into the next client's session, corrupting its message framing and exposing the previous session's response contents. Each connection now owns its writes and in-flight requests, which are shut down before its socket is released.
 - Fixed the remote helper terminating outright when a slow client disconnected while the helper was still writing to it.
 - Fixed the remote helper's proxy silently truncating large messages (big diffs, embedded images) when the operating system accepted only part of a write, which desynchronized the connection until reconnect.
@@ -27,6 +37,8 @@
 - Fixed a task list checkbox appearing toggled when a text-selection drag ended on it, even though the underlying document was left unchanged.
 
 ### Changed
+- The Recent Workspaces window speaks Redmargin red as its only accent color; the system blue is gone from selection, filters, and buttons.
+- The command palette (Cmd-Shift-P) lists app actions only, with multi-word matching.
 
 - Upgrading no longer erases the recent-workspace data an older version of the app reads, so downgrading keeps its recents list.
 - The gutter tests now exercise the shipped renderer modules rather than copies of them, so a regression in gutter positioning cannot pass unnoticed.
