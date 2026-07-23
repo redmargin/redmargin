@@ -2,7 +2,7 @@
 
 ## Meta
 
-- Status: Draft
+- Status: Implemented
 - Branch: feature/recent-workspaces-restyle
 
 ---
@@ -34,8 +34,8 @@ Implement variant C3 of the approved prototype (`resources/specs/260723-recent-w
 - [x] **A1** Rows show machine and repo in terminal notation, machine in red, and local entries carry no machine part
 - [x] **A2** A second row line appears only for local git repositories (branch and state), file entries (containing folder), or unavailable entries (red warning)
 - [x] **A3** Each row leads with a green, grey, or red dot matching the workspace's availability
-- [ ] **A4** Hovering a row shows pin, reveal, and remove actions, and each performs its action
-- [ ] **A5** No system blue remains anywhere in the window; selection, filters, buttons, and markers all use Redmargin red
+- [x] **A4** Hovering a row shows pin, reveal, and remove actions, and each performs its action
+- [x] **A5** No system blue remains anywhere in the window; selection, filters, buttons, and markers all use Redmargin red
 - [x] **A6** Searching, filtering, pinning, opening, and keyboard navigation behave the same as before the restyle
 - [x] **A7** The full test suite passes on the dev machine
 
@@ -122,6 +122,6 @@ The design itself was validated with Marco across three prototype rounds (`26072
 - **T4-T6** `Tests/GitWorkspaceSummaryTests.swift`: real temp repo via `GitTestHelper` (branch, clean 0, 2 changed after edits), non-repo nil, `hasLiveConnection` leaves `connectStartCount` unchanged on `.shared` (private init forbids a fresh instance).
 - **T7** `PaletteSearchTests` moved to `machineToken`/`repoSlug`. Full suite via `./resources/scripts/build.sh`: 438 tests, 0 failures.
 - During the walk the windowless test fix was hardened: activation policy alone failed (a `FolderWindowTests` window reached the screen), so `WindowlessTestCase` now also replaces `NSWindow` ordering methods with no-ops in the test process.
-- **A1-A3, A6, A7** confirmed via the tests above plus the full green suite (existing search/filter/pin/open tests unchanged and passing). **A4/A5** are visual/interactive checks awaiting Marco's look at the running app.
+- **A1-A3, A6, A7** confirmed via the tests above plus the full green suite (existing search/filter/pin/open tests unchanged and passing). **A4/A5** confirmed by Marco on the running app after the review-round fixes.
 - Simplify pass applied: concurrent gated context scans, shared relative-date formatter (`DateFormatting.swift`), shared reveal helper, `RedSegmentedControl.swift` promoted, gutter color comment names its CSS source.
 - **C7-C9, T8** Marco's A4/A5 review found jumping rows, missing button hover states, unwanted amber, and grey dots for live hosts. Fixed: date hidden by opacity with actions overlaid (no layout change), `HoverActionButton` with red hover feedback, monochrome change count (unused amber constant removed), and `RemoteHostProber` (ssh BatchMode, 3s connect timeout) feeding the dot via `RemoteReachability`; probing runs concurrently with the git scans. The former out-of-scope line on probing was removed on Marco's instruction.
