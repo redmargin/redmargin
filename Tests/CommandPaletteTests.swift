@@ -1,7 +1,7 @@
 import XCTest
 @testable import Redmargin
 
-final class CommandPaletteTests: XCTestCase {
+final class CommandPaletteTests: WindowlessTestCase {
     func testCommandPaletteListsAllAppCommands() async {
         let entries = await sourceEntries()
 

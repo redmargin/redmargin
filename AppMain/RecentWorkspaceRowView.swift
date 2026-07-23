@@ -23,14 +23,15 @@ struct RecentWorkspaceRowView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 10) {
+                    Text(item.machineLabel)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.accentColor)
+                        .lineLimit(1)
+
                     Text(item.displayTitle)
                         .font(.system(size: 14, weight: .semibold))
                         .lineLimit(1)
                         .truncationMode(.middle)
-
-                    Text(item.machineLabel)
-                        .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .lineLimit(1)
 
                     if isUnavailable {
                         Label("Unavailable", systemImage: "exclamationmark.triangle")

@@ -5,7 +5,7 @@ import XCTest
 @testable import RedmarginCore
 
 @MainActor
-final class MainMenuTests: XCTestCase {
+final class MainMenuTests: WindowlessTestCase {
     private var savedRecentWorkspaces: Data?
     private var savedRecentWorkspacesFrame: String?
     private var savedCommandPaletteFrame: String?
@@ -145,7 +145,7 @@ final class MainMenuTests: XCTestCase {
 
         XCTAssertEqual(item?.label, "Recent Workspaces")
         XCTAssertEqual(item?.paletteLabel, "Recent Workspaces")
-        XCTAssertEqual(item?.toolTip, "Show Recent Workspaces (⇧⌘1)")
+        XCTAssertEqual(item?.toolTip, "Show Recent Workspaces (⌘P)")
         XCTAssertEqual(item?.action, #selector(AppDelegate.showRecentWorkspaces(_:)))
     }
 

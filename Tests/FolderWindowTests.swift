@@ -2,7 +2,7 @@ import XCTest
 @testable import Redmargin
 @testable import RedmarginCore
 
-final class FolderWindowTests: XCTestCase {
+final class FolderWindowTests: WindowlessTestCase {
     private var tempDir: URL!
     private var savedRecentWorkspaces: Data?
     private var savedCorruptRecentWorkspaces: Data?

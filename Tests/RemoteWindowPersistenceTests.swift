@@ -4,7 +4,7 @@ import AppKit
 @testable import RedmarginCore
 
 @MainActor
-final class RemoteWindowPersistenceTests: XCTestCase {
+final class RemoteWindowPersistenceTests: WindowlessTestCase {
     private let key = "RedMargin.OpenRemoteLocations"
 
     override func setUp() async throws {

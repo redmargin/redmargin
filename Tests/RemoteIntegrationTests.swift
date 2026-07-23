@@ -3,7 +3,7 @@ import XCTest
 @testable import RedmarginLib
 @testable import RedmarginCore
 
-final class RemoteIntegrationTests: XCTestCase {
+final class RemoteIntegrationTests: WindowlessTestCase {
     private var backgroundProcesses: [Process] = []
     private var savedRecentWorkspacesData: Data?
 

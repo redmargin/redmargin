@@ -42,7 +42,7 @@ final class RedmarginWindowToolbar: NSObject, NSToolbarDelegate {
         item.image = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: "Recent Workspaces")
         item.label = "Recent Workspaces"
         item.paletteLabel = "Recent Workspaces"
-        item.toolTip = "Show Recent Workspaces (⇧⌘1)"
+        item.toolTip = "Show Recent Workspaces (⌘P)"
         item.target = nil
         item.action = #selector(AppDelegate.showRecentWorkspaces(_:))
         return item

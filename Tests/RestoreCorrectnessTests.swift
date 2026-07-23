@@ -4,7 +4,7 @@ import XCTest
 
 /// What the app must still know about after a crash, a force-quit, or an offline
 /// launch.
-final class RestoreCorrectnessTests: XCTestCase {
+final class RestoreCorrectnessTests: WindowlessTestCase {
 
     // MARK: - Window identity
 
