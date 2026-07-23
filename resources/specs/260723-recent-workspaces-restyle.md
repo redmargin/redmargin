@@ -25,7 +25,7 @@ Implement variant C3 of the approved prototype (`resources/specs/260723-recent-w
 - A second line appears only when it has content: local git repositories show the branch and working-tree state ("main · clean", "main · 3 modified", monochrome); file entries show their containing folder; unavailable entries show a red warning such as "unreachable since yesterday". Rows all share one two-line height; rows with nothing to add leave the second line blank.
 - A small dot leads each row: green when the workspace is present or its server answers a probe, grey while a server's state is still unknown, red when a local item is missing, a server does not answer, or a remote last failed.
 - Clicking a row opens it (single click; Enter for the keyboard-selected row unchanged). Hovering a row reveals three inline actions: pin/unpin, reveal in Finder (local items only), and remove. The right-click menu keeps its existing entries.
-- The whole window uses Redmargin red as its only accent: row selection tint, filter controls, chevron, selected icon, pin markers.
+- The whole window uses Redmargin red as its only accent: row selection tint, filter controls, selected icon, pin markers. One highlight serves mouse and keyboard alike: hovering a row makes it the selected row, so the red tint follows the pointer and the arrow keys equally, and only keyboard moves scroll the list.
 - The footer buttons look like buttons: "Clear Missing" quiet and bordered, "Clear All..." bordered with red text, "Open" solid red.
 - Search, ranking, filtering, pinning, opening, and keyboard behavior stay exactly as they are today.
 

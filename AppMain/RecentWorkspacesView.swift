@@ -16,6 +16,7 @@ struct RecentWorkspacesView: View {
     @State private var gitStates: [String: RecentWorkspaceGitState] = [:]
     @State private var hostReachability: [String: Bool] = [:]
     @State private var scannedContextKey: Set<String> = []
+    @State private var scrollSelectionIntoView = false
     @State private var keyMonitor: Any?
     @FocusState private var searchFocused: Bool
 
@@ -158,9 +159,12 @@ struct RecentWorkspacesView: View {
                     .padding(.vertical, 8)
                 }
                 .onChange(of: selectedID) {
-                    if let selectedID {
+                    // Only keyboard-driven selection scrolls; hover-driven
+                    // selection must never move the list under the pointer.
+                    if scrollSelectionIntoView, let selectedID {
                         proxy.scrollTo(selectedID, anchor: .center)
                     }
+                    scrollSelectionIntoView = false
                 }
             }
         }
@@ -171,7 +175,6 @@ struct RecentWorkspacesView: View {
             RecentWorkspaceRowView(
                 item: item,
                 isSelected: selectedID == item.id,
-                isFocused: selectedID == item.id,
                 isUnavailable: isUnavailable(item),
                 gitState: gitStates[item.storageKey] ?? .pending,
                 reachability: reachability(of: item),
@@ -186,6 +189,9 @@ struct RecentWorkspacesView: View {
             .onTapGesture {
                 selectedID = item.id
                 open(item)
+            }
+            .onHover { hovering in
+                if hovering { selectedID = item.id }
             }
         }
     }
@@ -394,6 +400,7 @@ struct RecentWorkspacesView: View {
         if let selectedID, visibleItems.contains(where: { $0.id == selectedID }) {
             return
         }
+        scrollSelectionIntoView = true
         selectedID = visibleItems.first?.id
     }
 
@@ -481,8 +488,10 @@ struct RecentWorkspacesView: View {
 
         switch direction {
         case .up:
+            scrollSelectionIntoView = true
             selectedID = visibleItems[max(0, currentIndex - 1)].id
         case .down:
+            scrollSelectionIntoView = true
             selectedID = visibleItems[min(visibleItems.count - 1, currentIndex + 1)].id
         default:
             break

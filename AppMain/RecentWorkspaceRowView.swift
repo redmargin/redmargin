@@ -5,7 +5,6 @@ import SwiftUI
 struct RecentWorkspaceRowView: View {
     let item: RecentWorkspaceItem
     let isSelected: Bool
-    let isFocused: Bool
     let isUnavailable: Bool
     let gitState: RecentWorkspaceGitState
     let reachability: RemoteReachability
@@ -47,13 +46,6 @@ struct RecentWorkspaceRowView: View {
                     .opacity(isHovered ? 0 : 1)
             }
 
-            if isFocused {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.redmarginRed)
-                    .padding(.top, 4)
-                    .opacity(isHovered ? 0 : 1)
-            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
