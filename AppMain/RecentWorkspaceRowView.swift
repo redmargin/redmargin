@@ -25,7 +25,7 @@ struct RecentWorkspaceRowView: View {
                 HStack(spacing: 10) {
                     Text(item.machineLabel)
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Color.redmarginRed)
                         .lineLimit(1)
 
                     Text(item.displayTitle)
