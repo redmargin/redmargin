@@ -166,14 +166,18 @@ struct RecentWorkspaceItem: Codable, Hashable, Identifiable {
         return "unreachable since \(lastFailureDate.relativeFullDescription)"
     }
 
-    /// What the second row line shows; nil collapses the row to one line.
-    func meta(gitSummary: GitWorkspaceSummary?) -> RecentWorkspaceMeta? {
+    /// What the second row line shows; nil only while git state is loading.
+    func meta(gitState: RecentWorkspaceGitState) -> RecentWorkspaceMeta? {
         if let warning = unavailabilityWarning { return .warning(warning) }
         if kind.isFile { return .containingPath(containingFolderText) }
-        if let gitSummary {
-            return .git(branch: gitSummary.branch, changedCount: gitSummary.changedCount)
+        switch gitState {
+        case .pending:
+            return nil
+        case .notARepository:
+            return .noRepository
+        case .repo(let summary):
+            return .git(branch: summary.branch, changedCount: summary.changedCount)
         }
-        return nil
     }
 
     /// State-dot color bucket; the caller supplies probed reachability.
@@ -217,6 +221,15 @@ enum RecentWorkspaceMeta: Equatable {
     case warning(String)
     case containingPath(String)
     case git(branch: String, changedCount: Int)
+    case noRepository
+}
+
+/// Git knowledge about a folder workspace: not yet loaded, known to be
+/// outside any repository, or a repository with its summary.
+enum RecentWorkspaceGitState: Equatable {
+    case pending
+    case notARepository
+    case repo(GitWorkspaceSummary)
 }
 
 enum WorkspaceAvailability {

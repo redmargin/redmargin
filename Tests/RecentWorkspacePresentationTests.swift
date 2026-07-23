@@ -56,32 +56,52 @@ final class RecentWorkspacePresentationTests: XCTestCase {
     func testMetaLineDecision() {
         let repoFolder = RecentWorkspaceItem.localFolder(tempDir)
         let summary = GitWorkspaceSummary(branch: "main", changedCount: 3)
-        XCTAssertEqual(repoFolder.meta(gitSummary: summary), .git(branch: "main", changedCount: 3))
-        XCTAssertNil(repoFolder.meta(gitSummary: nil))
+        XCTAssertEqual(repoFolder.meta(gitState: .repo(summary)), .git(branch: "main", changedCount: 3))
+        XCTAssertNil(repoFolder.meta(gitState: .pending))
+        XCTAssertEqual(repoFolder.meta(gitState: .notARepository), .noRepository)
 
         let remoteFolder = RecentWorkspaceItem.remoteFolder(
             RemoteLocation(host: "azooco-dev", path: "/opt/azooco/")
         )
-        XCTAssertNil(remoteFolder.meta(gitSummary: nil))
+        XCTAssertEqual(
+            remoteFolder.meta(gitState: .repo(summary)),
+            .git(branch: "main", changedCount: 3)
+        )
+        XCTAssertNil(remoteFolder.meta(gitState: .pending))
 
         let remoteFile = RecentWorkspaceItem.remoteFile(
             RemoteLocation(host: "wraith", path: "~/engagement/report/deliverables/Details Prep.md")
         )
         XCTAssertEqual(
-            remoteFile.meta(gitSummary: nil),
+            remoteFile.meta(gitState: .pending),
             .containingPath("~/engagement/report/deliverables/")
         )
 
         var failed = RecentWorkspaceItem.remoteFolder(RemoteLocation(host: "wraith", path: "~/gone/"))
         failed.lastFailureReason = "connection refused"
         failed.lastFailureDate = Date(timeIntervalSinceNow: -86_400)
-        guard case .warning(let text)? = failed.meta(gitSummary: nil) else {
-            return XCTFail("Expected a warning meta, got \(String(describing: failed.meta(gitSummary: nil)))")
+        guard case .warning(let text)? = failed.meta(gitState: .pending) else {
+            return XCTFail("Expected a warning meta, got \(String(describing: failed.meta(gitState: .pending)))")
         }
         XCTAssertTrue(text.hasPrefix("unreachable since"), "got: \(text)")
 
         let missing = RecentWorkspaceItem.localFile(tempDir.appendingPathComponent("gone.md"))
-        XCTAssertEqual(missing.meta(gitSummary: nil), .warning("missing"))
+        XCTAssertEqual(missing.meta(gitState: .pending), .warning("missing"))
+    }
+
+    func testRemoteProbeParsing() {
+        XCTAssertEqual(
+            RemoteWorkspaceProber.parse(exitCode: 0, output: "REPO main 3\n"),
+            .reachable(.repo(GitWorkspaceSummary(branch: "main", changedCount: 3)))
+        )
+        XCTAssertEqual(
+            RemoteWorkspaceProber.parse(exitCode: 0, output: "REPO feature/git-gutter 0\n"),
+            .reachable(.repo(GitWorkspaceSummary(branch: "feature/git-gutter", changedCount: 0)))
+        )
+        XCTAssertEqual(RemoteWorkspaceProber.parse(exitCode: 0, output: "NOREPO\n"), .reachable(.notARepository))
+        XCTAssertEqual(RemoteWorkspaceProber.parse(exitCode: 0, output: "NODIR\n"), .reachable(.notARepository))
+        XCTAssertEqual(RemoteWorkspaceProber.parse(exitCode: 0, output: "garbage"), .reachable(.notARepository))
+        XCTAssertEqual(RemoteWorkspaceProber.parse(exitCode: 255, output: ""), .unreachable)
     }
 
     func testAvailabilityDotMapping() {
@@ -120,8 +140,14 @@ final class RecentWorkspacePresentationTests: XCTestCase {
     }
 
     func testProbeUnreachableHostReturnsFalse() async {
-        let reachable = await RemoteHostProber.isReachable(host: "redmargin-no-such-host.invalid")
-        XCTAssertFalse(reachable)
+        let hostUp = await RemoteWorkspaceProber.isHostReachable("redmargin-no-such-host.invalid")
+        XCTAssertFalse(hostUp)
+
+        let probe = await RemoteWorkspaceProber.probeFolder(
+            host: "redmargin-no-such-host.invalid",
+            path: "~/x/"
+        )
+        XCTAssertEqual(probe, .unreachable)
     }
 
     func testFailureBookkeepingCarriesDate() {

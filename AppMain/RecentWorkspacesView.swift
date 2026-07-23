@@ -13,7 +13,7 @@ struct RecentWorkspacesView: View {
     @State private var pinnedOnly = false
     @State private var selectedID: UUID?
     @State private var localAvailability: [String: Bool] = [:]
-    @State private var gitSummaries: [String: GitWorkspaceSummary] = [:]
+    @State private var gitStates: [String: RecentWorkspaceGitState] = [:]
     @State private var hostReachability: [String: Bool] = [:]
     @State private var scannedContextKey: Set<String> = []
     @State private var keyMonitor: Any?
@@ -173,7 +173,7 @@ struct RecentWorkspacesView: View {
                 isSelected: selectedID == item.id,
                 isFocused: selectedID == item.id,
                 isUnavailable: isUnavailable(item),
-                gitSummary: gitSummaries[item.storageKey],
+                gitState: gitStates[item.storageKey] ?? .pending,
                 reachability: reachability(of: item),
                 onOpen: { open(item) },
                 onRetry: { retry(item) },
@@ -299,10 +299,11 @@ struct RecentWorkspacesView: View {
         return localAvailability[item.storageKey] == false
     }
 
-    /// Loads git summaries for local folder rows and live-connection state for
-    /// remote hosts. Repos scan concurrently. `force` bypasses the same-keys
-    /// gate so reopening the window picks up fresh git state; store changes
-    /// that keep the same folders and hosts (pinning, reopening) skip the scan.
+    /// Loads git state for local and remote folder rows plus host
+    /// reachability, all concurrently. Remote folders answer both questions in
+    /// one ssh round trip. `force` bypasses the same-keys gate so reopening
+    /// the window picks up fresh state; store changes that keep the same
+    /// folders and hosts (pinning, reopening) skip the scan.
     private func refreshWorkspaceContext(force: Bool = false) {
         let localFolders = store.items.filter { $0.kind == .localFolder && !$0.isLocalMissing }
         let remoteHosts = Set(store.items.compactMap { $0.remoteLocation?.host })
@@ -310,46 +311,64 @@ struct RecentWorkspacesView: View {
         guard force || contextKey != scannedContextKey else { return }
         scannedContextKey = contextKey
 
+        let remoteFolderTargets = store.items.compactMap { item -> (key: String, host: String, path: String)? in
+            guard item.kind == .remoteFolder, let location = item.remoteLocation else { return nil }
+            return (item.storageKey, location.host, location.path)
+        }
+
         Task {
             let folderTargets = localFolders.compactMap { item in
                 item.localURL.map { (key: item.storageKey, url: $0) }
             }
-            let summaries = await withTaskGroup(
-                of: (String, GitWorkspaceSummary?).self,
-                returning: [String: GitWorkspaceSummary].self
-            ) { group in
+
+            var states: [String: RecentWorkspaceGitState] = [:]
+            var reachable: [String: Bool] = [:]
+
+            await withTaskGroup(of: (String, RecentWorkspaceGitState).self) { group in
                 for target in folderTargets {
                     group.addTask {
-                        (target.key, await GitStatusProvider.shared.summary(for: target.url))
+                        let summary = await GitStatusProvider.shared.summary(for: target.url)
+                        return (target.key, summary.map { .repo($0) } ?? .notARepository)
                     }
                 }
-                var result: [String: GitWorkspaceSummary] = [:]
-                for await (key, summary) in group {
-                    if let summary { result[key] = summary }
-                }
-                return result
+                for await (key, state) in group { states[key] = state }
             }
 
-            let reachability = await withTaskGroup(
-                of: (String, Bool).self,
-                returning: [String: Bool].self
-            ) { group in
-                for host in remoteHosts {
+            await withTaskGroup(of: (String, String, RemoteWorkspaceProbe).self) { group in
+                for target in remoteFolderTargets {
+                    group.addTask {
+                        (target.key, target.host, await RemoteWorkspaceProber.probeFolder(host: target.host, path: target.path))
+                    }
+                }
+                for await (key, host, probe) in group {
+                    switch probe {
+                    case .unreachable:
+                        reachable[host] = reachable[host] ?? false
+                    case .reachable(let state):
+                        states[key] = state
+                        reachable[host] = true
+                    }
+                }
+            }
+
+            let uncoveredHosts = remoteHosts.filter { reachable[$0] == nil }
+            await withTaskGroup(of: (String, Bool).self) { group in
+                for host in uncoveredHosts {
                     group.addTask {
                         if await SSHConnectionManager.shared.hasLiveConnection(host: host) {
                             return (host, true)
                         }
-                        return (host, await RemoteHostProber.isReachable(host: host))
+                        return (host, await RemoteWorkspaceProber.isHostReachable(host))
                     }
                 }
-                var result: [String: Bool] = [:]
-                for await (host, up) in group { result[host] = up }
-                return result
+                for await (host, up) in group { reachable[host] = up }
             }
 
+            let resolvedStates = states
+            let resolvedReachable = reachable
             await MainActor.run {
-                gitSummaries = summaries
-                hostReachability = reachability
+                gitStates = resolvedStates
+                hostReachability = resolvedReachable
             }
         }
     }

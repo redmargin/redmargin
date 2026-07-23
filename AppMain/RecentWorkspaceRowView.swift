@@ -7,7 +7,7 @@ struct RecentWorkspaceRowView: View {
     let isSelected: Bool
     let isFocused: Bool
     let isUnavailable: Bool
-    let gitSummary: GitWorkspaceSummary?
+    let gitState: RecentWorkspaceGitState
     let reachability: RemoteReachability
     let onOpen: () -> Void
     let onRetry: () -> Void
@@ -138,7 +138,7 @@ struct RecentWorkspaceRowView: View {
 
     @ViewBuilder
     private var metaLine: some View {
-        switch item.meta(gitSummary: gitSummary) {
+        switch item.meta(gitState: gitState) {
         case .warning(let text):
             Text(text)
                 .font(.system(size: 12))
@@ -167,8 +167,16 @@ struct RecentWorkspaceRowView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        case .noRepository:
+            Text("no repository")
+                .font(.system(size: 12))
+                .foregroundStyle(.tertiary)
         case nil:
-            EmptyView()
+            // Invisible placeholder while git state loads, so rows keep one
+            // uniform two-line height instead of jumping when results land.
+            Text(" ")
+                .font(.system(size: 12))
+                .hidden()
         }
     }
 
