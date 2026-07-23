@@ -14,7 +14,7 @@ struct RecentWorkspacesView: View {
     @State private var selectedID: UUID?
     @State private var localAvailability: [String: Bool] = [:]
     @State private var gitSummaries: [String: GitWorkspaceSummary] = [:]
-    @State private var liveHosts: Set<String> = []
+    @State private var hostReachability: [String: Bool] = [:]
     @State private var scannedContextKey: Set<String> = []
     @State private var keyMonitor: Any?
     @FocusState private var searchFocused: Bool
@@ -174,7 +174,7 @@ struct RecentWorkspacesView: View {
                 isFocused: selectedID == item.id,
                 isUnavailable: isUnavailable(item),
                 gitSummary: gitSummaries[item.storageKey],
-                hasLiveConnection: item.remoteLocation.map { liveHosts.contains($0.host) } ?? false,
+                reachability: reachability(of: item),
                 onOpen: { open(item) },
                 onRetry: { retry(item) },
                 onPinToggle: { togglePin(item) },
@@ -330,19 +330,34 @@ struct RecentWorkspacesView: View {
                 return result
             }
 
-            var live: Set<String> = []
-            for host in remoteHosts {
-                if await SSHConnectionManager.shared.hasLiveConnection(host: host) {
-                    live.insert(host)
+            let reachability = await withTaskGroup(
+                of: (String, Bool).self,
+                returning: [String: Bool].self
+            ) { group in
+                for host in remoteHosts {
+                    group.addTask {
+                        if await SSHConnectionManager.shared.hasLiveConnection(host: host) {
+                            return (host, true)
+                        }
+                        return (host, await RemoteHostProber.isReachable(host: host))
+                    }
                 }
+                var result: [String: Bool] = [:]
+                for await (host, up) in group { result[host] = up }
+                return result
             }
 
-            let resolvedLive = live
             await MainActor.run {
                 gitSummaries = summaries
-                liveHosts = resolvedLive
+                hostReachability = reachability
             }
         }
+    }
+
+    private func reachability(of item: RecentWorkspaceItem) -> RemoteReachability {
+        guard let host = item.remoteLocation?.host else { return .unknown }
+        guard let isUp = hostReachability[host] else { return .unknown }
+        return isUp ? .reachable : .unreachable
     }
 
     private func refreshAvailability() {

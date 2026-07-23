@@ -86,18 +86,24 @@ final class RecentWorkspacePresentationTests: XCTestCase {
 
     func testAvailabilityDotMapping() {
         let present = RecentWorkspaceItem.localFolder(tempDir)
-        XCTAssertEqual(present.availability(hasLiveConnection: false), .available)
+        XCTAssertEqual(present.availability(remoteReachability: .unknown), .available)
 
         let missing = RecentWorkspaceItem.localFile(tempDir.appendingPathComponent("gone.md"))
-        XCTAssertEqual(missing.availability(hasLiveConnection: false), .unavailable)
+        XCTAssertEqual(missing.availability(remoteReachability: .unknown), .unavailable)
 
         var failed = RecentWorkspaceItem.remoteFolder(RemoteLocation(host: "wraith", path: "~/x/"))
         failed.lastFailureReason = "timeout"
-        XCTAssertEqual(failed.availability(hasLiveConnection: true), .unavailable)
+        XCTAssertEqual(failed.availability(remoteReachability: .reachable), .unavailable)
 
-        let idle = RecentWorkspaceItem.remoteFolder(RemoteLocation(host: "wraith", path: "~/x/"))
-        XCTAssertEqual(idle.availability(hasLiveConnection: false), .idle)
-        XCTAssertEqual(idle.availability(hasLiveConnection: true), .available)
+        let remote = RecentWorkspaceItem.remoteFolder(RemoteLocation(host: "wraith", path: "~/x/"))
+        XCTAssertEqual(remote.availability(remoteReachability: .unknown), .idle)
+        XCTAssertEqual(remote.availability(remoteReachability: .reachable), .available)
+        XCTAssertEqual(remote.availability(remoteReachability: .unreachable), .unavailable)
+    }
+
+    func testProbeUnreachableHostReturnsFalse() async {
+        let reachable = await RemoteHostProber.isReachable(host: "redmargin-no-such-host.invalid")
+        XCTAssertFalse(reachable)
     }
 
     func testFailureBookkeepingCarriesDate() {

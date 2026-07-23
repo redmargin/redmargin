@@ -22,8 +22,8 @@ Implement variant C3 of the approved prototype (`resources/specs/260723-recent-w
 - Each row's first line reads like a terminal address: machine name in Redmargin red, a colon, then the repo in bright text (`wraith:engagement`, `spamnesia-dev:opt/spamnesia`). Local entries show no machine part; a plain repo name means "on this Mac" (`dev/detours`, `dotfiles`).
 - The repo part is the parent folder plus name (`dev/detours`), or just the name when the workspace sits directly in the home folder (`engagement`). File entries show the file name as the bright part.
 - The relative date ("Yesterday", "2 days ago") sits right-aligned on the first line in faint text.
-- A second line appears only when it has content: local git repositories show the branch and working-tree state ("main · clean", "main · 3 modified" with the count in amber); file entries show their containing folder; unavailable entries show a red warning such as "unreachable since yesterday". Plain remote folders stay single-line.
-- A small dot leads each row: green when the workspace is present or its server connection is live, grey for a remote whose connection is idle, red when a local item is missing or a remote one last failed.
+- A second line appears only when it has content: local git repositories show the branch and working-tree state ("main · clean", "main · 3 modified", monochrome); file entries show their containing folder; unavailable entries show a red warning such as "unreachable since yesterday". Plain remote folders stay single-line.
+- A small dot leads each row: green when the workspace is present or its server answers a probe, grey while a server's state is still unknown, red when a local item is missing, a server does not answer, or a remote last failed.
 - Hovering a row reveals three inline actions: pin/unpin, reveal in Finder (local items only), and remove. The right-click menu keeps its existing entries.
 - The whole window uses Redmargin red as its only accent: row selection tint, filter controls, chevron, selected icon, pin markers.
 - The footer buttons look like buttons: "Clear Missing" quiet and bordered, "Clear All..." bordered with red text, "Open" solid red.
@@ -44,7 +44,6 @@ Implement variant C3 of the approved prototype (`resources/specs/260723-recent-w
 - Git information for remote workspaces; remote rows show the date only
 - Any change to the actions-only command palette (Cmd-Shift-P)
 - Grouping rows by machine
-- Live network probing of remote hosts; the dot reflects only state the app already holds
 
 ---
 
@@ -82,6 +81,12 @@ The design itself was validated with Marco across three prototype rounds (`26072
 - [x] **C5** Restyle `AppMain/RecentWorkspacesView.swift` to the red accent language: red selection tint, custom red segmented filter controls, styled footer buttons (quiet bordered Clear Missing, red-text bordered Clear All..., solid red Open), red pin toggle and markers
 - [x] **C6** Load git summaries asynchronously in `RecentWorkspacesView` for visible local folder rows, cached by storage key, refreshed on window appear and on store changes
 
+**Phase 3: Marco's review findings**
+
+- [x] **C7** Stabilize row size on hover in `RecentWorkspaceRowView.swift` (date hidden by opacity, actions as an overlay) and give the hover action buttons their own hover feedback
+- [x] **C8** Drop the amber from the git change count; the meta line is monochrome
+- [x] **C9** Probe remote host reachability (`AppMain/RemoteHostProber.swift`, ssh batch mode) so the dot shows green for hosts that answer, red for hosts that do not, grey only while unknown
+
 ---
 
 ## Testing
@@ -101,6 +106,7 @@ The design itself was validated with Marco across three prototype rounds (`26072
 ### Updated Tests (`Tests/RecentWorkspacesTests.swift`, `Tests/PaletteSearchTests.swift`, `Tests/MainMenuTests.swift`)
 
 - [x] **T7** Update row/model assertions from `machineLabel`/`pathText` to the new helpers and accessibility labels; full suite green via `./resources/scripts/build.sh`
+- [x] **T8** `testProbeUnreachableHostReturnsFalse` - prober reports an unresolvable host as down; availability mapping updated for probed reachability
 
 ---
 
@@ -117,3 +123,5 @@ The design itself was validated with Marco across three prototype rounds (`26072
 - **T7** `PaletteSearchTests` moved to `machineToken`/`repoSlug`. Full suite via `./resources/scripts/build.sh`: 438 tests, 0 failures.
 - During the walk the windowless test fix was hardened: activation policy alone failed (a `FolderWindowTests` window reached the screen), so `WindowlessTestCase` now also replaces `NSWindow` ordering methods with no-ops in the test process.
 - **A1-A3, A6, A7** confirmed via the tests above plus the full green suite (existing search/filter/pin/open tests unchanged and passing). **A4/A5** are visual/interactive checks awaiting Marco's look at the running app.
+- Simplify pass applied: concurrent gated context scans, shared relative-date formatter (`DateFormatting.swift`), shared reveal helper, `RedSegmentedControl.swift` promoted, gutter color comment names its CSS source.
+- **C7-C9, T8** Marco's A4/A5 review found jumping rows, missing button hover states, unwanted amber, and grey dots for live hosts. Fixed: date hidden by opacity with actions overlaid (no layout change), `HoverActionButton` with red hover feedback, monochrome change count (unused amber constant removed), and `RemoteHostProber` (ssh BatchMode, 3s connect timeout) feeding the dot via `RemoteReachability`; probing runs concurrently with the git scans. The former out-of-scope line on probing was removed on Marco's instruction.

@@ -17,10 +17,9 @@ extension Color {
     static let redmarginRed = Color(nsColor: .redmarginRed)
 
     /// Gutter palette mirrored from `WebRenderer/styles/dark.css`
-    /// (`--gutter-added` / `--gutter-modified` / `--gutter-deleted`); there is
-    /// no shared token across the JS/Swift boundary, so a renderer palette
-    /// change must be mirrored here by hand.
+    /// (`--gutter-added` / `--gutter-deleted`); there is no shared token
+    /// across the JS/Swift boundary, so a renderer palette change must be
+    /// mirrored here by hand.
     static let gutterAdded = Color(red: 0x5C / 255, green: 0xB8 / 255, blue: 0x5C / 255)
-    static let gutterModified = Color(red: 0xD4 / 255, green: 0xA2 / 255, blue: 0x4A / 255)
     static let gutterDeleted = Color(red: 0xD4 / 255, green: 0x6A / 255, blue: 0x6A / 255)
 }

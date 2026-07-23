@@ -8,7 +8,7 @@ struct RecentWorkspaceRowView: View {
     let isFocused: Bool
     let isUnavailable: Bool
     let gitSummary: GitWorkspaceSummary?
-    let hasLiveConnection: Bool
+    let reachability: RemoteReachability
     let onOpen: () -> Void
     let onRetry: () -> Void
     let onPinToggle: () -> Void
@@ -29,19 +29,14 @@ struct RecentWorkspaceRowView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
                     fusedToken
                     Spacer(minLength: 16)
-                    if !isHovered {
-                        Text(relativeDateText)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                    }
+                    Text(relativeDateText)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .opacity(isHovered ? 0 : 1)
                 }
 
                 metaLine
-            }
-
-            if isHovered {
-                hoverActions
             }
 
             if item.isPinned {
@@ -61,6 +56,13 @@ struct RecentWorkspaceRowView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(selectionBackground)
+        .overlay(alignment: .topTrailing) {
+            if isHovered {
+                hoverActions
+                    .padding(.top, 5)
+                    .padding(.trailing, 40)
+            }
+        }
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .help(item.lastFailureReason ?? item.locationText)
@@ -109,7 +111,7 @@ struct RecentWorkspaceRowView: View {
     }
 
     private var dotColor: Color {
-        switch item.availability(hasLiveConnection: hasLiveConnection) {
+        switch item.availability(remoteReachability: reachability) {
         case .available: return .gutterAdded
         case .idle: return Color.secondary.opacity(0.5)
         case .unavailable: return .gutterDeleted
@@ -160,7 +162,7 @@ struct RecentWorkspaceRowView: View {
                 } else {
                     Text("\(changedCount) modified")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.gutterModified)
+                        .foregroundStyle(.secondary)
                 }
             }
         case nil:
@@ -170,28 +172,38 @@ struct RecentWorkspaceRowView: View {
 
     private var hoverActions: some View {
         HStack(spacing: 4) {
-            hoverButton(item.isPinned ? "pin.slash" : "pin", help: item.isPinned ? "Unpin" : "Pin", action: onPinToggle)
+            HoverActionButton(symbol: item.isPinned ? "pin.slash" : "pin", help: item.isPinned ? "Unpin" : "Pin", action: onPinToggle)
             if item.localURL != nil, !isUnavailable {
-                hoverButton("arrow.up.forward", help: "Reveal in Finder", action: revealInFinder)
+                HoverActionButton(symbol: "arrow.up.forward", help: "Reveal in Finder", action: revealInFinder)
             }
-            hoverButton("xmark", help: "Remove", action: onRemove)
+            HoverActionButton(symbol: "xmark", help: "Remove", action: onRemove)
         }
-        .padding(.top, 2)
     }
 
-    private func hoverButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .frame(width: 24, height: 24)
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(Color(nsColor: .quaternarySystemFill))
-                )
+    private struct HoverActionButton: View {
+        let symbol: String
+        let help: String
+        let action: () -> Void
+
+        @State private var isHovered = false
+
+        var body: some View {
+            Button(action: action) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isHovered ? Color.redmarginRed : Color.secondary)
+                    .frame(width: 24, height: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(isHovered
+                                ? Color.redmarginRed.opacity(0.15)
+                                : Color(nsColor: .quaternarySystemFill))
+                    )
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovered = $0 }
+            .help(help)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .help(help)
     }
 
     private func revealInFinder() {

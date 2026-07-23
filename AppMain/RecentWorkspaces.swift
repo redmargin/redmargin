@@ -176,13 +176,17 @@ struct RecentWorkspaceItem: Codable, Hashable, Identifiable {
         return nil
     }
 
-    /// State-dot color bucket; the caller supplies live-connection knowledge.
-    func availability(hasLiveConnection: Bool) -> WorkspaceAvailability {
+    /// State-dot color bucket; the caller supplies probed reachability.
+    func availability(remoteReachability: RemoteReachability) -> WorkspaceAvailability {
         if localURL != nil {
             return isLocalMissing ? .unavailable : .available
         }
         if lastFailureReason != nil { return .unavailable }
-        return hasLiveConnection ? .available : .idle
+        switch remoteReachability {
+        case .reachable: return .available
+        case .unreachable: return .unavailable
+        case .unknown: return .idle
+        }
     }
 
     var tierLabel: String {
@@ -219,6 +223,12 @@ enum WorkspaceAvailability {
     case available
     case idle
     case unavailable
+}
+
+enum RemoteReachability {
+    case unknown
+    case reachable
+    case unreachable
 }
 
 enum RecentWorkspaceTierFilter: String, CaseIterable, Identifiable {
