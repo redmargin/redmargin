@@ -60,7 +60,7 @@ struct RecentWorkspaceRowView: View {
             if isHovered {
                 hoverActions
                     .padding(.top, 5)
-                    .padding(.trailing, 40)
+                    .padding(.trailing, 12)
             }
         }
         .contentShape(Rectangle())
