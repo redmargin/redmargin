@@ -139,6 +139,17 @@ final class RecentWorkspacePresentationTests: XCTestCase {
         }
     }
 
+    func testHoverGateIgnoresListMovementUnderStationaryPointer() {
+        var gate = HoverSelectionGate()
+
+        XCTAssertTrue(gate.shouldSelect(at: CGPoint(x: 100, y: 200)))
+        // List scrolls under the parked pointer: same mouse location, no select.
+        XCTAssertFalse(gate.shouldSelect(at: CGPoint(x: 100, y: 200)))
+        XCTAssertFalse(gate.shouldSelect(at: CGPoint(x: 100, y: 200)))
+        // The pointer itself moves: hover selects again.
+        XCTAssertTrue(gate.shouldSelect(at: CGPoint(x: 101, y: 200)))
+    }
+
     func testProbeUnreachableHostReturnsFalse() async {
         let hostUp = await RemoteWorkspaceProber.isHostReachable("redmargin-no-such-host.invalid")
         XCTAssertFalse(hostUp)

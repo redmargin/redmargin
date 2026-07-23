@@ -18,6 +18,7 @@ struct RecentWorkspacesView: View {
     @State private var scannedContextKey: Set<String> = []
     @State private var scrollSelectionIntoView = false
     @State private var connectingKey: String?
+    @State private var hoverGate = HoverSelectionGate()
     @State private var keyMonitor: Any?
     @FocusState private var searchFocused: Bool
 
@@ -193,7 +194,8 @@ struct RecentWorkspacesView: View {
                 open(item)
             }
             .onHover { hovering in
-                if hovering { selectedID = item.id }
+                guard hovering, hoverGate.shouldSelect(at: NSEvent.mouseLocation) else { return }
+                selectedID = item.id
             }
         }
     }
@@ -577,6 +579,20 @@ struct RecentWorkspacesView: View {
         default:
             return event
         }
+    }
+}
+
+/// Lets hover move the selection only when the pointer itself moved. When the
+/// list scrolls or reflows under a stationary pointer, macOS fires hover for
+/// rows arriving beneath the cursor; without this gate those synthetic hovers
+/// steal the selection back from the keyboard.
+struct HoverSelectionGate {
+    private var lastMouseLocation: CGPoint?
+
+    mutating func shouldSelect(at location: CGPoint) -> Bool {
+        guard location != lastMouseLocation else { return false }
+        lastMouseLocation = location
+        return true
     }
 }
 
