@@ -138,13 +138,26 @@ if [ -z "$CODESIGN_KEYCHAIN_PASSWORD" ] && [ -f "$CODESIGN_KEYCHAIN_PASSWORD_FIL
 fi
 
 if [ -d "$APP_DIR" ]; then
+    SIGN_ARGS=(--force --options runtime)
     if [ -f "$CODESIGN_KEYCHAIN" ]; then
         security unlock-keychain -p "$CODESIGN_KEYCHAIN_PASSWORD" "$CODESIGN_KEYCHAIN" 2>/dev/null || true
         CODESIGN_KEYCHAIN_PASSWORD=""
-        /usr/bin/codesign --force --options runtime --entitlements "$ENTITLEMENTS" --keychain "$CODESIGN_KEYCHAIN" -s "$CODESIGN_IDENTITY" "$APP_DIR"
-    else
-        /usr/bin/codesign --force --options runtime --entitlements "$ENTITLEMENTS" -s "$CODESIGN_IDENTITY" "$APP_DIR"
+        SIGN_ARGS+=(--keychain "$CODESIGN_KEYCHAIN")
     fi
+    case "$CODESIGN_IDENTITY" in
+        "Developer ID"*) SIGN_ARGS+=(--timestamp) ;;
+    esac
+
+    # The bundled macOS helper executables must each carry their own signature
+    # with hardened runtime (and a secure timestamp under Developer ID), or
+    # notarization rejects the DMG naming each unsigned nested binary.
+    for HELPER in "$RESOURCES_DIR"/Servers/redmargin-server-*-darwin; do
+        if [ -f "$HELPER" ]; then
+            /usr/bin/codesign "${SIGN_ARGS[@]}" -s "$CODESIGN_IDENTITY" "$HELPER"
+        fi
+    done
+
+    /usr/bin/codesign "${SIGN_ARGS[@]}" --entitlements "$ENTITLEMENTS" -s "$CODESIGN_IDENTITY" "$APP_DIR"
     echo "Codesigned app bundle."
 else
     echo "Codesign skipped (missing app bundle)."
