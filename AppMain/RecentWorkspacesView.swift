@@ -17,6 +17,7 @@ struct RecentWorkspacesView: View {
     @State private var hostReachability: [String: Bool] = [:]
     @State private var scannedContextKey: Set<String> = []
     @State private var scrollSelectionIntoView = false
+    @State private var connectingKey: String?
     @State private var keyMonitor: Any?
     @FocusState private var searchFocused: Bool
 
@@ -176,6 +177,7 @@ struct RecentWorkspacesView: View {
                 item: item,
                 isSelected: selectedID == item.id,
                 isUnavailable: isUnavailable(item),
+                isConnecting: connectingKey == item.storageKey,
                 gitState: gitStates[item.storageKey] ?? .pending,
                 reachability: reachability(of: item),
                 onOpen: { open(item) },
@@ -410,6 +412,7 @@ struct RecentWorkspacesView: View {
     }
 
     private func open(_ item: RecentWorkspaceItem) {
+        guard connectingKey == nil else { return }
         if isUnavailable(item), item.localURL != nil {
             NSSound.beep()
             return
@@ -425,14 +428,15 @@ struct RecentWorkspacesView: View {
     }
 
     private func retry(_ item: RecentWorkspaceItem) {
+        guard connectingKey != item.storageKey else { return }
+        connectingKey = item.storageKey
         Task {
             let succeeded = await appDelegate.retryRecentWorkspace(item)
-            if succeeded {
-                await MainActor.run {
+            await MainActor.run {
+                connectingKey = nil
+                if succeeded {
                     controller.closeAfterOpening()
-                }
-            } else {
-                await MainActor.run {
+                } else {
                     refreshAvailability()
                 }
             }

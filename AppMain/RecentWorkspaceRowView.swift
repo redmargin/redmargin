@@ -6,6 +6,7 @@ struct RecentWorkspaceRowView: View {
     let item: RecentWorkspaceItem
     let isSelected: Bool
     let isUnavailable: Bool
+    let isConnecting: Bool
     let gitState: RecentWorkspaceGitState
     let reachability: RemoteReachability
     let onOpen: () -> Void
@@ -95,12 +96,21 @@ struct RecentWorkspaceRowView: View {
         .accessibilityAction(named: "Try Again", onRetry)
     }
 
+    @ViewBuilder
     private var stateDot: some View {
-        Circle()
-            .fill(dotColor)
-            .frame(width: 7, height: 7)
-            .padding(.top, 7)
-            .accessibilityHidden(true)
+        if isConnecting {
+            ProgressView()
+                .controlSize(.mini)
+                .frame(width: 10, height: 10)
+                .padding(.top, 5)
+                .accessibilityHidden(true)
+        } else {
+            Circle()
+                .fill(dotColor)
+                .frame(width: 7, height: 7)
+                .padding(.top, 7)
+                .accessibilityHidden(true)
+        }
     }
 
     private var dotColor: Color {
@@ -129,6 +139,17 @@ struct RecentWorkspaceRowView: View {
 
     @ViewBuilder
     private var metaLine: some View {
+        if isConnecting {
+            Text("connecting to \(item.machineToken ?? "server")...")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        } else {
+            resolvedMetaLine
+        }
+    }
+
+    @ViewBuilder
+    private var resolvedMetaLine: some View {
         switch item.meta(gitState: gitState) {
         case .warning(let text):
             Text(text)
