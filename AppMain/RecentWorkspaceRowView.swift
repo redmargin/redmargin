@@ -44,6 +44,7 @@ struct RecentWorkspaceRowView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Color.redmarginRed)
                     .padding(.top, 4)
+                    .opacity(isHovered ? 0 : 1)
             }
 
             if isFocused {
@@ -51,6 +52,7 @@ struct RecentWorkspaceRowView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.redmarginRed)
                     .padding(.top, 4)
+                    .opacity(isHovered ? 0 : 1)
             }
         }
         .padding(.horizontal, 12)

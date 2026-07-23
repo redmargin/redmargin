@@ -506,6 +506,13 @@ struct RecentWorkspacesView: View {
             return nil
         }
 
+        guard RecentWorkspacesKeyRouting.intercepts(keyCode: event.keyCode, searchFocused: searchFocused) else {
+            if !isCommand, characters.count == 1, characters.first?.isWhitespace == false {
+                searchFocused = true
+            }
+            return event
+        }
+
         if isCommand && event.keyCode == 51 {
             confirmClearAll()
             return nil
@@ -535,10 +542,23 @@ struct RecentWorkspacesView: View {
             moveSelection(.down)
             return nil
         default:
-            if !isCommand, characters.count == 1, characters.first?.isWhitespace == false {
-                searchFocused = true
-            }
             return event
+        }
+    }
+}
+
+/// Which keys the Recent Workspaces window intercepts for list navigation.
+/// While the search field is focused, editing keys (backspace, left, right)
+/// belong to the text field; only navigation and activation are intercepted.
+enum RecentWorkspacesKeyRouting {
+    static func intercepts(keyCode: UInt16, searchFocused: Bool) -> Bool {
+        switch keyCode {
+        case 36, 53, 125, 126:
+            return true
+        case 51, 123, 124:
+            return !searchFocused
+        default:
+            return false
         }
     }
 }

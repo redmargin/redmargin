@@ -101,6 +101,24 @@ final class RecentWorkspacePresentationTests: XCTestCase {
         XCTAssertEqual(remote.availability(remoteReachability: .unreachable), .unavailable)
     }
 
+    func testWindowKeyRoutingLeavesTextEditingToSearchField() {
+        // Backspace and horizontal arrows edit text while search is focused.
+        XCTAssertFalse(RecentWorkspacesKeyRouting.intercepts(keyCode: 51, searchFocused: true))
+        XCTAssertFalse(RecentWorkspacesKeyRouting.intercepts(keyCode: 123, searchFocused: true))
+        XCTAssertFalse(RecentWorkspacesKeyRouting.intercepts(keyCode: 124, searchFocused: true))
+
+        // The same keys drive the list when search is not focused.
+        XCTAssertTrue(RecentWorkspacesKeyRouting.intercepts(keyCode: 51, searchFocused: false))
+        XCTAssertTrue(RecentWorkspacesKeyRouting.intercepts(keyCode: 123, searchFocused: false))
+        XCTAssertTrue(RecentWorkspacesKeyRouting.intercepts(keyCode: 124, searchFocused: false))
+
+        // Navigation and activation are always the window's.
+        for keyCode: UInt16 in [36, 53, 125, 126] {
+            XCTAssertTrue(RecentWorkspacesKeyRouting.intercepts(keyCode: keyCode, searchFocused: true))
+            XCTAssertTrue(RecentWorkspacesKeyRouting.intercepts(keyCode: keyCode, searchFocused: false))
+        }
+    }
+
     func testProbeUnreachableHostReturnsFalse() async {
         let reachable = await RemoteHostProber.isReachable(host: "redmargin-no-such-host.invalid")
         XCTAssertFalse(reachable)
