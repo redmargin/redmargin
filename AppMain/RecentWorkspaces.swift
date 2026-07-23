@@ -105,6 +105,19 @@ struct RecentWorkspaceItem: Codable, Hashable, Identifiable {
         kind.isFile ? "File" : "Folder"
     }
 
+    /// Machine the workspace lives on: the remote host, or "local".
+    var machineLabel: String {
+        remoteLocation?.host ?? "local"
+    }
+
+    /// Location without the host prefix; the machine is shown separately.
+    var pathText: String {
+        switch location {
+        case .local(let url): return url.displayPath
+        case .remote(let location): return location.path
+        }
+    }
+
     var tierLabel: String {
         kind.isRemote ? "Remote" : "Local"
     }

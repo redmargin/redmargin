@@ -22,21 +22,25 @@ struct RecentWorkspaceRowView: View {
                 .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+                HStack(spacing: 10) {
                     Text(item.displayTitle)
                         .font(.system(size: 14, weight: .semibold))
                         .lineLimit(1)
                         .truncationMode(.middle)
 
-                    chip(item.kindLabel)
-                    chip(item.tierLabel)
+                    Text(item.machineLabel)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .lineLimit(1)
+
                     if isUnavailable {
-                        chip("Unavailable", color: .red, isWarning: true)
+                        Label("Unavailable", systemImage: "exclamationmark.triangle")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.red)
                     }
                 }
 
                 HStack(spacing: 4) {
-                    Text(item.locationText)
+                    Text(item.pathText)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -98,7 +102,7 @@ struct RecentWorkspaceRowView: View {
             Button("Remove", action: onRemove)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(item.displayTitle), \(item.tierLabel) \(item.kindLabel.lowercased()), at \(item.locationText)")
+        .accessibilityLabel("\(item.displayTitle) on \(item.machineLabel), \(item.kindLabel.lowercased()), at \(item.pathText)")
         .accessibilityValue(accessibilityValue)
         .accessibilityAction(named: "Open", onOpen)
         .accessibilityAction(named: item.isPinned ? "Unpin" : "Pin", onPinToggle)
@@ -152,16 +156,5 @@ struct RecentWorkspaceRowView: View {
         if item.isPinned { values.append("Pinned") }
         if isUnavailable { values.append("Unavailable") }
         return values.joined(separator: ", ")
-    }
-
-    private func chip(_ text: String, color: Color = .secondary, isWarning: Bool = false) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                Capsule().fill(color.opacity(isWarning ? 0.14 : 0.10))
-            )
     }
 }

@@ -28,6 +28,15 @@ final class PaletteSearchTests: XCTestCase {
         XCTAssertEqual(PaletteSearchQuery("  ").score(wraithFile), 0)
     }
 
+    func testMachineLabelAndPathTextAreUniformAcrossTiers() {
+        XCTAssertEqual(wraithFile.machineLabel, "wraith")
+        XCTAssertEqual(wraithFile.pathText, "/Users/ghost/engagement/deliverables/Details Prep.md")
+
+        let local = RecentWorkspaceItem.localFile(URL(fileURLWithPath: "/tmp/a.md"))
+        XCTAssertEqual(local.machineLabel, "local")
+        XCTAssertEqual(local.pathText, "/tmp/a.md")
+    }
+
     func testStoreFilteredRanksHostMatchAboveTitleSubstringMatch() {
         let suiteName = "PaletteSearchTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
